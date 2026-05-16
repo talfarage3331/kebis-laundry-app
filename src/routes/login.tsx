@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useLaundry } from "@/lib/laundry-store";
 import { Flower2 } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabase";
 
 export const Route = createFileRoute("/login")({ component: Login });
 
@@ -12,11 +13,23 @@ function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const submit = (e: React.FormEvent) => {
+  const [loading, setLoading] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) return toast.error("יש למלא את כל השדות");
-    const name = email.split("@")[0] || "משתמש";
-    login({ name, email });
+    
+    setLoading(true);
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    setLoading(false);
+
+    if (error) {
+      return toast.error(error.message === "Invalid login credentials" ? "פרטי התחברות לא נכונים" : error.message);
+    }
+
     toast.success("התחברת בהצלחה");
     navigate({ to: "/" });
   };

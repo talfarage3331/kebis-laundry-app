@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useLaundry } from "@/lib/laundry-store";
 import { Flower2 } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabase";
 
 export const Route = createFileRoute("/signup")({ component: Signup });
 
@@ -13,10 +14,24 @@ function Signup() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const submit = (e: React.FormEvent) => {
+  const [loading, setLoading] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !email || !password) return toast.error("יש למלא את כל השדות");
-    login({ name, email });
+    
+    setLoading(true);
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { name }
+      }
+    });
+    setLoading(false);
+
+    if (error) return toast.error(error.message);
+
     toast.success("נרשמת בהצלחה");
     navigate({ to: "/" });
   };
