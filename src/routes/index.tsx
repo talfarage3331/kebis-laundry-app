@@ -1,76 +1,108 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useLaundry } from "@/lib/laundry-store";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { ShoppingBasket, History, Truck, Package, CheckCircle2 } from "lucide-react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { AppLayout } from "@/components/AppLayout";
+import { AppHeader } from "@/components/AppHeader";
+import { useLaundry, ORDER_STEPS, stateLabel } from "@/lib/laundry-store";
+import { ShoppingBasket, History, ChevronLeft, Check } from "lucide-react";
 
 export const Route = createFileRoute("/")({
-  component: Index,
+  component: Dashboard,
 });
 
-function Index() {
-  const { state, createOrder } = useLaundry();
+function Dashboard() {
+  const { user, orderState, createOrder } = useLaundry();
   const navigate = useNavigate();
 
-  if (!state.activeOrder) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[80vh] p-6 text-center">
-        <div className="mb-8 p-6 bg-secondary rounded-full">
-          <ShoppingBasket className="w-16 h-16 text-primary" />
-        </div>
-        <h1 className="text-2xl font-bold mb-2">שלום, מיקי</h1>
-        <p className="text-muted-foreground mb-8">אין לך הזמנות פעילות כרגע</p>
-        
-        <Button 
-          size="lg" 
-          className="w-full h-20 text-lg rounded-3xl bg-lime-500 hover:bg-lime-600 text-lime-foreground font-bold shadow-lg"
-          onClick={() => createOrder()}
+  return (
+    <AppLayout>
+      <AppHeader subtitle={user ? `שלום, ${user.name}` : undefined} />
+      <main className="px-5 mt-6">
+        {orderState === "none" ? <EmptyState onCreate={createOrder} /> : <ActiveOrder />}
+        <Link
+          to="/tracking"
+          className="mt-6 flex items-center justify-between rounded-3xl bg-lavender text-lavender-foreground px-5 py-5 font-semibold shadow-sm active:scale-[0.98] transition"
         >
-          הזמן איסוף כביסה
-        </Button>
+          <span>ההזמנות שלי / היסטוריה</span>
+          <ChevronLeft className="size-5" strokeWidth={2} />
+        </Link>
+        {orderState !== "none" && (
+          <button
+            onClick={() => navigate({ to: "/delivery" })}
+            className="mt-3 w-full rounded-3xl border-2 border-primary text-primary px-5 py-4 font-semibold active:scale-[0.98] transition"
+          >
+            המשך לבחירת מסירה
+          </button>
+        )}
+      </main>
+    </AppLayout>
+  );
+}
 
-        <Button 
-          variant="outline" 
-          className="w-full mt-4 h-14 rounded-3xl border-lavender bg-lavender/20"
-          onClick={() => navigate({ to: "/history" })}
-        >
-          ההזמנות שלי / היסטוריה
-        </Button>
-      </div>
-    );
-  }
+function EmptyState({ onCreate }: { onCreate: () => void }) {
+  return (
+    <div className="flex flex-col items-center gap-4 pt-4">
+      <button
+        onClick={onCreate}
+        className="relative group size-64 rounded-full bg-lime text-lime-foreground shadow-[0_20px_50px_-12px_oklch(0.92_0.18_125/0.6)] active:scale-95 transition-all duration-300 flex flex-col items-center justify-center gap-3"
+      >
+        <ShoppingBasket className="size-16" strokeWidth={1.5} />
+        <span className="text-xl font-extrabold leading-tight px-6 text-center">
+          הזמן איסוף כביסה
+        </span>
+      </button>
+      <p className="text-sm text-muted-foreground mt-1">לחיצה אחת ואנחנו בדרך אליך</p>
+    </div>
+  );
+}
+
+function ActiveOrder() {
+  const { orderState, advanceOrder } = useLaundry();
+  const currentIdx = ORDER_STEPS.findIndex((s) => s.key === orderState);
 
   return (
-    <div className="p-6 space-y-6">
-      <h2 className="text-xl font-bold">סטטוס הזמנה נוכחי</h2>
-      
-      <Card className="bg-lime-500 text-lime-foreground border-none shadow-md">
-        <CardContent className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <span className="font-bold text-lg">בטיפול</span>
-            <Package className="w-8 h-8" />
-          </div>
-          
-          <div className="relative flex justify-between items-center mt-8">
-            <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-lime-700/30 -z-0" />
-            {[1, 2, 3, 4].map((step) => (
-              <div key={step} className="relative z-10 w-8 h-8 rounded-full bg-lime-700 flex items-center justify-center">
-                <CheckCircle2 className="w-5 h-5" />
-              </div>
-            ))}
-          </div>
-          
-          <p className="mt-6 text-sm font-medium opacity-90">זמן מוכנות משוער: 14:30</p>
-        </CardContent>
-      </Card>
+    <div>
+      <div className="rounded-3xl bg-lime text-lime-foreground p-5 shadow-[0_20px_50px_-15px_oklch(0.92_0.18_125/0.5)]">
+        <p className="text-sm font-semibold opacity-70">סטטוס נוכחי</p>
+        <h2 className="text-2xl font-extrabold mt-1">{stateLabel[orderState]}</h2>
 
-      <Button 
-        variant="secondary" 
-        className="w-full h-14 rounded-3xl bg-lavender text-lavender-foreground"
-        onClick={() => navigate({ to: "/order-details" })}
-      >
-        פרטי הזמנה מלאים
-      </Button>
+        <div className="mt-6 flex items-center justify-between">
+          {ORDER_STEPS.map((s, i) => {
+            const done = i <= currentIdx;
+            return (
+              <div key={s.key} className="flex-1 flex flex-col items-center relative">
+                {i > 0 && (
+                  <div
+                    className={`absolute right-1/2 top-3 h-1 w-full ${
+                      i <= currentIdx ? "bg-primary" : "bg-lime-foreground/15"
+                    }`}
+                  />
+                )}
+                <div
+                  className={`relative z-10 size-7 rounded-full grid place-items-center text-xs font-bold ${
+                    done ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground border-2 border-lime-foreground/20"
+                  }`}
+                >
+                  {done ? <Check className="size-4" strokeWidth={3} /> : i + 1}
+                </div>
+                <span className="mt-2 text-[11px] font-semibold text-center">{s.label}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {orderState === "in_progress" && (
+          <p className="mt-5 text-sm font-semibold bg-primary/10 rounded-2xl px-4 py-2.5">
+            זמן מוכנות משוער: 14:30
+          </p>
+        )}
+
+        <button
+          onClick={advanceOrder}
+          disabled={orderState === "completed"}
+          className="mt-4 w-full rounded-2xl bg-primary text-primary-foreground py-3 text-sm font-semibold disabled:opacity-50"
+        >
+          {orderState === "completed" ? "ההזמנה הושלמה" : "קדם סטטוס (דמו)"}
+        </button>
+      </div>
     </div>
   );
 }

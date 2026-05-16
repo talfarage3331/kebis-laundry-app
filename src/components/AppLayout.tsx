@@ -1,9 +1,9 @@
-import { Outlet, useNavigate, useLocation } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useNavigate, useLocation } from "@tanstack/react-router";
+import { useEffect, type ReactNode } from "react";
 import { useLaundry } from "@/lib/laundry-store";
 import { BottomNav } from "./BottomNav";
 
-export function AppLayout() {
+export function AppLayout({ children }: { children: ReactNode }) {
   const { user } = useLaundry();
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -17,10 +17,8 @@ export function AppLayout() {
   if (!user) return null;
 
   return (
-    <div className="min-h-screen bg-background pb-24">
-      <div className="mx-auto max-w-md">
-        <Outlet />
-      </div>
+    <div className="min-h-screen bg-background pb-28">
+      <div className="mx-auto max-w-md">{children}</div>
       <BottomNav />
     </div>
   );
