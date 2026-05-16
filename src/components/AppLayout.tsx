@@ -17,8 +17,12 @@ export function AppLayout({ children }: { children: ReactNode }) {
   if (!user) return null;
 
   return (
-    <div className="min-h-screen bg-background pb-28">
-      <div className="mx-auto max-w-md">{children}</div>
+    <div className="min-h-screen bg-background">
+      <div className="mx-auto max-w-md">
+        {children}
+        {/* Spacer to prevent content overlap with BottomNav */}
+        <div className="h-40" />
+      </div>
       <BottomNav />
     </div>
   );
