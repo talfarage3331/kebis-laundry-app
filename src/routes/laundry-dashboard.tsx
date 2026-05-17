@@ -23,6 +23,8 @@ interface LaundryOrder {
   user_email: string;
   notes?: string;
   images?: string[];
+  requires_ironing?: boolean;
+  requires_dry_cleaning?: boolean;
 }
 
 function LaundryDashboard() {
@@ -56,7 +58,9 @@ function LaundryDashboard() {
         amount_due: o.amount_due,
         user_email: o.user_email,
         notes: o.notes || localStorage.getItem(`laundry_notes_${o.user_email}`) || localStorage.getItem("laundry_notes") || "כביסה רגילה, נא לתלות חולצות מכופתרות",
-        images: o.images || JSON.parse(localStorage.getItem(`laundry_images_${o.user_email}`) || localStorage.getItem("laundry_images") || "[]")
+        images: o.images || JSON.parse(localStorage.getItem(`laundry_images_${o.user_email}`) || localStorage.getItem("laundry_images") || "[]"),
+        requires_ironing: o.requires_ironing || localStorage.getItem(`laundry_ironing_${o.user_email}`) === "true",
+        requires_dry_cleaning: o.requires_dry_cleaning || localStorage.getItem(`laundry_dry_cleaning_${o.user_email}`) === "true"
       }));
 
       // If we don't have any real active order or if the list is empty, let's create high-fidelity sample orders
@@ -70,7 +74,9 @@ function LaundryDashboard() {
           amount_due: 125,
           user_email: "client_yoav@gmail.com",
           notes: "נא לשטוף בטמפרטורה נמוכה. יש חליפה עדינה מאוד שדורשת ניקוי עדין.",
-          images: []
+          images: [],
+          requires_ironing: false,
+          requires_dry_cleaning: true
         },
         {
           id: "ORD-7643",
@@ -81,7 +87,9 @@ function LaundryDashboard() {
           amount_due: 95,
           user_email: "dan_m@hotmail.com",
           notes: "להפריד בבקשה את המצעים הלבנים משאר הכביסה. תודה!",
-          images: []
+          images: [],
+          requires_ironing: true,
+          requires_dry_cleaning: true
         }
       ];
 
@@ -356,13 +364,44 @@ function LaundryDashboard() {
                     {/* Notes & Comments */}
                     {order.notes && (
                       <div className="space-y-1.5">
-                        <h4 className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                          <MessageSquare className="size-4 text-primary" />
-                          <span>הנחיות כביסה ודגשים:</span>
-                        </h4>
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <h4 className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                            <MessageSquare className="size-4 text-primary" />
+                            <span>הנחיות כביסה ודגשים:</span>
+                          </h4>
+                          {/* Services badges inside header */}
+                          <div className="flex gap-1.5">
+                            {order.requires_ironing && (
+                              <span className="bg-primary/10 text-primary border border-primary/20 text-[10px] font-black px-2.5 py-1 rounded-full flex items-center gap-1 shadow-sm">
+                                גיהוץ 🧺
+                              </span>
+                            )}
+                            {order.requires_dry_cleaning && (
+                              <span className="bg-lime/20 text-lime-foreground border border-lime-foreground/20 text-[10px] font-black px-2.5 py-1 rounded-full flex items-center gap-1 shadow-sm">
+                                ניקוי יבש ✨
+                              </span>
+                            )}
+                          </div>
+                        </div>
                         <p className="text-xs bg-lavender/20 text-muted-foreground p-3 rounded-2xl leading-relaxed border border-lavender-foreground/5">
                           {order.notes}
                         </p>
+                      </div>
+                    )}
+
+                    {/* Requested Services Badges row if no notes */}
+                    {!(order.notes) && (order.requires_ironing || order.requires_dry_cleaning) && (
+                      <div className="flex gap-2 flex-wrap pt-1">
+                        {order.requires_ironing && (
+                          <span className="bg-primary/10 text-primary border border-primary/20 text-[10px] font-black px-2.5 py-1 rounded-full flex items-center gap-1 shadow-sm">
+                            גיהוץ 🧺
+                          </span>
+                        )}
+                        {order.requires_dry_cleaning && (
+                          <span className="bg-lime/20 text-lime-foreground border border-lime-foreground/20 text-[10px] font-black px-2.5 py-1 rounded-full flex items-center gap-1 shadow-sm">
+                            ניקוי יבש ✨
+                          </span>
+                        )}
                       </div>
                     )}
 

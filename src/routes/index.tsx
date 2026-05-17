@@ -53,8 +53,8 @@ function Dashboard() {
       <PickupModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        onSubmit={async (notes, images) => {
-          await createOrder(notes, images);
+        onSubmit={async (notes, images, requiresIroning, requiresDryCleaning) => {
+          await createOrder(notes, images, requiresIroning, requiresDryCleaning);
           setIsModalOpen(false);
           toast.success("הזמנת האיסוף נוצרה בהצלחה!");
         }}
@@ -83,14 +83,25 @@ function EmptyState({ onOpenModal }: { onOpenModal: () => void }) {
 interface PickupModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (notes: string, images: string[]) => Promise<void>;
+  onSubmit: (notes: string, images: string[], requiresIroning: boolean, requiresDryCleaning: boolean) => Promise<void>;
 }
 
 function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
   const [notes, setNotes] = useState("");
   const [images, setImages] = useState<string[]>([]);
+  const [requiresIroning, setRequiresIroning] = useState(false);
+  const [requiresDryCleaning, setRequiresDryCleaning] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setNotes("");
+      setImages([]);
+      setRequiresIroning(false);
+      setRequiresDryCleaning(false);
+    }
+  }, [isOpen]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -119,9 +130,11 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
   const handleSubmit = async () => {
     setIsSubmitting(true);
     try {
-      await onSubmit(notes, images);
+      await onSubmit(notes, images, requiresIroning, requiresDryCleaning);
       setNotes("");
       setImages([]);
+      setRequiresIroning(false);
+      setRequiresDryCleaning(false);
     } catch (e) {
       toast.error("שגיאה ביצירת ההזמנה");
     } finally {
@@ -152,6 +165,32 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
               className="min-h-[100px] rounded-2xl border-muted-foreground/20 focus-visible:ring-primary focus-visible:border-primary text-sm p-4 leading-relaxed text-right"
               dir="rtl"
             />
+          </div>
+
+          {/* Additional Services Section */}
+          <div className="space-y-2">
+            <label className="text-sm font-bold text-foreground block">שירותים נוספים (אופציונלי)</label>
+            <div className="flex gap-3">
+              <label className="flex items-center gap-2 cursor-pointer bg-background border border-muted-foreground/10 px-4 py-3 rounded-2xl hover:bg-muted/40 transition flex-1 justify-center select-none shadow-sm">
+                <input
+                  type="checkbox"
+                  checked={requiresIroning}
+                  onChange={(e) => setRequiresIroning(e.target.checked)}
+                  className="accent-primary size-4 rounded cursor-pointer"
+                />
+                <span className="text-xs font-bold text-foreground">גיהוץ 🧺</span>
+              </label>
+              
+              <label className="flex items-center gap-2 cursor-pointer bg-background border border-muted-foreground/10 px-4 py-3 rounded-2xl hover:bg-muted/40 transition flex-1 justify-center select-none shadow-sm">
+                <input
+                  type="checkbox"
+                  checked={requiresDryCleaning}
+                  onChange={(e) => setRequiresDryCleaning(e.target.checked)}
+                  className="accent-primary size-4 rounded cursor-pointer"
+                />
+                <span className="text-xs font-bold text-foreground">ניקוי יבש ✨</span>
+              </label>
+            </div>
           </div>
 
           <div className="space-y-2">

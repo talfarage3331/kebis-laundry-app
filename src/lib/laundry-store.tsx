@@ -31,8 +31,10 @@ interface Store {
   
   orderNotes: string | null;
   orderImages: string[];
+  requiresIroning: boolean;
+  requiresDryCleaning: boolean;
 
-  createOrder: (notes?: string, images?: string[]) => Promise<void>;
+  createOrder: (notes?: string, images?: string[], requiresIroning?: boolean, requiresDryCleaning?: boolean) => Promise<void>;
   advanceOrder: () => void;
   setDelivery: (m: DeliveryMethod) => void;
   payAndInvoice: () => void;
@@ -65,6 +67,8 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
   const [paymentState, setPaymentState] = useState<PaymentState>("unpaid");
   const [amountDue, setAmountDue] = useState(0);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [requiresIroning, setRequiresIroning] = useState(false);
+  const [requiresDryCleaning, setRequiresDryCleaning] = useState(false);
   const [orderNotes, setOrderNotes] = useState<string | null>(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("laundry_notes");
@@ -146,6 +150,13 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         setPaymentState(data.payment_state as PaymentState);
         setAmountDue(data.amount_due || 0);
 
+        // Fetch optional services with localStorage fallbacks
+        const ironing = (data as any).requires_ironing || localStorage.getItem(`laundry_ironing_${user?.email}`) === "true";
+        setRequiresIroning(!!ironing);
+
+        const dryCleaning = (data as any).requires_dry_cleaning || localStorage.getItem(`laundry_dry_cleaning_${user?.email}`) === "true";
+        setRequiresDryCleaning(!!dryCleaning);
+
         // Dynamic fallback schema: load notes and images by user email prefix
         const dbNotes = (data as any).notes;
         const dbImages = (data as any).images;
@@ -184,9 +195,16 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     setPaymentState("unpaid");
     setAmountDue(0);
     setInvoices([]);
+    setRequiresIroning(false);
+    setRequiresDryCleaning(false);
   }, []);
 
-  const createOrder = useCallback(async (notes?: string, images?: string[]) => {
+  const createOrder = useCallback(async (
+    notes?: string, 
+    images?: string[], 
+    ironing: boolean = false, 
+    dryCleaning: boolean = false
+  ) => {
     const newState: OrderState = "picked_up";
     const amount = 0; // Dynamic pricing starts at 0
     
@@ -194,6 +212,13 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     setDeliveryMethod("none");
     setPaymentState("unpaid");
     setAmountDue(amount);
+    setRequiresIroning(ironing);
+    setRequiresDryCleaning(dryCleaning);
+
+    localStorage.setItem(`laundry_ironing_${user?.email}`, String(ironing));
+    localStorage.setItem(`laundry_dry_cleaning_${user?.email}`, String(dryCleaning));
+    localStorage.setItem("laundry_ironing", String(ironing));
+    localStorage.setItem("laundry_dry_cleaning", String(dryCleaning));
 
     if (notes) {
       setOrderNotes(notes);
@@ -215,14 +240,16 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem(`laundry_images_${user?.email}`);
     }
 
-    // Insert into Supabase
+    // Insert into Supabase with optional requires_ironing and requires_dry_cleaning columns
     const { data: insertedOrder } = await supabase.from('orders').insert([{
       status: newState,
       delivery_method: "none",
       payment_state: "unpaid",
       amount_due: amount,
       total_price: amount, // support both columns for database compatibility
-      user_email: user?.email
+      user_email: user?.email,
+      requires_ironing: ironing,
+      requires_dry_cleaning: dryCleaning
     }]).select();
 
     // Trigger a real-time notification for the Laundry staff (running on separate tabs/browsers locally)
@@ -320,8 +347,12 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     setPaymentState("unpaid");
     setOrderNotes(null);
     setOrderImages([]);
+    setRequiresIroning(false);
+    setRequiresDryCleaning(false);
     localStorage.removeItem("laundry_notes");
     localStorage.removeItem("laundry_images");
+    localStorage.removeItem("laundry_ironing");
+    localStorage.removeItem("laundry_dry_cleaning");
   }, []);
 
   return (
@@ -329,7 +360,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       value={{
         user, loading, login, logout,
         orderState, deliveryMethod, paymentState, amountDue, invoices,
-        orderNotes, orderImages,
+        orderNotes, orderImages, requiresIroning, requiresDryCleaning,
         createOrder, advanceOrder, setDelivery, payAndInvoice, reset,
         refreshActiveOrder,
       }}
