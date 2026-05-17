@@ -145,6 +145,25 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         setDeliveryMethod(data.delivery_method as DeliveryMethod);
         setPaymentState(data.payment_state as PaymentState);
         setAmountDue(data.amount_due || 0);
+
+        // Dynamic fallback schema: load notes and images by user email prefix
+        const dbNotes = (data as any).notes;
+        const dbImages = (data as any).images;
+
+        const notes = dbNotes || localStorage.getItem(`laundry_notes_${user?.email}`) || localStorage.getItem("laundry_notes") || null;
+        setOrderNotes(notes);
+
+        let images: string[] = [];
+        try {
+          if (dbImages) {
+            images = typeof dbImages === 'string' ? JSON.parse(dbImages) : dbImages;
+          } else {
+            images = JSON.parse(localStorage.getItem(`laundry_images_${user?.email}`) || localStorage.getItem("laundry_images") || "[]");
+          }
+        } catch (e) {
+          console.error("Error parsing images:", e);
+        }
+        setOrderImages(images);
       }
     } catch (err) {
       console.error("Error refreshing active order:", err);

@@ -40,13 +40,6 @@ function Dashboard() {
             </button>
           </div>
         )}
-        <Link
-          to="/tracking"
-          className="mt-6 flex items-center justify-between rounded-3xl bg-lavender text-lavender-foreground px-5 py-5 font-semibold shadow-sm active:scale-[0.98] transition"
-        >
-          <span>ההזמנות שלי / היסטוריה</span>
-          <ChevronLeft className="size-5" strokeWidth={2} />
-        </Link>
         {orderState !== "none" && (
           <button
             onClick={() => navigate({ to: "/delivery" })}

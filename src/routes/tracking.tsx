@@ -18,7 +18,7 @@ function Tracking() {
 
   return (
     <AppLayout>
-      <AppHeader subtitle="ההזמנות שלי / היסטוריה" />
+      <AppHeader subtitle="מעקב" />
       <main className="px-5 mt-6 space-y-4">
         {orderState === "none" ? (
           <div className="rounded-3xl bg-lavender text-lavender-foreground p-8 text-center">
