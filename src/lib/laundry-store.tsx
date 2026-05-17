@@ -27,8 +27,11 @@ interface Store {
   paymentState: PaymentState;
   amountDue: number;
   invoices: Invoice[];
+  
+  orderNotes: string | null;
+  orderImages: string[];
 
-  createOrder: () => void;
+  createOrder: (notes?: string, images?: string[]) => Promise<void>;
   advanceOrder: () => void;
   setDelivery: (m: DeliveryMethod) => void;
   payAndInvoice: () => void;
@@ -60,6 +63,22 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
   const [paymentState, setPaymentState] = useState<PaymentState>("unpaid");
   const [amountDue, setAmountDue] = useState(0);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [orderNotes, setOrderNotes] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("laundry_notes");
+    }
+    return null;
+  });
+  const [orderImages, setOrderImages] = useState<string[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        return JSON.parse(localStorage.getItem("laundry_images") || "[]");
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  });
 
   // Auth listener
   useEffect(() => {
@@ -122,7 +141,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     setInvoices([]);
   }, []);
 
-  const createOrder = useCallback(async () => {
+  const createOrder = useCallback(async (notes?: string, images?: string[]) => {
     const newState: OrderState = "picked_up";
     const amount = 125;
     
@@ -130,6 +149,22 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     setDeliveryMethod("none");
     setPaymentState("unpaid");
     setAmountDue(amount);
+
+    if (notes) {
+      setOrderNotes(notes);
+      localStorage.setItem("laundry_notes", notes);
+    } else {
+      setOrderNotes(null);
+      localStorage.removeItem("laundry_notes");
+    }
+
+    if (images && images.length > 0) {
+      setOrderImages(images);
+      localStorage.setItem("laundry_images", JSON.stringify(images));
+    } else {
+      setOrderImages([]);
+      localStorage.removeItem("laundry_images");
+    }
 
     await supabase.from('orders').insert([{
       status: newState,
@@ -217,6 +252,10 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     setOrderState("none");
     setDeliveryMethod("none");
     setPaymentState("unpaid");
+    setOrderNotes(null);
+    setOrderImages([]);
+    localStorage.removeItem("laundry_notes");
+    localStorage.removeItem("laundry_images");
   }, []);
 
   return (
@@ -224,6 +263,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       value={{
         user, loading, login, logout,
         orderState, deliveryMethod, paymentState, amountDue, invoices,
+        orderNotes, orderImages,
         createOrder, advanceOrder, setDelivery, payAndInvoice, reset,
       }}
     >
