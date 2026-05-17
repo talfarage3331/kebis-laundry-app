@@ -18,6 +18,7 @@ export interface User {
 
 interface Store {
   user: User | null;
+  loading: boolean;
   login: (u: User) => void;
   logout: () => void;
 
@@ -53,6 +54,7 @@ export const stateLabel: Record<OrderState, string> = {
 
 export function LaundryProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
   const [orderState, setOrderState] = useState<OrderState>("none");
   const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>("none");
   const [paymentState, setPaymentState] = useState<PaymentState>("unpaid");
@@ -68,6 +70,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
           email: session.user.email || ""
         });
       }
+      setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -79,6 +82,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       } else {
         setUser(null);
       }
+      setLoading(false);
     });
 
     return () => subscription.unsubscribe();
@@ -218,7 +222,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider
       value={{
-        user, login, logout,
+        user, loading, login, logout,
         orderState, deliveryMethod, paymentState, amountDue, invoices,
         createOrder, advanceOrder, setDelivery, payAndInvoice, reset,
       }}
