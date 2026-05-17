@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
-    "postbuild": "node -e \"fs.cpSync('dist/server', 'dist/client/_worker.js', {recursive: true}); ['dist/client/wrangler.json', 'dist/client/_worker.js/wrangler.json', 'dist/server/wrangler.json'].forEach(f => fs.rmSync(f, {force: true})); fs.writeFileSync('dist/client/_worker.js/index.js', 'export { default } from \\\"./server.js\\\";\\n')\"",
+    "postbuild": "node scripts/postbuild.cjs",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
