@@ -3,7 +3,7 @@ import { useState, useRef, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { AppHeader } from "@/components/AppHeader";
 import { useLaundry, ORDER_STEPS, stateLabel } from "@/lib/laundry-store";
-import { ShoppingBasket, ChevronLeft, Check, Camera, Trash2, Sparkles, Loader2 } from "lucide-react";
+import { ShoppingBasket, ChevronLeft, Check, Camera, Trash2, Sparkles, Loader2, Shirt } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
@@ -168,28 +168,58 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
           </div>
 
           {/* Additional Services Section */}
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             <label className="text-sm font-bold text-foreground block">שירותים נוספים (אופציונלי)</label>
-            <div className="flex gap-3">
-              <label className="flex items-center gap-2 cursor-pointer bg-background border border-muted-foreground/10 px-4 py-3 rounded-2xl hover:bg-muted/40 transition flex-1 justify-center select-none shadow-sm">
-                <input
-                  type="checkbox"
-                  checked={requiresIroning}
-                  onChange={(e) => setRequiresIroning(e.target.checked)}
-                  className="accent-primary size-4 rounded cursor-pointer"
-                />
-                <span className="text-xs font-bold text-foreground">גיהוץ 🧺</span>
-              </label>
-              
-              <label className="flex items-center gap-2 cursor-pointer bg-background border border-muted-foreground/10 px-4 py-3 rounded-2xl hover:bg-muted/40 transition flex-1 justify-center select-none shadow-sm">
-                <input
-                  type="checkbox"
-                  checked={requiresDryCleaning}
-                  onChange={(e) => setRequiresDryCleaning(e.target.checked)}
-                  className="accent-primary size-4 rounded cursor-pointer"
-                />
-                <span className="text-xs font-bold text-foreground">ניקוי יבש ✨</span>
-              </label>
+            <div className="grid grid-cols-2 gap-4 text-right dir-rtl" dir="rtl">
+              {/* Ironing Card */}
+              <div
+                onClick={() => setRequiresIroning(!requiresIroning)}
+                className={`relative overflow-hidden rounded-3xl p-4 flex flex-col items-center justify-center gap-3 text-center cursor-pointer transition-all duration-300 border select-none ${
+                  requiresIroning
+                    ? "border-2 border-primary bg-primary/10 shadow-[0_8px_30px_rgba(124,58,237,0.15)] scale-[1.02]"
+                    : "border-muted-foreground/10 bg-background/50 hover:bg-muted/30 hover:shadow-sm"
+                }`}
+              >
+                {requiresIroning && (
+                  <span className="absolute top-2.5 right-2.5 size-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-sm animate-in scale-in duration-200">
+                    <Check className="size-3 stroke-[3]" />
+                  </span>
+                )}
+                <div className={`size-12 rounded-2xl flex items-center justify-center transition-all ${
+                  requiresIroning ? "bg-primary/20 scale-110" : "bg-muted/60"
+                }`}>
+                  <Shirt className={`size-6 transition-colors ${requiresIroning ? "text-primary animate-pulse" : "text-muted-foreground"}`} />
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <span className={`text-sm font-black transition-colors ${requiresIroning ? "text-primary" : "text-foreground"}`}>גיהוץ 🧺</span>
+                  <span className="text-[10px] font-medium text-muted-foreground leading-normal">כולל קיפול ריחני</span>
+                </div>
+              </div>
+
+              {/* Dry Cleaning Card */}
+              <div
+                onClick={() => setRequiresDryCleaning(!requiresDryCleaning)}
+                className={`relative overflow-hidden rounded-3xl p-4 flex flex-col items-center justify-center gap-3 text-center cursor-pointer transition-all duration-300 border select-none ${
+                  requiresDryCleaning
+                    ? "border-2 border-primary bg-primary/10 shadow-[0_8px_30px_rgba(124,58,237,0.15)] scale-[1.02]"
+                    : "border-muted-foreground/10 bg-background/50 hover:bg-muted/30 hover:shadow-sm"
+                }`}
+              >
+                {requiresDryCleaning && (
+                  <span className="absolute top-2.5 right-2.5 size-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-sm animate-in scale-in duration-200">
+                    <Check className="size-3 stroke-[3]" />
+                  </span>
+                )}
+                <div className={`size-12 rounded-2xl flex items-center justify-center transition-all ${
+                  requiresDryCleaning ? "bg-primary/20 scale-110" : "bg-muted/60"
+                }`}>
+                  <Sparkles className={`size-6 transition-colors ${requiresDryCleaning ? "text-primary" : "text-muted-foreground"}`} />
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <span className={`text-sm font-black transition-colors ${requiresDryCleaning ? "text-primary" : "text-foreground"}`}>ניקוי יבש ✨</span>
+                  <span className="text-[10px] font-medium text-muted-foreground leading-normal">הסרת כתמים וטיפול עדין</span>
+                </div>
+              </div>
             </div>
           </div>
 
