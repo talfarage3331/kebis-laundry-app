@@ -32,6 +32,7 @@ function LaundryDashboard() {
   const [orders, setOrders] = useState<LaundryOrder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<string>("active");
+  const [typedPrices, setTypedPrices] = useState<Record<string, string>>({});
 
   const fetchOrders = async () => {
     setIsLoading(true);
@@ -172,6 +173,40 @@ function LaundryDashboard() {
       fetchOrders();
     } catch (err: any) {
       toast.error("שגיאה בעדכון הסטטוס: " + err.message);
+    }
+  };
+
+  const updateOrderPrice = async (orderId: string, newPrice: number) => {
+    if (orderId.startsWith("ORD-")) {
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, amount_due: newPrice } : o));
+      toast.success("מחיר ההזמנה הסימולטיבית עודכן בהצלחה!");
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .update({ amount_due: newPrice, total_price: newPrice })
+        .eq("id", orderId);
+
+      if (error) throw error;
+      
+      toast.success("מחיר ההזמנה עודכן בשרת בהצלחה!");
+      
+      // Emit system-update notification event to trigger dynamic price updates on client screen
+      const newNotification = {
+        id: "price-update-" + orderId + "-" + Date.now(),
+        user_email: "system-update",
+        notes: `מחיר עודכן ל-₪${newPrice}`,
+        timestamp: new Date().toLocaleTimeString("he-IL")
+      };
+      const existing = JSON.parse(localStorage.getItem("laundry_notifications") || "[]");
+      localStorage.setItem("laundry_notifications", JSON.stringify([newNotification, ...existing]));
+      window.dispatchEvent(new Event("storage"));
+
+      fetchOrders();
+    } catch (err: any) {
+      toast.error("שגיאה בעדכון המחיר: " + err.message);
     }
   };
 
@@ -347,6 +382,34 @@ function LaundryDashboard() {
                         </div>
                       </div>
                     )}
+
+                    {/* Dynamic Pricing Input Area */}
+                    <div className="space-y-2 pt-2 border-t border-muted-foreground/5 flex items-center justify-between gap-3">
+                      <div className="flex-1">
+                        <label className="text-[11px] font-extrabold text-muted-foreground block mb-1">מחיר סופי להזמנה (₪):</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="number"
+                            value={typedPrices[order.id] !== undefined ? typedPrices[order.id] : String(order.amount_due || "")}
+                            onChange={(e) => setTypedPrices(prev => ({ ...prev, [order.id]: e.target.value }))}
+                            placeholder="הזן סכום לתשלום"
+                            className="bg-background border border-muted-foreground/20 rounded-xl px-3 py-2 text-xs font-bold w-full focus:outline-none focus:ring-2 focus:ring-primary"
+                          />
+                          <button
+                            onClick={() => updateOrderPrice(order.id, Number(typedPrices[order.id] || 0))}
+                            className="bg-primary text-primary-foreground font-bold text-[11px] px-3.5 py-2 rounded-xl transition active:scale-95 whitespace-nowrap"
+                          >
+                            עדכן מחיר
+                          </button>
+                        </div>
+                      </div>
+                      <div className="text-left min-w-[70px]">
+                        <span className="text-[10px] font-bold text-muted-foreground block">מחיר נוכחי</span>
+                        <span className="text-sm font-black text-foreground">
+                          {order.amount_due ? `₪${order.amount_due}` : "טרם נקבע"}
+                        </span>
+                      </div>
+                    </div>
 
                     {/* Action Select Box to transition state */}
                     <div className="space-y-2 pt-2 border-t border-muted-foreground/5">

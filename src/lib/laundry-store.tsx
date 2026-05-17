@@ -37,6 +37,7 @@ interface Store {
   setDelivery: (m: DeliveryMethod) => void;
   payAndInvoice: () => void;
   reset: () => void;
+  refreshActiveOrder: () => Promise<void>;
 }
 
 const Ctx = createContext<Store | null>(null);
@@ -128,11 +129,9 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Fetch initial state from Supabase when user is logged in
-  useEffect(() => {
+  const refreshActiveOrder = useCallback(async () => {
     if (!user) return;
-    
-    async function fetchOrder() {
+    try {
       const { data, error } = await supabase
         .from('orders')
         .select('*')
@@ -145,11 +144,17 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         setOrderState(data.status as OrderState);
         setDeliveryMethod(data.delivery_method as DeliveryMethod);
         setPaymentState(data.payment_state as PaymentState);
-        setAmountDue(data.amount_due);
+        setAmountDue(data.amount_due || 0);
       }
+    } catch (err) {
+      console.error("Error refreshing active order:", err);
     }
-    fetchOrder();
   }, [user]);
+
+  // Fetch initial state from Supabase when user is logged in
+  useEffect(() => {
+    refreshActiveOrder();
+  }, [user, refreshActiveOrder]);
 
   const login = useCallback((u: User) => setUser(u), []);
   const logout = useCallback(async () => {
@@ -164,7 +169,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
 
   const createOrder = useCallback(async (notes?: string, images?: string[]) => {
     const newState: OrderState = "picked_up";
-    const amount = 125;
+    const amount = 0; // Dynamic pricing starts at 0
     
     setOrderState(newState);
     setDeliveryMethod("none");
@@ -197,6 +202,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       delivery_method: "none",
       payment_state: "unpaid",
       amount_due: amount,
+      total_price: amount, // support both columns for database compatibility
       user_email: user?.email
     }]).select();
 
@@ -306,6 +312,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         orderState, deliveryMethod, paymentState, amountDue, invoices,
         orderNotes, orderImages,
         createOrder, advanceOrder, setDelivery, payAndInvoice, reset,
+        refreshActiveOrder,
       }}
     >
       {children}
