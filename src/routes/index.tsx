@@ -24,7 +24,21 @@ function Dashboard() {
         {orderState === "none" ? (
           <EmptyState onOpenModal={() => setIsModalOpen(true)} />
         ) : (
-          <ActiveOrder />
+          <div className="bg-lavender/40 border border-lavender-foreground/10 rounded-3xl p-6 text-center space-y-4">
+            <div className="size-16 bg-lime rounded-full grid place-items-center mx-auto shadow-sm">
+              <ShoppingBasket className="size-8 text-lime-foreground animate-pulse" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-base font-extrabold text-foreground">יש לך כביסה בטיפול!</h3>
+              <p className="text-xs text-muted-foreground leading-relaxed px-4">הזמנתך התקבלה בהצלחה ונמצאת כעת בשלבי טיפול. תוכל לעקוב אחר ההתקדמות ולבצע תשלום במסך המעקב.</p>
+            </div>
+            <button
+              onClick={() => navigate({ to: "/tracking" })}
+              className="mt-2 w-full rounded-2xl bg-primary text-primary-foreground py-3 text-sm font-semibold hover:shadow-lg active:scale-95 transition"
+            >
+              עבור למסך מעקב הזמנה
+            </button>
+          </div>
         )}
         <Link
           to="/tracking"
@@ -69,90 +83,6 @@ function EmptyState({ onOpenModal }: { onOpenModal: () => void }) {
         </span>
       </button>
       <p className="text-sm text-muted-foreground mt-1">לחיצה אחת ואנחנו בדרך אליך</p>
-    </div>
-  );
-}
-
-function ActiveOrder() {
-  const { orderState, advanceOrder, orderNotes, orderImages } = useLaundry();
-  const currentIdx = ORDER_STEPS.findIndex((s) => s.key === orderState);
-
-  return (
-    <div className="space-y-4">
-      <div className="rounded-3xl bg-lime text-lime-foreground p-5 shadow-[0_20px_50px_-15px_oklch(0.92_0.18_125/0.5)]">
-        <p className="text-sm font-semibold opacity-70">סטטוס נוכחי</p>
-        <h2 className="text-2xl font-extrabold mt-1">{stateLabel[orderState]}</h2>
-
-        <div className="mt-6 flex items-center justify-between">
-          {ORDER_STEPS.map((s, i) => {
-            const done = i <= currentIdx;
-            return (
-              <div key={s.key} className="flex-1 flex flex-col items-center relative">
-                {i > 0 && (
-                  <div
-                    className={`absolute right-1/2 top-3 h-1 w-full ${
-                      i <= currentIdx ? "bg-primary" : "bg-lime-foreground/15"
-                    }`}
-                  />
-                )}
-                <div
-                  className={`relative z-10 size-7 rounded-full grid place-items-center text-xs font-bold ${
-                    done ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground border-2 border-lime-foreground/20"
-                  }`}
-                >
-                  {done ? <Check className="size-4" strokeWidth={3} /> : i + 1}
-                </div>
-                <span className="mt-2 text-[11px] font-semibold text-center">{s.label}</span>
-              </div>
-            );
-          })}
-        </div>
-
-        {orderState === "in_progress" && (
-          <p className="mt-5 text-sm font-semibold bg-primary/10 rounded-2xl px-4 py-2.5">
-            זמן מוכנות משוער: 14:30
-          </p>
-        )}
-
-        <button
-          onClick={advanceOrder}
-          disabled={orderState === "completed"}
-          className="mt-4 w-full rounded-2xl bg-primary text-primary-foreground py-3 text-sm font-semibold disabled:opacity-50"
-        >
-          {orderState === "completed" ? "ההזמנה הושלמה" : "קדם סטטוס (דמו)"}
-        </button>
-      </div>
-
-      {(orderNotes || (orderImages && orderImages.length > 0)) && (
-        <div className="rounded-3xl bg-lavender text-lavender-foreground p-5 space-y-4 shadow-sm border border-lavender-foreground/5 text-right" dir="rtl">
-          {orderNotes && (
-            <div>
-              <h3 className="font-extrabold text-sm mb-1 text-foreground">דגשים מיוחדים לכביסה:</h3>
-              <p className="text-sm opacity-90 leading-relaxed text-muted-foreground">{orderNotes}</p>
-            </div>
-          )}
-          
-          {orderImages && orderImages.length > 0 && (
-            <div>
-              <h3 className="font-extrabold text-sm mb-2 text-foreground">תמונות שצורפו:</h3>
-              <div className="flex gap-2 flex-wrap">
-                {orderImages.map((img, idx) => (
-                  <div key={idx} className="relative size-16 rounded-2xl overflow-hidden border-2 border-background shadow-sm hover:scale-105 transition-transform cursor-pointer">
-                    <img
-                      src={img}
-                      alt="דגש מיוחד"
-                      className="size-full object-cover"
-                      onClick={() => {
-                        toast.info("תמונה מצורפת לכביסה");
-                      }}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
