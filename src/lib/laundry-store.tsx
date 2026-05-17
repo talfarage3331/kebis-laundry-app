@@ -174,26 +174,46 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     if (notes) {
       setOrderNotes(notes);
       localStorage.setItem("laundry_notes", notes);
+      localStorage.setItem(`laundry_notes_${user?.email}`, notes);
     } else {
       setOrderNotes(null);
       localStorage.removeItem("laundry_notes");
+      localStorage.removeItem(`laundry_notes_${user?.email}`);
     }
 
     if (images && images.length > 0) {
       setOrderImages(images);
       localStorage.setItem("laundry_images", JSON.stringify(images));
+      localStorage.setItem(`laundry_images_${user?.email}`, JSON.stringify(images));
     } else {
       setOrderImages([]);
       localStorage.removeItem("laundry_images");
+      localStorage.removeItem(`laundry_images_${user?.email}`);
     }
 
-    await supabase.from('orders').insert([{
+    // Insert into Supabase
+    const { data: insertedOrder } = await supabase.from('orders').insert([{
       status: newState,
       delivery_method: "none",
       payment_state: "unpaid",
       amount_due: amount,
       user_email: user?.email
-    }]);
+    }]).select();
+
+    // Trigger a real-time notification for the Laundry staff (running on separate tabs/browsers locally)
+    const newNotification = {
+      id: insertedOrder?.[0]?.id || String(Math.floor(Math.random() * 100000)),
+      user_email: user?.email || "לקוח",
+      notes: notes || "כביסה רגילה",
+      images: images || [],
+      timestamp: new Date().toLocaleTimeString("he-IL")
+    };
+    
+    const existingNotifications = JSON.parse(localStorage.getItem("laundry_notifications") || "[]");
+    localStorage.setItem("laundry_notifications", JSON.stringify([newNotification, ...existingNotifications]));
+    
+    // Dispatch standard storage event to trigger real-time UI reaction
+    window.dispatchEvent(new Event("storage"));
   }, [user]);
 
   const advanceOrder = useCallback(async () => {

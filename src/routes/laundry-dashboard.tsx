@@ -54,8 +54,8 @@ function LaundryDashboard() {
         payment_state: o.payment_state,
         amount_due: o.amount_due,
         user_email: o.user_email,
-        notes: o.notes || (o.user_email === "talfarage3331@gmail.com" ? localStorage.getItem("laundry_notes") : "") || "כביסה רגילה, נא לתלות חולצות מכופתרות",
-        images: o.images || (o.user_email === "talfarage3331@gmail.com" ? JSON.parse(localStorage.getItem("laundry_images") || "[]") : [])
+        notes: o.notes || localStorage.getItem(`laundry_notes_${o.user_email}`) || localStorage.getItem("laundry_notes") || "כביסה רגילה, נא לתלות חולצות מכופתרות",
+        images: o.images || JSON.parse(localStorage.getItem(`laundry_images_${o.user_email}`) || localStorage.getItem("laundry_images") || "[]")
       }));
 
       // If we don't have any real active order or if the list is empty, let's create high-fidelity sample orders
@@ -94,6 +94,62 @@ function LaundryDashboard() {
 
   useEffect(() => {
     fetchOrders();
+
+    const handleStorageChange = () => {
+      const notifications = JSON.parse(localStorage.getItem("laundry_notifications") || "[]");
+      if (notifications.length > 0) {
+        const latest = notifications[0];
+        
+        // Prevent duplicate toast sounds for the same notification ID
+        const seenId = sessionStorage.getItem("last_notified_id");
+        if (seenId !== latest.id) {
+          sessionStorage.setItem("last_notified_id", latest.id);
+          
+          toast.info(`🔔 הזמנה חדשה התקבלה מ-${latest.user_email}!`, {
+            description: latest.notes,
+            action: {
+              label: "הצג הזמנה",
+              onClick: () => fetchOrders()
+            }
+          });
+
+          // Play soft synthesized dual-tone notification chime (D5 -> A5 chord)
+          try {
+            const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const osc1 = audioCtx.createOscillator();
+            const gain1 = audioCtx.createGain();
+            osc1.connect(gain1);
+            gain1.connect(audioCtx.destination);
+            osc1.type = "sine";
+            osc1.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5
+            gain1.gain.setValueAtTime(0.08, audioCtx.currentTime);
+            gain1.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.35);
+            osc1.start();
+            osc1.stop(audioCtx.currentTime + 0.35);
+
+            setTimeout(() => {
+              const osc2 = audioCtx.createOscillator();
+              const gain2 = audioCtx.createGain();
+              osc2.connect(gain2);
+              gain2.connect(audioCtx.destination);
+              osc2.type = "sine";
+              osc2.frequency.setValueAtTime(880, audioCtx.currentTime); // A5
+              gain2.gain.setValueAtTime(0.08, audioCtx.currentTime);
+              gain2.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.45);
+              osc2.start();
+              osc2.stop(audioCtx.currentTime + 0.45);
+            }, 120);
+          } catch (e) {
+            console.log("Audio auto-play blocked by browser sandbox");
+          }
+
+          fetchOrders();
+        }
+      }
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
   const updateOrderStatus = async (orderId: string, newStatus: "picked_up" | "in_progress" | "ready" | "completed") => {
