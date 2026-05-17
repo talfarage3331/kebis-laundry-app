@@ -26,3 +26,14 @@ const cleanConfig = {
     // File may not exist, that's fine
   }
 });
+
+// 3. Generate _routes.json so Cloudflare Pages serves static assets correctly
+// and doesn't route them through the SSR worker (which returns 404 for them).
+const routesConfig = {
+  version: 1,
+  include: ["/*"],
+  exclude: ["/assets/*", "/favicon.ico"]
+};
+fs.writeFileSync('dist/client/_routes.json', JSON.stringify(routesConfig, null, 2));
+console.log('Created dist/client/_routes.json for static asset routing');
+
