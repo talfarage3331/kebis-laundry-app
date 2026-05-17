@@ -9,8 +9,29 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
 
   useEffect(() => {
-    if (!loading && !user && !["/login", "/signup"].includes(pathname)) {
-      navigate({ to: "/login" });
+    if (loading) return;
+
+    if (!user) {
+      if (!["/login", "/signup"].includes(pathname)) {
+        navigate({ to: "/login" });
+      }
+      return;
+    }
+
+    // Role-Based Access Control Redirection
+    if (user.role === "admin") {
+      if (pathname !== "/admin" && !pathname.startsWith("/admin/")) {
+        navigate({ to: "/admin" });
+      }
+    } else if (user.role === "laundry") {
+      if (pathname !== "/laundry-dashboard") {
+        navigate({ to: "/laundry-dashboard" });
+      }
+    } else {
+      // customer
+      if (pathname === "/admin" || pathname.startsWith("/admin/") || pathname === "/laundry-dashboard") {
+        navigate({ to: "/" });
+      }
     }
   }, [user, loading, pathname, navigate]);
 
@@ -24,14 +45,16 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   if (!user) return null;
 
+  const isSpecialDashboard = ["/admin", "/laundry-dashboard"].includes(pathname) || user.role === "admin" || user.role === "laundry";
+
   return (
     <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-md">
         {children}
-        {/* Spacer to prevent content overlap with BottomNav */}
-        <div className="h-40" />
+        {/* Spacer to prevent content overlap with BottomNav if visible */}
+        {!isSpecialDashboard && <div className="h-40" />}
       </div>
-      <BottomNav />
+      {!isSpecialDashboard && <BottomNav />}
     </div>
   );
 }

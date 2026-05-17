@@ -14,7 +14,9 @@ import { Route as SignupRouteImport } from './routes/signup'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as PaymentsRouteImport } from './routes/payments'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as LaundryDashboardRouteImport } from './routes/laundry-dashboard'
 import { Route as DeliveryRouteImport } from './routes/delivery'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 
 const TrackingRoute = TrackingRouteImport.update({
@@ -42,9 +44,19 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LaundryDashboardRoute = LaundryDashboardRouteImport.update({
+  id: '/laundry-dashboard',
+  path: '/laundry-dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DeliveryRoute = DeliveryRouteImport.update({
   id: '/delivery',
   path: '/delivery',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -55,7 +67,9 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/delivery': typeof DeliveryRoute
+  '/laundry-dashboard': typeof LaundryDashboardRoute
   '/login': typeof LoginRoute
   '/payments': typeof PaymentsRoute
   '/profile': typeof ProfileRoute
@@ -64,7 +78,9 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/delivery': typeof DeliveryRoute
+  '/laundry-dashboard': typeof LaundryDashboardRoute
   '/login': typeof LoginRoute
   '/payments': typeof PaymentsRoute
   '/profile': typeof ProfileRoute
@@ -74,7 +90,9 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/delivery': typeof DeliveryRoute
+  '/laundry-dashboard': typeof LaundryDashboardRoute
   '/login': typeof LoginRoute
   '/payments': typeof PaymentsRoute
   '/profile': typeof ProfileRoute
@@ -85,7 +103,9 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/admin'
     | '/delivery'
+    | '/laundry-dashboard'
     | '/login'
     | '/payments'
     | '/profile'
@@ -94,7 +114,9 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/admin'
     | '/delivery'
+    | '/laundry-dashboard'
     | '/login'
     | '/payments'
     | '/profile'
@@ -103,7 +125,9 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/admin'
     | '/delivery'
+    | '/laundry-dashboard'
     | '/login'
     | '/payments'
     | '/profile'
@@ -113,7 +137,9 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRoute
   DeliveryRoute: typeof DeliveryRoute
+  LaundryDashboardRoute: typeof LaundryDashboardRoute
   LoginRoute: typeof LoginRoute
   PaymentsRoute: typeof PaymentsRoute
   ProfileRoute: typeof ProfileRoute
@@ -158,11 +184,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/laundry-dashboard': {
+      id: '/laundry-dashboard'
+      path: '/laundry-dashboard'
+      fullPath: '/laundry-dashboard'
+      preLoaderRoute: typeof LaundryDashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/delivery': {
       id: '/delivery'
       path: '/delivery'
       fullPath: '/delivery'
       preLoaderRoute: typeof DeliveryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -177,7 +217,9 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRoute,
   DeliveryRoute: DeliveryRoute,
+  LaundryDashboardRoute: LaundryDashboardRoute,
   LoginRoute: LoginRoute,
   PaymentsRoute: PaymentsRoute,
   ProfileRoute: ProfileRoute,

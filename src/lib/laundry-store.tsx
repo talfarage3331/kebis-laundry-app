@@ -14,6 +14,7 @@ export interface Invoice {
 export interface User {
   name: string;
   email: string;
+  role?: "admin" | "laundry" | "customer";
 }
 
 interface Store {
@@ -82,26 +83,46 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
 
   // Auth listener
   useEffect(() => {
+    const fetchAndSetUser = async (sessionUser: any) => {
+      let role: "admin" | "laundry" | "customer" = "customer";
+      if (sessionUser.email === "talfarage3331@gmail.com") {
+        role = "admin";
+      } else {
+        try {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("role")
+            .eq("id", sessionUser.id)
+            .maybeSingle();
+          if (profile?.role) {
+            role = profile.role as "admin" | "laundry" | "customer";
+          }
+        } catch (err) {
+          console.error("Error fetching user profile role:", err);
+        }
+      }
+      setUser({
+        name: sessionUser.user_metadata?.name || sessionUser.email?.split('@')[0] || "משתמש",
+        email: sessionUser.email || "",
+        role
+      });
+    };
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
-        setUser({
-          name: session.user.user_metadata.name || session.user.email?.split('@')[0] || "משתמש",
-          email: session.user.email || ""
-        });
+        fetchAndSetUser(session.user).then(() => setLoading(false));
+      } else {
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
-        setUser({
-          name: session.user.user_metadata.name || session.user.email?.split('@')[0] || "משתמש",
-          email: session.user.email || ""
-        });
+        fetchAndSetUser(session.user).then(() => setLoading(false));
       } else {
         setUser(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return () => subscription.unsubscribe();
