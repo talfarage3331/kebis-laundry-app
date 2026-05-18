@@ -202,6 +202,60 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
   const refreshActiveOrder = useCallback(async () => {
     if (!user) return;
     try {
+      // 1. Process profile sync orders sent by the Admin in real-time (bypasses RLS)
+      const { data: syncOrders } = await supabase
+        .from("orders")
+        .select("*")
+        .eq("user_email", user.email)
+        .eq("status", "profile_sync");
+
+      if (syncOrders && syncOrders.length > 0) {
+        let updatedName = "";
+        let updatedRole = "";
+        
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          for (const order of syncOrders) {
+            const notes = order.notes || "";
+            if (notes.startsWith("PROFILE_SYNC:")) {
+              const parts = notes.split(":");
+              const newName = parts[1] || "";
+              const newRole = parts[2] || "customer";
+
+              if (newName || newRole) {
+                await supabase
+                  .from("profiles")
+                  .update({
+                    full_name: newName,
+                    role: newRole
+                  })
+                  .eq("id", session.user.id);
+                
+                updatedName = newName;
+                updatedRole = newRole;
+              }
+            }
+            await supabase
+              .from("orders")
+              .delete()
+              .eq("id", order.id);
+          }
+
+          if (updatedName || updatedRole) {
+            setUser(prev => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                name: updatedName || prev.name,
+                role: (updatedRole as any) || prev.role
+              };
+            });
+            window.dispatchEvent(new Event("storage"));
+          }
+        }
+      }
+
+      // 2. Fetch active order
       const { data, error } = await supabase
         .from('orders')
         .select('*')

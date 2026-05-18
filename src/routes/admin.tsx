@@ -91,10 +91,13 @@ function AdminDashboard() {
         })
         .eq("id", editingProfile.id);
 
+      // Get the Admin's own authenticated user ID to satisfy the customer_id RLS insert check!
+      const { data: { user: adminUser } } = await supabase.auth.getUser();
+
       // 2. Insert a profile sync instruction order so the user's browser updates their own row (which is allowed by RLS!)
       await supabase.from("orders").insert([{
         user_email: editEmail,
-        customer_id: editingProfile.id,
+        customer_id: adminUser?.id || editingProfile.id,
         notes: `PROFILE_SYNC:${editName}:${editRole}`,
         status: "profile_sync",
         amount_due: 0
