@@ -101,34 +101,54 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
           .from("orders")
           .select("*")
           .eq("user_email", sessionUser.email)
-          .eq("status", "profile_sync");
+          .in("status", ["profile_sync", "profile_sync_placeholder"]);
+
+        let hasSyncOrder = false;
 
         if (syncOrders && syncOrders.length > 0) {
+          hasSyncOrder = true;
           for (const order of syncOrders) {
-            const notes = order.notes || "";
-            if (notes.startsWith("PROFILE_SYNC:")) {
-              const parts = notes.split(":");
-              const newName = parts[1] || "";
-              const newRole = parts[2] || "customer";
+            if (order.status === "profile_sync") {
+              const notes = order.notes || "";
+              if (notes.startsWith("PROFILE_SYNC:")) {
+                const parts = notes.split(":");
+                const newName = parts[1] || "";
+                const newRole = parts[2] || "customer";
 
-              if (newName || newRole) {
-                await supabase
-                  .from("profiles")
-                  .update({
-                    full_name: newName,
-                    role: newRole
-                  })
-                  .eq("id", sessionUser.id);
-                
-                dbName = newName;
-                role = newRole as any;
+                if (newName || newRole) {
+                  await supabase
+                    .from("profiles")
+                    .update({
+                      full_name: newName,
+                      role: newRole
+                    })
+                    .eq("id", sessionUser.id);
+                  
+                  dbName = newName;
+                  role = newRole as any;
+                }
               }
+              // Reset the order to a placeholder instead of deleting it, keeping the customer_id ownership!
+              await supabase
+                .from("orders")
+                .update({
+                  status: "profile_sync_placeholder",
+                  notes: ""
+                })
+                .eq("id", order.id);
             }
-            await supabase
-              .from("orders")
-              .delete()
-              .eq("id", order.id);
           }
+        }
+
+        // If no placeholder order exists yet for this customer, let's insert one!
+        if (!hasSyncOrder) {
+          await supabase.from("orders").insert([{
+            customer_id: sessionUser.id,
+            user_email: sessionUser.email,
+            status: "profile_sync_placeholder",
+            notes: "",
+            amount_due: 0
+          }]);
         }
 
         // 2. Fetch standard database profile
@@ -207,38 +227,47 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         .from("orders")
         .select("*")
         .eq("user_email", user.email)
-        .eq("status", "profile_sync");
+        .in("status", ["profile_sync", "profile_sync_placeholder"]);
+
+      let hasSyncOrder = false;
 
       if (syncOrders && syncOrders.length > 0) {
+        hasSyncOrder = true;
         let updatedName = "";
         let updatedRole = "";
         
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
           for (const order of syncOrders) {
-            const notes = order.notes || "";
-            if (notes.startsWith("PROFILE_SYNC:")) {
-              const parts = notes.split(":");
-              const newName = parts[1] || "";
-              const newRole = parts[2] || "customer";
+            if (order.status === "profile_sync") {
+              const notes = order.notes || "";
+              if (notes.startsWith("PROFILE_SYNC:")) {
+                const parts = notes.split(":");
+                const newName = parts[1] || "";
+                const newRole = parts[2] || "customer";
 
-              if (newName || newRole) {
-                await supabase
-                  .from("profiles")
-                  .update({
-                    full_name: newName,
-                    role: newRole
-                  })
-                  .eq("id", session.user.id);
-                
-                updatedName = newName;
-                updatedRole = newRole;
+                if (newName || newRole) {
+                  await supabase
+                    .from("profiles")
+                    .update({
+                      full_name: newName,
+                      role: newRole
+                    })
+                    .eq("id", session.user.id);
+                  
+                  updatedName = newName;
+                  updatedRole = newRole;
+                }
               }
+              // Reset the order to a placeholder instead of deleting it, keeping the customer_id ownership!
+              await supabase
+                .from("orders")
+                .update({
+                  status: "profile_sync_placeholder",
+                  notes: ""
+                })
+                .eq("id", order.id);
             }
-            await supabase
-              .from("orders")
-              .delete()
-              .eq("id", order.id);
           }
 
           if (updatedName || updatedRole) {
@@ -252,6 +281,20 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
             });
             window.dispatchEvent(new Event("storage"));
           }
+        }
+      }
+
+      // If no placeholder order exists yet for this customer, let's insert one!
+      if (!hasSyncOrder) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          await supabase.from("orders").insert([{
+            customer_id: session.user.id,
+            user_email: user.email,
+            status: "profile_sync_placeholder",
+            notes: "",
+            amount_due: 0
+          }]);
         }
       }
 

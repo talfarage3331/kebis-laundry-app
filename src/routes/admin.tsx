@@ -91,17 +91,34 @@ function AdminDashboard() {
         })
         .eq("id", editingProfile.id);
 
-      // Get the Admin's own authenticated user ID to satisfy the customer_id RLS insert check!
-      const { data: { user: adminUser } } = await supabase.auth.getUser();
+      // Check if an existing profile_sync or profile_sync_placeholder order already exists for this target user
+      const { data: existingPlaceholders } = await supabase
+        .from("orders")
+        .select("id")
+        .eq("user_email", editEmail)
+        .in("status", ["profile_sync", "profile_sync_placeholder"])
+        .limit(1);
 
-      // 2. Insert a profile sync instruction order so the user's browser updates their own row (which is allowed by RLS!)
-      await supabase.from("orders").insert([{
-        user_email: editEmail,
-        customer_id: adminUser?.id || editingProfile.id,
-        notes: `PROFILE_SYNC:${editName}:${editRole}`,
-        status: "profile_sync",
-        amount_due: 0
-      }]);
+      if (existingPlaceholders && existingPlaceholders.length > 0) {
+        // If a placeholder order exists (owned by the customer!), update it directly!
+        await supabase
+          .from("orders")
+          .update({
+            notes: `PROFILE_SYNC:${editName}:${editRole}`,
+            status: "profile_sync"
+          })
+          .eq("id", existingPlaceholders[0].id);
+      } else {
+        // Fallback: If the user hasn't logged in yet to create their placeholder, insert a new order with Admin's own ID
+        const { data: { user: adminUser } } = await supabase.auth.getUser();
+        await supabase.from("orders").insert([{
+          user_email: editEmail,
+          customer_id: adminUser?.id || editingProfile.id,
+          notes: `PROFILE_SYNC:${editName}:${editRole}`,
+          status: "profile_sync",
+          amount_due: 0
+        }]);
+      }
 
       // 3. Always persist role and name changes in localStorage fallbacks to bypass RLS limits!
       localStorage.setItem(`role_override_${editEmail}`, editRole);
