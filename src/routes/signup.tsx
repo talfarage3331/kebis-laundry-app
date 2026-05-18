@@ -25,7 +25,12 @@ function Signup() {
       email,
       password,
       options: {
-        data: { name }
+        data: { 
+          name,
+          full_name: name, // Lovable default triggers often expect full_name
+          email: email,
+          role: "customer"
+        }
       }
     });
 
