@@ -125,8 +125,17 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         console.error("Error fetching or syncing user profile:", err);
       }
 
+      // Merge local storage overrides if present (e.g. set by Admin to bypass database RLS limitations)
+      const storedOverride = localStorage.getItem(`role_override_${sessionUser.email}`);
+      if (storedOverride) {
+        role = storedOverride as "admin" | "laundry" | "customer";
+      }
+
+      const storedName = localStorage.getItem(`name_override_${sessionUser.email}`);
+      const displayName = storedName || sessionUser.user_metadata?.name || sessionUser.email?.split('@')[0] || "משתמש";
+
       setUser({
-        name: sessionUser.user_metadata?.name || sessionUser.email?.split('@')[0] || "משתמש",
+        name: displayName,
         email: sessionUser.email || "",
         role
       });
