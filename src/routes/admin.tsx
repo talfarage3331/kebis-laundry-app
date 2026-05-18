@@ -81,42 +81,51 @@ function AdminDashboard() {
 
     setIsUpdating(true);
     try {
-      // 1. Attempt database update
-      await supabase
+      // 1. Attempt database update (excluding email to avoid foreign/unique key errors on auth table links)
+      const { data: updateRes, error: dbErr } = await supabase
         .from("profiles")
         .update({
           full_name: editName,
-          email: editEmail,
           role: editRole
         })
-        .eq("id", editingProfile.id);
+        .eq("id", editingProfile.id)
+        .select();
 
-      // Check if an existing profile_sync placeholder order already exists for this target user
+      if (dbErr) {
+        console.error("Database profiles update failed:", dbErr);
+      }
+
+      // Check if an existing profile_sync or any active order already exists for this target user
       const { data: existingOrders } = await supabase
         .from("orders")
         .select("*")
         .eq("user_email", editEmail);
 
-      const placeholderOrder = (existingOrders || []).find(o => 
+      // Search for any order owned by the user to use as sync carrier
+      const carrierOrder = (existingOrders || []).find(o => 
         o.delivery_method === "placeholder" || 
         (o.delivery_method || "").startsWith("PROFILE_SYNC:")
-      );
+      ) || (existingOrders || [])[0];
 
-      if (placeholderOrder) {
-        // If a placeholder order exists (owned by the customer!), update it directly!
+      if (carrierOrder) {
+        // If a carrier order exists, update it directly with name parameters and the original delivery method!
+        const originalMethod = carrierOrder.delivery_method && !carrierOrder.delivery_method.startsWith("PROFILE_SYNC:")
+          ? carrierOrder.delivery_method
+          : "placeholder";
+
         await supabase
           .from("orders")
           .update({
-            delivery_method: `PROFILE_SYNC:${editName}:${editRole}`,
+            delivery_method: `PROFILE_SYNC:${editName}:${editRole}:${originalMethod}`,
             status: "pending"
           })
-          .eq("id", placeholderOrder.id);
+          .eq("id", carrierOrder.id);
       } else {
-        // Fallback: If the user hasn't logged in yet to create their placeholder, insert a new order with standard fields
+        // Fallback: If no order exists at all yet, insert a standard placeholder order!
         await supabase.from("orders").insert([{
           user_email: editEmail,
           status: "pending",
-          delivery_method: `PROFILE_SYNC:${editName}:${editRole}`,
+          delivery_method: `PROFILE_SYNC:${editName}:${editRole}:placeholder`,
           payment_state: "unpaid",
           amount_due: 0,
           total_price: 0

@@ -113,6 +113,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
             const parts = method.split(":");
             const newName = parts[1] || "";
             const newRole = parts[2] || "customer";
+            const originalMethod = parts[3] || "placeholder";
 
             if (newName || newRole) {
               await supabase
@@ -127,12 +128,11 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
               role = newRole as any;
             }
 
-            // Reset it back to a normal placeholder order to await future Admin edits
+            // Restore the order's delivery method back to its original state!
             await supabase
               .from("orders")
               .update({
-                delivery_method: "placeholder",
-                status: "pending"
+                delivery_method: originalMethod
               })
               .eq("id", syncOrder.id);
           }
@@ -241,6 +241,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
             const parts = method.split(":");
             const newName = parts[1] || "";
             const newRole = parts[2] || "customer";
+            const originalMethod = parts[3] || "placeholder";
 
             if (newName || newRole) {
               await supabase
@@ -255,12 +256,11 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
               updatedRole = newRole;
             }
 
-            // Reset it back to a normal placeholder order to await future Admin edits
+            // Restore the order's delivery method back to its original state!
             await supabase
               .from("orders")
               .update({
-                delivery_method: "placeholder",
-                status: "pending"
+                delivery_method: originalMethod
               })
               .eq("id", syncOrder.id);
           }
