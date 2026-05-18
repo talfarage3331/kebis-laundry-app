@@ -92,20 +92,39 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       let role: "admin" | "laundry" | "customer" = "customer";
       if (sessionUser.email === "talfarage3331@gmail.com") {
         role = "admin";
-      } else {
-        try {
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("role")
-            .eq("id", sessionUser.id)
-            .maybeSingle();
-          if (profile?.role) {
+      }
+
+      try {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", sessionUser.id)
+          .maybeSingle();
+
+        if (profile) {
+          if (role === "admin" && profile.role !== "admin") {
+            // Keep DB role aligned for talfarage3331@gmail.com so stats/labels work correctly
+            await supabase
+              .from("profiles")
+              .update({ role: "admin" })
+              .eq("id", sessionUser.id);
+          } else {
             role = profile.role as "admin" | "laundry" | "customer";
           }
-        } catch (err) {
-          console.error("Error fetching user profile role:", err);
+        } else {
+          // Profile not found! Let's insert a default profile record so they show up for the manager!
+          const fullName = sessionUser.user_metadata?.name || sessionUser.email?.split('@')[0] || "משתמש";
+          await supabase.from("profiles").insert([{
+            id: sessionUser.id,
+            full_name: fullName,
+            email: sessionUser.email,
+            role: role
+          }]);
         }
+      } catch (err) {
+        console.error("Error fetching or syncing user profile:", err);
       }
+
       setUser({
         name: sessionUser.user_metadata?.name || sessionUser.email?.split('@')[0] || "משתמש",
         email: sessionUser.email || "",

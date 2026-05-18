@@ -21,17 +21,39 @@ function Signup() {
     if (!name || !email || !password) return toast.error("יש למלא את כל השדות");
     
     setLoading(true);
-    const { error } = await supabase.auth.signUp({
+    const { data: signUpData, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         data: { name }
       }
     });
+
+    if (error) {
+      setLoading(false);
+      return toast.error(error.message);
+    }
+
+    // Explicitly create user profile row to ensure it shows up for the manager instantly
+    if (signUpData?.user) {
+      try {
+        const role = email === "talfarage3331@gmail.com" ? "admin" : "customer";
+        const { error: profileError } = await supabase.from("profiles").upsert({
+          id: signUpData.user.id,
+          full_name: name,
+          email: email,
+          role: role
+        }, { onConflict: 'id' });
+        
+        if (profileError) {
+          console.error("Profile insertion error:", profileError);
+        }
+      } catch (err) {
+        console.error("Direct profile upsert caught error:", err);
+      }
+    }
+
     setLoading(false);
-
-    if (error) return toast.error(error.message);
-
     toast.success("נרשמת בהצלחה");
     navigate({ to: "/" });
   };
