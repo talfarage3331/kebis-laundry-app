@@ -51,7 +51,12 @@ function LaundryDashboard() {
       // If there are no real orders, let's inject a couple of mock orders to make it feel rich and complete!
       // But we will always display the real orders too.
       const realOrders = (data || [])
-        .filter((o: any) => o.status !== "profile_sync")
+        .filter((o: any) => 
+          o.status !== "profile_sync" && 
+          o.status !== "profile_sync_placeholder" && 
+          o.notes !== "__PROFILE_SYNC_PLACEHOLDER__" && 
+          !(o.notes || "").startsWith("PROFILE_SYNC:")
+        )
         .map((o: any) => ({
           id: o.id,
           created_at: o.created_at || new Date().toISOString(),

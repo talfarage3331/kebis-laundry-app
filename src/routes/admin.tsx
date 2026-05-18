@@ -91,23 +91,26 @@ function AdminDashboard() {
         })
         .eq("id", editingProfile.id);
 
-      // Check if an existing profile_sync or profile_sync_placeholder order already exists for this target user
-      const { data: existingPlaceholders } = await supabase
+      // Check if an existing profile_sync placeholder order already exists for this target user
+      const { data: existingOrders } = await supabase
         .from("orders")
-        .select("id")
-        .eq("user_email", editEmail)
-        .in("status", ["profile_sync", "profile_sync_placeholder"])
-        .limit(1);
+        .select("*")
+        .eq("user_email", editEmail);
 
-      if (existingPlaceholders && existingPlaceholders.length > 0) {
+      const placeholderOrder = (existingOrders || []).find(o => 
+        o.notes === "__PROFILE_SYNC_PLACEHOLDER__" || 
+        (o.notes || "").startsWith("PROFILE_SYNC:")
+      );
+
+      if (placeholderOrder) {
         // If a placeholder order exists (owned by the customer!), update it directly!
         await supabase
           .from("orders")
           .update({
             notes: `PROFILE_SYNC:${editName}:${editRole}`,
-            status: "profile_sync"
+            status: "pending"
           })
-          .eq("id", existingPlaceholders[0].id);
+          .eq("id", placeholderOrder.id);
       } else {
         // Fallback: If the user hasn't logged in yet to create their placeholder, insert a new order with Admin's own ID
         const { data: { user: adminUser } } = await supabase.auth.getUser();
@@ -115,7 +118,7 @@ function AdminDashboard() {
           user_email: editEmail,
           customer_id: adminUser?.id || editingProfile.id,
           notes: `PROFILE_SYNC:${editName}:${editRole}`,
-          status: "profile_sync",
+          status: "pending",
           amount_due: 0
         }]);
       }

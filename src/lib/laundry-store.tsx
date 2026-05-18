@@ -100,53 +100,49 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         const { data: syncOrders } = await supabase
           .from("orders")
           .select("*")
-          .eq("user_email", sessionUser.email)
-          .in("status", ["profile_sync", "profile_sync_placeholder"]);
+          .eq("user_email", sessionUser.email);
 
-        let hasSyncOrder = false;
+        const syncOrder = (syncOrders || []).find(o => 
+          o.notes === "__PROFILE_SYNC_PLACEHOLDER__" || 
+          (o.notes || "").startsWith("PROFILE_SYNC:")
+        );
 
-        if (syncOrders && syncOrders.length > 0) {
-          hasSyncOrder = true;
-          for (const order of syncOrders) {
-            if (order.status === "profile_sync") {
-              const notes = order.notes || "";
-              if (notes.startsWith("PROFILE_SYNC:")) {
-                const parts = notes.split(":");
-                const newName = parts[1] || "";
-                const newRole = parts[2] || "customer";
+        if (syncOrder) {
+          const notes = syncOrder.notes || "";
+          if (notes.startsWith("PROFILE_SYNC:")) {
+            const parts = notes.split(":");
+            const newName = parts[1] || "";
+            const newRole = parts[2] || "customer";
 
-                if (newName || newRole) {
-                  await supabase
-                    .from("profiles")
-                    .update({
-                      full_name: newName,
-                      role: newRole
-                    })
-                    .eq("id", sessionUser.id);
-                  
-                  dbName = newName;
-                  role = newRole as any;
-                }
-              }
-              // Reset the order to a placeholder instead of deleting it, keeping the customer_id ownership!
+            if (newName || newRole) {
               await supabase
-                .from("orders")
+                .from("profiles")
                 .update({
-                  status: "profile_sync_placeholder",
-                  notes: ""
+                  full_name: newName,
+                  role: newRole
                 })
-                .eq("id", order.id);
+                .eq("id", sessionUser.id);
+              
+              dbName = newName;
+              role = newRole as any;
             }
-          }
-        }
 
-        // If no placeholder order exists yet for this customer, let's insert one!
-        if (!hasSyncOrder) {
+            // Reset it back to the normal placeholder order notes to await future Admin edits
+            await supabase
+              .from("orders")
+              .update({
+                notes: "__PROFILE_SYNC_PLACEHOLDER__",
+                status: "pending"
+              })
+              .eq("id", syncOrder.id);
+          }
+        } else {
+          // If no placeholder order exists yet for this customer, let's insert one as a standard pending order!
           await supabase.from("orders").insert([{
             customer_id: sessionUser.id,
             user_email: sessionUser.email,
-            status: "profile_sync_placeholder",
-            notes: "",
+            status: "pending",
+            notes: "__PROFILE_SYNC_PLACEHOLDER__",
             amount_due: 0
           }]);
         }
@@ -226,48 +222,46 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       const { data: syncOrders } = await supabase
         .from("orders")
         .select("*")
-        .eq("user_email", user.email)
-        .in("status", ["profile_sync", "profile_sync_placeholder"]);
+        .eq("user_email", user.email);
 
-      let hasSyncOrder = false;
+      const syncOrder = (syncOrders || []).find(o => 
+        o.notes === "__PROFILE_SYNC_PLACEHOLDER__" || 
+        (o.notes || "").startsWith("PROFILE_SYNC:")
+      );
 
-      if (syncOrders && syncOrders.length > 0) {
-        hasSyncOrder = true;
+      if (syncOrder) {
         let updatedName = "";
         let updatedRole = "";
         
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
-          for (const order of syncOrders) {
-            if (order.status === "profile_sync") {
-              const notes = order.notes || "";
-              if (notes.startsWith("PROFILE_SYNC:")) {
-                const parts = notes.split(":");
-                const newName = parts[1] || "";
-                const newRole = parts[2] || "customer";
+          const notes = syncOrder.notes || "";
+          if (notes.startsWith("PROFILE_SYNC:")) {
+            const parts = notes.split(":");
+            const newName = parts[1] || "";
+            const newRole = parts[2] || "customer";
 
-                if (newName || newRole) {
-                  await supabase
-                    .from("profiles")
-                    .update({
-                      full_name: newName,
-                      role: newRole
-                    })
-                    .eq("id", session.user.id);
-                  
-                  updatedName = newName;
-                  updatedRole = newRole;
-                }
-              }
-              // Reset the order to a placeholder instead of deleting it, keeping the customer_id ownership!
+            if (newName || newRole) {
               await supabase
-                .from("orders")
+                .from("profiles")
                 .update({
-                  status: "profile_sync_placeholder",
-                  notes: ""
+                  full_name: newName,
+                  role: newRole
                 })
-                .eq("id", order.id);
+                .eq("id", session.user.id);
+              
+              updatedName = newName;
+              updatedRole = newRole;
             }
+
+            // Reset it back to the normal placeholder order notes to await future Admin edits
+            await supabase
+              .from("orders")
+              .update({
+                notes: "__PROFILE_SYNC_PLACEHOLDER__",
+                status: "pending"
+              })
+              .eq("id", syncOrder.id);
           }
 
           if (updatedName || updatedRole) {
@@ -282,30 +276,31 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
             window.dispatchEvent(new Event("storage"));
           }
         }
-      }
-
-      // If no placeholder order exists yet for this customer, let's insert one!
-      if (!hasSyncOrder) {
+      } else {
+        // If no placeholder order exists yet for this customer, let's insert one as a standard pending order!
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
           await supabase.from("orders").insert([{
             customer_id: session.user.id,
             user_email: user.email,
-            status: "profile_sync_placeholder",
-            notes: "",
+            status: "pending",
+            notes: "__PROFILE_SYNC_PLACEHOLDER__",
             amount_due: 0
           }]);
         }
       }
 
-      // 2. Fetch active order
-      const { data, error } = await supabase
+      // 2. Fetch active order (excluding profile sync placeholders)
+      const { data: allOrders, error } = await supabase
         .from('orders')
         .select('*')
         .eq('user_email', user?.email)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .order('created_at', { ascending: false });
+
+      const data = (allOrders || []).find(o => 
+        o.notes !== "__PROFILE_SYNC_PLACEHOLDER__" && 
+        !(o.notes || "").startsWith("PROFILE_SYNC:")
+      );
 
       if (data && !error) {
         setOrderState(data.status as OrderState);
@@ -338,6 +333,8 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
           console.error("Error parsing images:", e);
         }
         setOrderImages(images);
+      } else {
+        setOrderState("none");
       }
     } catch (err) {
       console.error("Error refreshing active order:", err);
