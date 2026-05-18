@@ -49,19 +49,21 @@ function LaundryDashboard() {
       
       // If there are no real orders, let's inject a couple of mock orders to make it feel rich and complete!
       // But we will always display the real orders too.
-      const realOrders = (data || []).map((o: any) => ({
-        id: o.id,
-        created_at: o.created_at || new Date().toISOString(),
-        status: o.status,
-        delivery_method: o.delivery_method,
-        payment_state: o.payment_state,
-        amount_due: o.amount_due,
-        user_email: o.user_email,
-        notes: o.notes || localStorage.getItem(`laundry_notes_${o.user_email}`) || localStorage.getItem("laundry_notes") || "כביסה רגילה, נא לתלות חולצות מכופתרות",
-        images: o.images || JSON.parse(localStorage.getItem(`laundry_images_${o.user_email}`) || localStorage.getItem("laundry_images") || "[]"),
-        requires_ironing: o.requires_ironing || localStorage.getItem(`laundry_ironing_${o.user_email}`) === "true",
-        requires_dry_cleaning: o.requires_dry_cleaning || localStorage.getItem(`laundry_dry_cleaning_${o.user_email}`) === "true"
-      }));
+      const realOrders = (data || [])
+        .filter((o: any) => o.status !== "profile_sync")
+        .map((o: any) => ({
+          id: o.id,
+          created_at: o.created_at || new Date().toISOString(),
+          status: o.status,
+          delivery_method: o.delivery_method,
+          payment_state: o.payment_state,
+          amount_due: o.amount_due,
+          user_email: o.user_email,
+          notes: o.notes || localStorage.getItem(`laundry_notes_${o.user_email}`) || localStorage.getItem("laundry_notes") || "כביסה רגילה, נא לתלות חולצות מכופתרות",
+          images: o.images || JSON.parse(localStorage.getItem(`laundry_images_${o.user_email}`) || localStorage.getItem("laundry_images") || "[]"),
+          requires_ironing: o.requires_ironing || localStorage.getItem(`laundry_ironing_${o.user_email}`) === "true",
+          requires_dry_cleaning: o.requires_dry_cleaning || localStorage.getItem(`laundry_dry_cleaning_${o.user_email}`) === "true"
+        }));
 
       // If we don't have any real active order or if the list is empty, let's create high-fidelity sample orders
       const mockOrders: LaundryOrder[] = [

@@ -96,6 +96,42 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       }
 
       try {
+        // 1. Process profile sync orders sent by the Admin to update our own profile row (which is allowed by RLS!)
+        const { data: syncOrders } = await supabase
+          .from("orders")
+          .select("*")
+          .eq("user_email", sessionUser.email)
+          .eq("status", "profile_sync");
+
+        if (syncOrders && syncOrders.length > 0) {
+          for (const order of syncOrders) {
+            const notes = order.notes || "";
+            if (notes.startsWith("PROFILE_SYNC:")) {
+              const parts = notes.split(":");
+              const newName = parts[1] || "";
+              const newRole = parts[2] || "customer";
+
+              if (newName || newRole) {
+                await supabase
+                  .from("profiles")
+                  .update({
+                    full_name: newName,
+                    role: newRole
+                  })
+                  .eq("id", sessionUser.id);
+                
+                dbName = newName;
+                role = newRole as any;
+              }
+            }
+            await supabase
+              .from("orders")
+              .delete()
+              .eq("id", order.id);
+          }
+        }
+
+        // 2. Fetch standard database profile
         const { data: profile } = await supabase
           .from("profiles")
           .select("*")
@@ -103,7 +139,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
           .maybeSingle();
 
         if (profile) {
-          dbName = profile.full_name || "";
+          dbName = dbName || profile.full_name || "";
           if (role === "admin" && profile.role !== "admin") {
             // Keep DB role aligned for talfarage3331@gmail.com so stats/labels work correctly
             await supabase
@@ -111,11 +147,11 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
               .update({ role: "admin" })
               .eq("id", sessionUser.id);
           } else {
-            role = profile.role as "admin" | "laundry" | "customer";
+            role = (role === "admin" ? "admin" : profile.role) as "admin" | "laundry" | "customer";
           }
         } else {
           // Profile not found! Let's insert a default profile record so they show up for the manager!
-          const fullName = sessionUser.user_metadata?.name || sessionUser.email?.split('@')[0] || "משתמש";
+          const fullName = dbName || sessionUser.user_metadata?.name || sessionUser.email?.split('@')[0] || "משתמש";
           await supabase.from("profiles").insert([{
             id: sessionUser.id,
             full_name: fullName,

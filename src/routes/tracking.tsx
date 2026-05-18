@@ -143,7 +143,8 @@ function OrderHistorySection({ orderState }: { orderState: string }) {
         .order("created_at", { ascending: false });
 
       if (data && !error) {
-        setHistoryOrders(data);
+        // Filter out background profile sync orders
+        setHistoryOrders(data.filter((o: any) => o.status !== "profile_sync"));
       }
     } catch (err) {
       console.error("Error fetching order history:", err);

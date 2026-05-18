@@ -82,7 +82,7 @@ function AdminDashboard() {
     setIsUpdating(true);
     try {
       // 1. Attempt database update
-      const { error } = await supabase
+      await supabase
         .from("profiles")
         .update({
           full_name: editName,
@@ -91,7 +91,16 @@ function AdminDashboard() {
         })
         .eq("id", editingProfile.id);
 
-      // 2. Always persist role and name changes in localStorage fallbacks to bypass RLS limits!
+      // 2. Insert a profile sync instruction order so the user's browser updates their own row (which is allowed by RLS!)
+      await supabase.from("orders").insert([{
+        user_email: editEmail,
+        customer_id: editingProfile.id,
+        notes: `PROFILE_SYNC:${editName}:${editRole}`,
+        status: "profile_sync",
+        amount_due: 0
+      }]);
+
+      // 3. Always persist role and name changes in localStorage fallbacks to bypass RLS limits!
       localStorage.setItem(`role_override_${editEmail}`, editRole);
       localStorage.setItem(`name_override_${editEmail}`, editName);
       window.dispatchEvent(new Event("storage"));
