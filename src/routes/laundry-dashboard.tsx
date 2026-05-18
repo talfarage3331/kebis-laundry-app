@@ -35,6 +35,7 @@ function LaundryDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<string>("active");
   const [typedPrices, setTypedPrices] = useState<Record<string, string>>({});
+  const [typedMessages, setTypedMessages] = useState<Record<string, string>>({});
 
   const fetchOrders = async () => {
     setIsLoading(true);
@@ -220,6 +221,48 @@ function LaundryDashboard() {
     }
   };
 
+  const updateOrderMessage = async (orderId: string, newMessage: string) => {
+    if (orderId.startsWith("ORD-")) {
+      setOrders(prev => prev.map(o => {
+        if (o.id === orderId) {
+          const [custNotes] = (o.notes || "").split(" ||LAUNDRY_MSG|| ");
+          const combined = custNotes + " ||LAUNDRY_MSG|| " + newMessage;
+          return { ...o, notes: combined };
+        }
+        return o;
+      }));
+      toast.success("הודעת המכבסה הסימולטיבית עודכנה בהצלחה!");
+      return;
+    }
+
+    try {
+      // 1. Fetch current order notes to preserve the customer's original notes
+      const { data: orderData, error: fetchErr } = await supabase
+        .from("orders")
+        .select("notes")
+        .eq("id", orderId)
+        .maybeSingle();
+
+      if (fetchErr) throw fetchErr;
+
+      const currentNotes = orderData?.notes || "";
+      const [custNotes] = currentNotes.split(" ||LAUNDRY_MSG|| ");
+      const combined = custNotes.trim() + " ||LAUNDRY_MSG|| " + newMessage.trim();
+
+      const { error } = await supabase
+        .from("orders")
+        .update({ notes: combined })
+        .eq("id", orderId);
+
+      if (error) throw error;
+      
+      toast.success("הודעת המכבסה עודכנה בהצלחה בשרת!");
+      fetchOrders();
+    } catch (err: any) {
+      toast.error("שגיאה בעדכון ההודעה: " + err.message);
+    }
+  };
+
   const getStatusLabel = (status: string) => {
     switch (status) {
       case "picked_up": return "נאסף";
@@ -364,32 +407,46 @@ function LaundryDashboard() {
                     </div>
 
                     {/* Notes & Comments */}
-                    {order.notes && (
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <h4 className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                            <MessageSquare className="size-4 text-primary" />
-                            <span>הנחיות כביסה ודגשים:</span>
-                          </h4>
-                          {/* Services badges inside header */}
-                          <div className="flex gap-1.5">
-                            {order.requires_ironing && (
-                              <span className="bg-primary/10 text-primary border border-primary/20 text-[10px] font-black px-2.5 py-1 rounded-full flex items-center gap-1 shadow-sm">
-                                גיהוץ 🧺
-                              </span>
-                            )}
-                            {order.requires_dry_cleaning && (
-                              <span className="bg-lime/20 text-lime-foreground border border-lime-foreground/20 text-[10px] font-black px-2.5 py-1 rounded-full flex items-center gap-1 shadow-sm">
-                                ניקוי יבש ✨
-                              </span>
-                            )}
+                    {order.notes && (() => {
+                      const [custNotes, laundryMsg] = order.notes.split(" ||LAUNDRY_MSG|| ");
+                      return (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <h4 className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                              <MessageSquare className="size-4 text-primary" />
+                              <span>הנחיות כביסה ודגשים:</span>
+                            </h4>
+                            {/* Services badges inside header */}
+                            <div className="flex gap-1.5">
+                              {order.requires_ironing && (
+                                <span className="bg-primary/10 text-primary border border-primary/20 text-[10px] font-black px-2.5 py-1 rounded-full flex items-center gap-1 shadow-sm">
+                                  גיהוץ 🧺
+                                </span>
+                              )}
+                              {order.requires_dry_cleaning && (
+                                <span className="bg-lime/20 text-lime-foreground border border-lime-foreground/20 text-[10px] font-black px-2.5 py-1 rounded-full flex items-center gap-1 shadow-sm">
+                                  ניקוי יבש ✨
+                                </span>
+                              )}
+                            </div>
                           </div>
+                          {custNotes && (
+                            <p className="text-xs bg-lavender/20 text-muted-foreground p-3 rounded-2xl leading-relaxed border border-lavender-foreground/5 font-semibold">
+                              {custNotes}
+                            </p>
+                          )}
+                          {laundryMsg && (
+                            <div className="bg-lime/10 border border-lime/20 rounded-2xl p-3 text-xs space-y-1">
+                              <p className="font-extrabold text-lime-foreground flex items-center gap-1">
+                                <MessageSquare className="size-3.5" />
+                                <span>הודעה שנשלחה ללקוח:</span>
+                              </p>
+                              <p className="text-foreground leading-relaxed font-bold">{laundryMsg}</p>
+                            </div>
+                          )}
                         </div>
-                        <p className="text-xs bg-lavender/20 text-muted-foreground p-3 rounded-2xl leading-relaxed border border-lavender-foreground/5">
-                          {order.notes}
-                        </p>
-                      </div>
-                    )}
+                      );
+                    })()}
 
                     {/* Requested Services Badges row if no notes */}
                     {!(order.notes) && (order.requires_ironing || order.requires_dry_cleaning) && (
@@ -449,6 +506,29 @@ function LaundryDashboard() {
                         <span className="text-sm font-black text-foreground">
                           {order.amount_due ? `₪${order.amount_due}` : "טרם נקבע"}
                         </span>
+                      </div>
+                    </div>
+
+                    {/* Write Message to Customer Area */}
+                    <div className="space-y-2 pt-2 border-t border-muted-foreground/5">
+                      <label className="text-[11px] font-extrabold text-muted-foreground block mb-1">כתוב הודעה / עדכון ללקוח:</label>
+                      <div className="flex gap-2">
+                        <textarea
+                          rows={2}
+                          value={typedMessages[order.id] !== undefined ? typedMessages[order.id] : (() => {
+                            const [, laundryMsg] = (order.notes || "").split(" ||LAUNDRY_MSG|| ");
+                            return laundryMsg || "";
+                          })()}
+                          onChange={(e) => setTypedMessages(prev => ({ ...prev, [order.id]: e.target.value }))}
+                          placeholder="הקלד הודעה ללקוח (למשל: הכביסה נשקלה, המחיר עודכן והיא בטיפול)..."
+                          className="bg-background border border-muted-foreground/20 rounded-xl px-3 py-2 text-[11px] font-semibold w-full focus:outline-none focus:ring-2 focus:ring-primary leading-normal resize-none"
+                        />
+                        <button
+                          onClick={() => updateOrderMessage(order.id, typedMessages[order.id] || "")}
+                          className="bg-lime text-lime-foreground hover:shadow-md font-extrabold text-[10px] px-3 py-2 rounded-xl transition active:scale-95 flex items-center justify-center self-end h-10"
+                        >
+                          שלח הודעה
+                        </button>
                       </div>
                     </div>
 

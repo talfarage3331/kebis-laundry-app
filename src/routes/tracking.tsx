@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { AppHeader } from "@/components/AppHeader";
 import { useLaundry, stateLabel, ORDER_STEPS } from "@/lib/laundry-store";
-import { ChevronRight, PackageOpen, Check, History, Loader2 } from "lucide-react";
+import { ChevronRight, PackageOpen, Check, History, Loader2, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 
@@ -67,36 +67,68 @@ function Tracking() {
             </div>
 
             {/* Special Instructions (Notes & Images) Container */}
-            {(orderNotes || (orderImages && orderImages.length > 0)) && (
-              <div className="rounded-3xl bg-lavender text-lavender-foreground p-5 space-y-4 shadow-sm border border-lavender-foreground/5 text-right animate-fade-in" dir="rtl">
-                {orderNotes && (
-                  <div>
-                    <h3 className="font-extrabold text-xs mb-1 text-foreground">דגשים מיוחדים לכביסה:</h3>
-                    <p className="text-xs opacity-90 leading-relaxed text-muted-foreground">{orderNotes}</p>
-                  </div>
-                )}
-                
-                {orderImages && orderImages.length > 0 && (
-                  <div>
-                    <h3 className="font-extrabold text-xs mb-2 text-foreground">תמונות שצורפו:</h3>
-                    <div className="flex gap-2 flex-wrap">
-                      {orderImages.map((img, idx) => (
-                        <div key={idx} className="relative size-14 rounded-2xl overflow-hidden border-2 border-background shadow-sm hover:scale-105 transition-transform cursor-pointer">
-                          <img
-                            src={img}
-                            alt="דגש מיוחד"
-                            className="size-full object-cover"
-                            onClick={() => {
-                              toast.info("תמונה מצורפת לכביסה");
-                            }}
-                          />
+            {(() => {
+              const [custNotes, laundryMsg] = (orderNotes || "").split(" ||LAUNDRY_MSG|| ");
+              const hasNotes = custNotes && custNotes.trim().length > 0;
+              const hasImages = orderImages && orderImages.length > 0;
+              const hasLaundryMsg = laundryMsg && laundryMsg.trim().length > 0;
+
+              if (!hasNotes && !hasImages && !hasLaundryMsg) return null;
+
+              return (
+                <div className="space-y-4 text-right animate-fade-in" dir="rtl">
+                  {/* Customer Notes and Images Card */}
+                  {(hasNotes || hasImages) && (
+                    <div className="rounded-3xl bg-lavender text-lavender-foreground p-5 space-y-4 shadow-sm border border-lavender-foreground/5">
+                      {hasNotes && (
+                        <div>
+                          <h3 className="font-extrabold text-xs mb-1 text-foreground">דגשים מיוחדים לכביסה:</h3>
+                          <p className="text-xs opacity-90 leading-relaxed text-muted-foreground">{custNotes}</p>
                         </div>
-                      ))}
+                      )}
+                      
+                      {hasImages && (
+                        <div>
+                          <h3 className="font-extrabold text-xs mb-2 text-foreground">תמונות שצורפו:</h3>
+                          <div className="flex gap-2 flex-wrap">
+                            {orderImages.map((img, idx) => (
+                              <div key={idx} className="relative size-14 rounded-2xl overflow-hidden border-2 border-background shadow-sm hover:scale-105 transition-transform cursor-pointer">
+                                <img
+                                  src={img}
+                                  alt="דגש מיוחד"
+                                  className="size-full object-cover"
+                                  onClick={() => {
+                                    toast.info("תמונה מצורפת לכביסה");
+                                  }}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                )}
-              </div>
-            )}
+                  )}
+
+                  {/* Beautiful Laundry Message Notification Bubble */}
+                  {hasLaundryMsg && (
+                    <div className="rounded-3xl bg-lime/10 border-2 border-lime/20 text-foreground p-5 space-y-2.5 shadow-md shadow-lime/5 relative overflow-hidden">
+                      <div className="flex items-center gap-2">
+                        <div className="size-8 rounded-full bg-lime/20 grid place-items-center text-lime-foreground">
+                          <MessageSquare className="size-4 animate-pulse text-lime-foreground" />
+                        </div>
+                        <div>
+                          <h3 className="font-extrabold text-xs text-lime-foreground">עדכון והודעה מהמכבסה:</h3>
+                          <span className="text-[9px] font-bold text-muted-foreground">הודעה רשמית מצוות המכבסה</span>
+                        </div>
+                      </div>
+                      <p className="text-xs font-black text-foreground/90 leading-relaxed bg-white/50 p-3 rounded-2xl border border-lime/5">
+                        {laundryMsg}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             <div className="rounded-3xl bg-lavender text-lavender-foreground p-5 space-y-2 text-sm border border-lavender-foreground/5 shadow-sm animate-fade-in">
               <Row label="שיטת מסירה" value={
