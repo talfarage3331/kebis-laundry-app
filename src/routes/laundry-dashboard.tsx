@@ -69,37 +69,7 @@ function LaundryDashboard() {
           requires_dry_cleaning: o.requires_dry_cleaning || localStorage.getItem(`laundry_dry_cleaning_${o.user_email}`) === "true"
         }));
 
-      // If we don't have any real active order or if the list is empty, let's create high-fidelity sample orders
-      const mockOrders: LaundryOrder[] = [
-        {
-          id: "ORD-9821",
-          created_at: new Date(Date.now() - 2 * 3600000).toISOString(),
-          status: "picked_up",
-          delivery_method: "home_delivery",
-          payment_state: "unpaid",
-          amount_due: 125,
-          user_email: "client_yoav@gmail.com",
-          notes: "נא לשטוף בטמפרטורה נמוכה. יש חליפה עדינה מאוד שדורשת ניקוי עדין.",
-          images: [],
-          requires_ironing: false,
-          requires_dry_cleaning: true
-        },
-        {
-          id: "ORD-7643",
-          created_at: new Date(Date.now() - 5 * 3600000).toISOString(),
-          status: "in_progress",
-          delivery_method: "self_pickup",
-          payment_state: "paid",
-          amount_due: 95,
-          user_email: "dan_m@hotmail.com",
-          notes: "להפריד בבקשה את המצעים הלבנים משאר הכביסה. תודה!",
-          images: [],
-          requires_ironing: true,
-          requires_dry_cleaning: true
-        }
-      ];
-
-      setOrders([...realOrders, ...mockOrders]);
+      setOrders(realOrders);
     } catch (err: any) {
       toast.error("שגיאה בטעינת הזמנות: " + err.message);
     } finally {
