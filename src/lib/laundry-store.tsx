@@ -90,6 +90,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const fetchAndSetUser = async (sessionUser: any) => {
       let role: "admin" | "laundry" | "customer" = "customer";
+      let dbName = "";
       if (sessionUser.email === "talfarage3331@gmail.com") {
         role = "admin";
       }
@@ -102,6 +103,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
           .maybeSingle();
 
         if (profile) {
+          dbName = profile.full_name || "";
           if (role === "admin" && profile.role !== "admin") {
             // Keep DB role aligned for talfarage3331@gmail.com so stats/labels work correctly
             await supabase
@@ -132,7 +134,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       }
 
       const storedName = localStorage.getItem(`name_override_${sessionUser.email}`);
-      const displayName = storedName || sessionUser.user_metadata?.name || sessionUser.email?.split('@')[0] || "משתמש";
+      const displayName = storedName || dbName || sessionUser.user_metadata?.name || sessionUser.email?.split('@')[0] || "משתמש";
 
       setUser({
         name: displayName,
