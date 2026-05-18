@@ -103,14 +103,14 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
           .eq("user_email", sessionUser.email);
 
         const syncOrder = (syncOrders || []).find(o => 
-          o.notes === "__PROFILE_SYNC_PLACEHOLDER__" || 
-          (o.notes || "").startsWith("PROFILE_SYNC:")
+          o.delivery_method === "placeholder" || 
+          (o.delivery_method || "").startsWith("PROFILE_SYNC:")
         );
 
         if (syncOrder) {
-          const notes = syncOrder.notes || "";
-          if (notes.startsWith("PROFILE_SYNC:")) {
-            const parts = notes.split(":");
+          const method = syncOrder.delivery_method || "";
+          if (method.startsWith("PROFILE_SYNC:")) {
+            const parts = method.split(":");
             const newName = parts[1] || "";
             const newRole = parts[2] || "customer";
 
@@ -127,11 +127,11 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
               role = newRole as any;
             }
 
-            // Reset it back to the normal placeholder order notes to await future Admin edits
+            // Reset it back to a normal placeholder order to await future Admin edits
             await supabase
               .from("orders")
               .update({
-                notes: "__PROFILE_SYNC_PLACEHOLDER__",
+                delivery_method: "placeholder",
                 status: "pending"
               })
               .eq("id", syncOrder.id);
@@ -139,11 +139,12 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         } else {
           // If no placeholder order exists yet for this customer, let's insert one as a standard pending order!
           await supabase.from("orders").insert([{
-            customer_id: sessionUser.id,
             user_email: sessionUser.email,
             status: "pending",
-            notes: "__PROFILE_SYNC_PLACEHOLDER__",
-            amount_due: 0
+            delivery_method: "placeholder",
+            payment_state: "unpaid",
+            amount_due: 0,
+            total_price: 0
           }]);
         }
 
@@ -225,8 +226,8 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         .eq("user_email", user.email);
 
       const syncOrder = (syncOrders || []).find(o => 
-        o.notes === "__PROFILE_SYNC_PLACEHOLDER__" || 
-        (o.notes || "").startsWith("PROFILE_SYNC:")
+        o.delivery_method === "placeholder" || 
+        (o.delivery_method || "").startsWith("PROFILE_SYNC:")
       );
 
       if (syncOrder) {
@@ -235,9 +236,9 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
-          const notes = syncOrder.notes || "";
-          if (notes.startsWith("PROFILE_SYNC:")) {
-            const parts = notes.split(":");
+          const method = syncOrder.delivery_method || "";
+          if (method.startsWith("PROFILE_SYNC:")) {
+            const parts = method.split(":");
             const newName = parts[1] || "";
             const newRole = parts[2] || "customer";
 
@@ -254,11 +255,11 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
               updatedRole = newRole;
             }
 
-            // Reset it back to the normal placeholder order notes to await future Admin edits
+            // Reset it back to a normal placeholder order to await future Admin edits
             await supabase
               .from("orders")
               .update({
-                notes: "__PROFILE_SYNC_PLACEHOLDER__",
+                delivery_method: "placeholder",
                 status: "pending"
               })
               .eq("id", syncOrder.id);
@@ -281,11 +282,12 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
           await supabase.from("orders").insert([{
-            customer_id: session.user.id,
             user_email: user.email,
             status: "pending",
-            notes: "__PROFILE_SYNC_PLACEHOLDER__",
-            amount_due: 0
+            delivery_method: "placeholder",
+            payment_state: "unpaid",
+            amount_due: 0,
+            total_price: 0
           }]);
         }
       }
@@ -298,8 +300,8 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         .order('created_at', { ascending: false });
 
       const data = (allOrders || []).find(o => 
-        o.notes !== "__PROFILE_SYNC_PLACEHOLDER__" && 
-        !(o.notes || "").startsWith("PROFILE_SYNC:")
+        o.delivery_method !== "placeholder" && 
+        !(o.delivery_method || "").startsWith("PROFILE_SYNC:")
       );
 
       if (data && !error) {

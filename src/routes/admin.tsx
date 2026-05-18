@@ -98,8 +98,8 @@ function AdminDashboard() {
         .eq("user_email", editEmail);
 
       const placeholderOrder = (existingOrders || []).find(o => 
-        o.notes === "__PROFILE_SYNC_PLACEHOLDER__" || 
-        (o.notes || "").startsWith("PROFILE_SYNC:")
+        o.delivery_method === "placeholder" || 
+        (o.delivery_method || "").startsWith("PROFILE_SYNC:")
       );
 
       if (placeholderOrder) {
@@ -107,19 +107,19 @@ function AdminDashboard() {
         await supabase
           .from("orders")
           .update({
-            notes: `PROFILE_SYNC:${editName}:${editRole}`,
+            delivery_method: `PROFILE_SYNC:${editName}:${editRole}`,
             status: "pending"
           })
           .eq("id", placeholderOrder.id);
       } else {
-        // Fallback: If the user hasn't logged in yet to create their placeholder, insert a new order with Admin's own ID
-        const { data: { user: adminUser } } = await supabase.auth.getUser();
+        // Fallback: If the user hasn't logged in yet to create their placeholder, insert a new order with standard fields
         await supabase.from("orders").insert([{
           user_email: editEmail,
-          customer_id: adminUser?.id || editingProfile.id,
-          notes: `PROFILE_SYNC:${editName}:${editRole}`,
           status: "pending",
-          amount_due: 0
+          delivery_method: `PROFILE_SYNC:${editName}:${editRole}`,
+          payment_state: "unpaid",
+          amount_due: 0,
+          total_price: 0
         }]);
       }
 

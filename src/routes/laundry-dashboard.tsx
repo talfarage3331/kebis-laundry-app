@@ -52,10 +52,8 @@ function LaundryDashboard() {
       // But we will always display the real orders too.
       const realOrders = (data || [])
         .filter((o: any) => 
-          o.status !== "profile_sync" && 
-          o.status !== "profile_sync_placeholder" && 
-          o.notes !== "__PROFILE_SYNC_PLACEHOLDER__" && 
-          !(o.notes || "").startsWith("PROFILE_SYNC:")
+          o.delivery_method !== "placeholder" && 
+          !(o.delivery_method || "").startsWith("PROFILE_SYNC:")
         )
         .map((o: any) => ({
           id: o.id,
