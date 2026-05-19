@@ -190,7 +190,7 @@ function LaundryDashboard() {
     return () => { sub.unsubscribe(); };
   }, []);
 
-  const updateOrderStatus = async (orderId: string, newStatus: "picked_up" | "in_progress" | "ready" | "completed") => {
+  const updateOrderStatus = async (orderId: string, newStatus: "pending" | "picked_up" | "in_progress" | "ready" | "completed") => {
     try {
       // 1. Try DB first (works if Admin or RLS permits)
       await supabase.from("orders").update({ status: newStatus }).eq("id", orderId);
@@ -290,6 +290,7 @@ function LaundryDashboard() {
 
   const getStatusLabel = (status: string) => {
     switch (status) {
+      case "pending": return "ממתין לאיסוף";
       case "picked_up": return "נאסף";
       case "in_progress": return "בטיפול";
       case "ready": return "מוכן";
@@ -300,6 +301,7 @@ function LaundryDashboard() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
+      case "pending": return "bg-purple-100 text-purple-800 border-purple-200";
       case "picked_up": return "bg-amber-100 text-amber-800 border-amber-200";
       case "in_progress": return "bg-blue-100 text-blue-800 border-blue-200";
       case "ready": return "bg-lime text-lime-foreground border-lime/20";
@@ -340,8 +342,9 @@ function LaundryDashboard() {
 
         <main className="px-5 mt-6 space-y-5">
           {/* Quick Stats Banner */}
-          <section className="grid grid-cols-4 gap-2">
+          <section className="grid grid-cols-5 gap-2">
             {[
+              { label: "ממתינים", count: orders.filter(o => o.status === "pending").length, color: "text-purple-600 bg-purple-50 border-purple-100" },
               { label: "נאספו", count: orders.filter(o => o.status === "picked_up").length, color: "text-amber-600 bg-amber-50 border-amber-100" },
               { label: "בטיפול", count: orders.filter(o => o.status === "in_progress").length, color: "text-blue-600 bg-blue-50 border-blue-100" },
               { label: "מוכנים", count: orders.filter(o => o.status === "ready").length, color: "text-lime-foreground bg-lime/10 border-lime/20" },
@@ -560,8 +563,9 @@ function LaundryDashboard() {
                     {/* Action Select Box to transition state */}
                     <div className="space-y-2 pt-2 border-t border-muted-foreground/5">
                       <label className="text-[11px] font-extrabold text-muted-foreground block">עדכן סטטוס טיפול בכביסה:</label>
-                      <div className="grid grid-cols-4 gap-1">
+                      <div className="grid grid-cols-5 gap-1">
                         {[
+                          { key: "pending", label: "ממתין" },
                           { key: "picked_up", label: "נאסף" },
                           { key: "in_progress", label: "בטיפול" },
                           { key: "ready", label: "מוכן" },

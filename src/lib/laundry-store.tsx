@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
 import { supabase } from "./supabase";
 
-export type OrderState = "none" | "picked_up" | "in_progress" | "ready" | "completed";
+export type OrderState = "none" | "pending" | "picked_up" | "in_progress" | "ready" | "completed";
 export type DeliveryMethod = "none" | "self_pickup" | "home_delivery";
 export type PaymentState = "unpaid" | "paid";
 
@@ -45,6 +45,7 @@ interface Store {
 const Ctx = createContext<Store | null>(null);
 
 export const ORDER_STEPS: { key: OrderState; label: string }[] = [
+  { key: "pending", label: "ממתין לאיסוף" },
   { key: "picked_up", label: "נאסף" },
   { key: "in_progress", label: "בטיפול" },
   { key: "ready", label: "מוכן" },
@@ -53,6 +54,7 @@ export const ORDER_STEPS: { key: OrderState; label: string }[] = [
 
 export const stateLabel: Record<OrderState, string> = {
   none: "אין הזמנה פעילה",
+  pending: "ההזמנה התקבלה, ממתינים לאיסוף",
   picked_up: "הכביסה נאספה",
   in_progress: "בטיפול / בעיבוד",
   ready: "מוכן",
@@ -377,7 +379,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
           await supabase.from("orders").insert([{
             user_id: session.user.id, // CRITICAL: RLS requires user_id
             user_email: user.email,
-            status: "picked_up",
+            status: "pending",
             delivery_method: "placeholder",
             payment_state: "unpaid",
             amount_due: 0,
@@ -578,7 +580,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     ironing: boolean = false, 
     dryCleaning: boolean = false
   ) => {
-    const newState: OrderState = "picked_up";
+    const newState: OrderState = "pending";
     const amount = 0; // Dynamic pricing starts at 0
     
     setOrderState(newState);

@@ -56,14 +56,6 @@ function Tracking() {
                   );
                 })}
               </ol>
-
-              <button
-                onClick={advanceOrder}
-                disabled={orderState === "completed"}
-                className="mt-5 w-full rounded-2xl bg-primary text-primary-foreground py-2.5 text-xs font-bold disabled:opacity-50 transition active:scale-[0.98] shadow-md shadow-primary/20"
-              >
-                {orderState === "completed" ? "ההזמנה הושלמה" : "קדם סטטוס (דמו)"}
-              </button>
             </div>
 
             {/* Special Instructions (Notes & Images) Container */}
@@ -191,6 +183,7 @@ function OrderHistorySection({ orderState }: { orderState: string }) {
 
   const getStatusLabel = (status: string) => {
     switch (status) {
+      case "pending": return "ממתין לאיסוף";
       case "picked_up": return "נאסף";
       case "in_progress": return "בטיפול";
       case "ready": return "מוכן";
@@ -201,6 +194,7 @@ function OrderHistorySection({ orderState }: { orderState: string }) {
 
   const getStatusBadgeClass = (status: string) => {
     switch (status) {
+      case "pending": return "bg-purple-50 text-purple-700 border-purple-200/50";
       case "picked_up": return "bg-blue-50 text-blue-700 border-blue-200/50";
       case "in_progress": return "bg-amber-50 text-amber-700 border-amber-200/50";
       case "ready": return "bg-emerald-50 text-emerald-700 border-emerald-200/50";
