@@ -453,6 +453,38 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
           console.error("Error parsing images:", e);
         }
         setOrderImages(images);
+
+        // RETROACTIVE SYNC: If customer has an active order but their profile doesn't have
+        // the order snapshot yet, push it now. This handles orders placed before the sync code existed.
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user && finalStatus !== "completed" && finalStatus !== "none") {
+            const { data: myProf } = await supabase.from("profiles").select("avatar_url").eq("id", session.user.id).maybeSingle();
+            let signals: any = {};
+            if (myProf?.avatar_url) {
+              try { signals = JSON.parse(myProf.avatar_url); } catch(e) {}
+            }
+            // Only write if there's no active_order yet or if it's stale
+            if (!signals.active_order || signals.active_order.id !== data.id) {
+              signals.active_order = {
+                id: data.id,
+                status: finalStatus,
+                delivery_method: data.delivery_method,
+                payment_state: data.payment_state,
+                amount_due: finalAmount,
+                user_email: user?.email,
+                notes: notes || null,
+                images: images,
+                requires_ironing: !!ironing,
+                requires_dry_cleaning: !!dryCleaning,
+                created_at: data.created_at
+              };
+              await supabase.from("profiles").update({ avatar_url: JSON.stringify(signals) }).eq("id", session.user.id);
+            }
+          }
+        } catch(syncErr) {
+          console.error("Retroactive order sync error:", syncErr);
+        }
       } else {
         setOrderState("none");
       }
