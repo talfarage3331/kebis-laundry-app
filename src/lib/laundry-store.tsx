@@ -556,7 +556,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       )
       .subscribe();
 
-    return () => subscription.unsubscribe();
+    return () => { subscription.unsubscribe(); };
   }, [user]);
 
   const login = useCallback((u: User) => setUser(u), []);
