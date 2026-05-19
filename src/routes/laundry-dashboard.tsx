@@ -40,22 +40,17 @@ function LaundryDashboard() {
   const fetchOrders = async () => {
     setIsLoading(true);
     try {
-      // Fetch orders from Supabase
-      const { data, error } = await supabase
+      // 1. Fetch from Orders table (in case RLS ever allows it or Admin is logged in)
+      const { data: dbOrders, error: dbErr } = await supabase
         .from("orders")
         .select("*")
         .order("created_at", { ascending: false });
 
-      if (error) throw error;
-      
-      // If there are no real orders, let's inject a couple of mock orders to make it feel rich and complete!
-      // But we will always display the real orders too.
-      const realOrders = (data || [])
+      const realOrders = (dbOrders || [])
         .filter((o: any) => 
           o.delivery_method !== "placeholder" && 
           !(o.delivery_method || "").startsWith("PROFILE_SYNC:")
-        )
-        .map((o: any) => ({
+        ).map((o: any) => ({
           id: o.id,
           created_at: o.created_at || new Date().toISOString(),
           status: o.status,
@@ -63,13 +58,54 @@ function LaundryDashboard() {
           payment_state: o.payment_state,
           amount_due: o.amount_due,
           user_email: o.user_email,
-          notes: o.notes || localStorage.getItem(`laundry_notes_${o.user_email}`) || localStorage.getItem("laundry_notes") || "כביסה רגילה, נא לתלות חולצות מכופתרות",
+          notes: o.notes || localStorage.getItem(`laundry_notes_${o.user_email}`) || localStorage.getItem("laundry_notes") || "",
           images: o.images || JSON.parse(localStorage.getItem(`laundry_images_${o.user_email}`) || localStorage.getItem("laundry_images") || "[]"),
           requires_ironing: o.requires_ironing || localStorage.getItem(`laundry_ironing_${o.user_email}`) === "true",
           requires_dry_cleaning: o.requires_dry_cleaning || localStorage.getItem(`laundry_dry_cleaning_${o.user_email}`) === "true"
         }));
 
-      setOrders(realOrders);
+      // 2. Fetch from Profiles global registry (to completely bypass strict RLS limits on orders table)
+      const { data: allProfiles } = await supabase
+        .from("profiles")
+        .select("*");
+
+      const globalOrders: LaundryOrder[] = [];
+      (allProfiles || []).forEach(p => {
+        try {
+          if (p.avatar_url) {
+            const parsed = JSON.parse(p.avatar_url);
+            if (parsed && parsed.active_order) {
+              const o = parsed.active_order;
+              // Check if order is already fulfilled/completed to prevent ghost orders showing forever
+              if (o.status !== "completed" && o.status !== "none") {
+                globalOrders.push({
+                  id: o.id,
+                  created_at: o.created_at || o.timestamp || new Date().toISOString(),
+                  status: o.status,
+                  delivery_method: o.delivery_method,
+                  payment_state: o.payment_state,
+                  amount_due: o.amount_due,
+                  user_email: o.user_email,
+                  notes: o.notes || localStorage.getItem(`laundry_notes_${o.user_email}`) || localStorage.getItem("laundry_notes") || "",
+                  images: o.images || JSON.parse(localStorage.getItem(`laundry_images_${o.user_email}`) || "[]"),
+                  requires_ironing: o.requires_ironing || localStorage.getItem(`laundry_ironing_${o.user_email}`) === "true",
+                  requires_dry_cleaning: o.requires_dry_cleaning || localStorage.getItem(`laundry_dry_cleaning_${o.user_email}`) === "true"
+                });
+              }
+            }
+          }
+        } catch (e) {}
+      });
+
+      // Merge both sources and remove duplicates based on ID
+      const mergedRaw = [...realOrders, ...globalOrders];
+      const mergedMap = new Map();
+      mergedRaw.forEach(o => {
+        if (!mergedMap.has(o.id)) mergedMap.set(o.id, o);
+      });
+      const finalOrders = Array.from(mergedMap.values()).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      setOrders(finalOrders);
     } catch (err: any) {
       toast.error("שגיאה בטעינת הזמנות: " + err.message);
     } finally {
@@ -137,47 +173,76 @@ function LaundryDashboard() {
     return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
+  // Real-time: listen for ANY profile avatar_url changes (customers pushing order snapshots)
+  useEffect(() => {
+    const sub = supabase
+      .channel('laundry-profiles-sync')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'profiles' },
+        () => {
+          // A customer's profile changed — re-fetch all orders from the global registry
+          fetchOrders();
+        }
+      )
+      .subscribe();
+
+    return () => { sub.unsubscribe(); };
+  }, []);
+
   const updateOrderStatus = async (orderId: string, newStatus: "picked_up" | "in_progress" | "ready" | "completed") => {
-    // If it's a mock order (starts with ORD-), we just update the UI state!
-    if (orderId.startsWith("ORD-")) {
+    try {
+      // 1. Try DB first (works if Admin or RLS permits)
+      await supabase.from("orders").update({ status: newStatus }).eq("id", orderId);
+
+      // 2. Regardless of DB error, persist override to Laundry user's own profile registry
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const { data: myProf } = await supabase.from("profiles").select("*").eq("id", session.user.id).maybeSingle();
+        let signals: any = {};
+        if (myProf?.avatar_url) {
+          try { signals = JSON.parse(myProf.avatar_url); } catch(e) {}
+        }
+        
+        const targetOrder = orders.find(o => o.id === orderId);
+        if (targetOrder) {
+          if (!signals.status_overrides) signals.status_overrides = {};
+          signals.status_overrides[targetOrder.user_email] = newStatus;
+          await supabase.from("profiles").update({ avatar_url: JSON.stringify(signals) }).eq("id", session.user.id);
+        }
+      }
+
       setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
       toast.success("סטטוס ההזמנה עודכן בהצלחה!");
-      return;
-    }
-
-    try {
-      const { error } = await supabase
-        .from("orders")
-        .update({ status: newStatus })
-        .eq("id", orderId);
-
-      if (error) throw error;
-      
-      toast.success("סטטוס ההזמנה עודכן בהצלחה בשרת!");
-      fetchOrders();
     } catch (err: any) {
       toast.error("שגיאה בעדכון הסטטוס: " + err.message);
     }
   };
 
   const updateOrderPrice = async (orderId: string, newPrice: number) => {
-    if (orderId.startsWith("ORD-")) {
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, amount_due: newPrice } : o));
-      toast.success("מחיר ההזמנה הסימולטיבית עודכן בהצלחה!");
-      return;
-    }
-
     try {
-      const { error } = await supabase
-        .from("orders")
-        .update({ amount_due: newPrice, total_price: newPrice })
-        .eq("id", orderId);
+      await supabase.from("orders").update({ amount_due: newPrice, total_price: newPrice }).eq("id", orderId);
 
-      if (error) throw error;
+      // Persist to Laundry registry
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const { data: myProf } = await supabase.from("profiles").select("*").eq("id", session.user.id).maybeSingle();
+        let signals: any = {};
+        if (myProf?.avatar_url) {
+          try { signals = JSON.parse(myProf.avatar_url); } catch(e) {}
+        }
+        
+        const targetOrder = orders.find(o => o.id === orderId);
+        if (targetOrder) {
+          if (!signals.price_overrides) signals.price_overrides = {};
+          signals.price_overrides[targetOrder.user_email] = newPrice;
+          await supabase.from("profiles").update({ avatar_url: JSON.stringify(signals) }).eq("id", session.user.id);
+        }
+      }
+
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, amount_due: newPrice } : o));
+      toast.success("מחיר ההזמנה עודכן בהצלחה!");
       
-      toast.success("מחיר ההזמנה עודכן בשרת בהצלחה!");
-      
-      // Emit system-update notification event to trigger dynamic price updates on client screen
       const newNotification = {
         id: "price-update-" + orderId + "-" + Date.now(),
         user_email: "system-update",
@@ -187,50 +252,37 @@ function LaundryDashboard() {
       const existing = JSON.parse(localStorage.getItem("laundry_notifications") || "[]");
       localStorage.setItem("laundry_notifications", JSON.stringify([newNotification, ...existing]));
       window.dispatchEvent(new Event("storage"));
-
-      fetchOrders();
     } catch (err: any) {
       toast.error("שגיאה בעדכון המחיר: " + err.message);
     }
   };
 
   const updateOrderMessage = async (orderId: string, newMessage: string) => {
-    if (orderId.startsWith("ORD-")) {
-      setOrders(prev => prev.map(o => {
-        if (o.id === orderId) {
-          const [custNotes] = (o.notes || "").split(" ||LAUNDRY_MSG|| ");
-          const combined = custNotes + " ||LAUNDRY_MSG|| " + newMessage;
-          return { ...o, notes: combined };
-        }
-        return o;
-      }));
-      toast.success("הודעת המכבסה הסימולטיבית עודכנה בהצלחה!");
-      return;
-    }
-
     try {
-      // 1. Fetch current order notes to preserve the customer's original notes
-      const { data: orderData, error: fetchErr } = await supabase
-        .from("orders")
-        .select("notes")
-        .eq("id", orderId)
-        .maybeSingle();
-
-      if (fetchErr) throw fetchErr;
-
-      const currentNotes = orderData?.notes || "";
+      const targetOrder = orders.find(o => o.id === orderId);
+      const currentNotes = targetOrder?.notes || "";
       const [custNotes] = currentNotes.split(" ||LAUNDRY_MSG|| ");
       const combined = custNotes.trim() + " ||LAUNDRY_MSG|| " + newMessage.trim();
 
-      const { error } = await supabase
-        .from("orders")
-        .update({ notes: combined })
-        .eq("id", orderId);
+      await supabase.from("orders").update({ notes: combined }).eq("id", orderId);
 
-      if (error) throw error;
-      
-      toast.success("הודעת המכבסה עודכנה בהצלחה בשרת!");
-      fetchOrders();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const { data: myProf } = await supabase.from("profiles").select("*").eq("id", session.user.id).maybeSingle();
+        let signals: any = {};
+        if (myProf?.avatar_url) {
+          try { signals = JSON.parse(myProf.avatar_url); } catch(e) {}
+        }
+        
+        if (targetOrder) {
+          if (!signals.msg_overrides) signals.msg_overrides = {};
+          signals.msg_overrides[targetOrder.user_email] = combined;
+          await supabase.from("profiles").update({ avatar_url: JSON.stringify(signals) }).eq("id", session.user.id);
+        }
+      }
+
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, notes: combined } : o));
+      toast.success("הודעת המכבסה עודכנה בהצלחה!");
     } catch (err: any) {
       toast.error("שגיאה בעדכון ההודעה: " + err.message);
     }

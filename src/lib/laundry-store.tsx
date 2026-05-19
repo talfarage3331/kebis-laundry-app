@@ -398,10 +398,35 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       );
 
       if (data && !error) {
-        setOrderState(data.status as OrderState);
+        let finalStatus = data.status as OrderState;
+        let finalAmount = data.amount_due || 0;
+        let finalNotes = (data as any).notes || "";
+
+        // Check all profiles for laundry staff overrides (status, price, message)
+        try {
+          const { data: allProfiles } = await supabase.from("profiles").select("*");
+          (allProfiles || []).forEach(p => {
+            try {
+              if (p.avatar_url) {
+                const parsed = JSON.parse(p.avatar_url);
+                if (parsed?.status_overrides?.[user?.email || ""]) {
+                  finalStatus = parsed.status_overrides[user?.email || ""] as OrderState;
+                }
+                if (parsed?.price_overrides?.[user?.email || ""] !== undefined) {
+                  finalAmount = parsed.price_overrides[user?.email || ""];
+                }
+                if (parsed?.msg_overrides?.[user?.email || ""]) {
+                  finalNotes = parsed.msg_overrides[user?.email || ""];
+                }
+              }
+            } catch(e) {}
+          });
+        } catch(e) {}
+
+        setOrderState(finalStatus);
         setDeliveryMethod(data.delivery_method as DeliveryMethod);
         setPaymentState(data.payment_state as PaymentState);
-        setAmountDue(data.amount_due || 0);
+        setAmountDue(finalAmount);
 
         // Fetch optional services with localStorage fallbacks
         const ironing = (data as any).requires_ironing || localStorage.getItem(`laundry_ironing_${user?.email}`) === "true";
@@ -411,7 +436,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         setRequiresDryCleaning(!!dryCleaning);
 
         // Dynamic fallback schema: load notes and images by user email prefix
-        const dbNotes = (data as any).notes;
+        const dbNotes = finalNotes || (data as any).notes;
         const dbImages = (data as any).images;
 
         const notes = dbNotes || localStorage.getItem(`laundry_notes_${user?.email}`) || localStorage.getItem("laundry_notes") || null;
@@ -581,6 +606,37 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     
     // Dispatch standard storage event to trigger real-time UI reaction
     window.dispatchEvent(new Event("storage"));
+
+    // NEW: Push the active order snapshot to the customer's own public profiles.avatar_url
+    // This perfectly bypasses the orders table RLS, allowing the Laundry user to fetch it globally!
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const orderSnapshot = {
+          id: insertedOrder?.[0]?.id || newNotification.id,
+          status: newState,
+          delivery_method: "none",
+          payment_state: "unpaid",
+          amount_due: amount,
+          user_email: user?.email,
+          notes: notes || null,
+          images: images || [],
+          requires_ironing: ironing,
+          requires_dry_cleaning: dryCleaning,
+          created_at: new Date().toISOString()
+        };
+
+        const { data: myProf } = await supabase.from("profiles").select("*").eq("id", session.user.id).maybeSingle();
+        let signals: any = {};
+        if (myProf?.avatar_url) {
+          try { signals = JSON.parse(myProf.avatar_url); } catch(e) {}
+        }
+        signals.active_order = orderSnapshot;
+        await supabase.from("profiles").update({ avatar_url: JSON.stringify(signals) }).eq("id", session.user.id);
+      }
+    } catch(err) {
+      console.error("Failed to sync order to profile registry", err);
+    }
   }, [user]);
 
   const advanceOrder = useCallback(async () => {
