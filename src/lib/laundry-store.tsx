@@ -375,8 +375,9 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
           await supabase.from("orders").insert([{
+            user_id: session.user.id, // CRITICAL: RLS requires user_id
             user_email: user.email,
-            status: "pending",
+            status: "picked_up",
             delivery_method: "placeholder",
             payment_state: "unpaid",
             amount_due: 0,
@@ -612,8 +613,13 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem(`laundry_images_${user?.email}`);
     }
 
-    // Insert into Supabase with optional requires_ironing and requires_dry_cleaning columns
-    const { data: insertedOrder } = await supabase.from('orders').insert([{
+    // Get authenticated session to satisfy RLS (user_id = auth.uid() is REQUIRED)
+    const { data: { session } } = await supabase.auth.getSession();
+    const userId = session?.user?.id;
+
+    // Insert into Supabase with user_id to satisfy RLS policies
+    const { data: insertedOrder, error: insertError } = await supabase.from('orders').insert([{
+      user_id: userId, // CRITICAL: RLS requires this to match auth.uid()
       status: newState,
       delivery_method: "none",
       payment_state: "unpaid",
@@ -623,6 +629,10 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       requires_ironing: ironing,
       requires_dry_cleaning: dryCleaning
     }]).select();
+
+    if (insertError) {
+      console.error("Order insert failed:", insertError);
+    }
 
     // Trigger a real-time notification for the Laundry staff (running on separate tabs/browsers locally)
     const newNotification = {
