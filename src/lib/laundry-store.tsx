@@ -27,6 +27,8 @@ interface Store {
   deliveryMethod: DeliveryMethod;
   paymentState: PaymentState;
   amountDue: number;
+  activeOrderId: string | null;
+  activeOrderDate: string | null;
   invoices: Invoice[];
   
   orderNotes: string | null;
@@ -68,6 +70,8 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
   const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>("none");
   const [paymentState, setPaymentState] = useState<PaymentState>("unpaid");
   const [amountDue, setAmountDue] = useState(0);
+  const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
+  const [activeOrderDate, setActiveOrderDate] = useState<string | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [requiresIroning, setRequiresIroning] = useState(false);
   const [requiresDryCleaning, setRequiresDryCleaning] = useState(false);
@@ -247,6 +251,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
+        setLoading(true);
         fetchAndSetUser(session.user).then(() => setLoading(false));
       } else {
         setUser(null);
@@ -395,10 +400,44 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         .eq('user_email', user?.email)
         .order('created_at', { ascending: false });
 
-      const data = (allOrders || []).find(o => 
+      let data = (allOrders || []).find(o => 
         o.delivery_method !== "placeholder" && 
         !(o.delivery_method || "").startsWith("PROFILE_SYNC:")
       );
+
+      // Fallback: If not found in orders table, check our own profile's active_order snapshot
+      if (!data) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const { data: myProf } = await supabase.from("profiles").select("avatar_url").eq("id", session.user.id).maybeSingle();
+          if (myProf?.avatar_url) {
+            try {
+              const signals = JSON.parse(myProf.avatar_url);
+              if (signals.active_order) {
+                data = signals.active_order;
+              }
+              // Fetch invoices
+              if (signals.invoices && signals.invoices[user?.email]) {
+                setInvoices(signals.invoices[user?.email].reverse()); // reverse to show newest first
+              }
+            } catch(e) {}
+          }
+        }
+      } else {
+        // Also fetch invoices when we DO have data
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const { data: myProf } = await supabase.from("profiles").select("avatar_url").eq("id", session.user.id).maybeSingle();
+          if (myProf?.avatar_url) {
+            try {
+              const signals = JSON.parse(myProf.avatar_url);
+              if (signals.invoices && signals.invoices[user?.email]) {
+                setInvoices(signals.invoices[user?.email].reverse());
+              }
+            } catch(e) {}
+          }
+        }
+      }
 
       if (data && !error) {
         let finalStatus = data.status as OrderState;
@@ -430,6 +469,8 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         setDeliveryMethod(data.delivery_method as DeliveryMethod);
         setPaymentState(data.payment_state as PaymentState);
         setAmountDue(finalAmount);
+        setActiveOrderId(data.id || null);
+        setActiveOrderDate(data.created_at || null);
 
         // Fetch optional services with localStorage fallbacks
         const ironing = (data as any).requires_ironing || localStorage.getItem(`laundry_ironing_${user?.email}`) === "true";
@@ -457,39 +498,11 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         }
         setOrderImages(images);
 
-        // RETROACTIVE SYNC: If customer has an active order but their profile doesn't have
-        // the order snapshot yet, push it now. This handles orders placed before the sync code existed.
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session?.user && finalStatus !== "completed" && finalStatus !== "none") {
-            const { data: myProf } = await supabase.from("profiles").select("avatar_url").eq("id", session.user.id).maybeSingle();
-            let signals: any = {};
-            if (myProf?.avatar_url) {
-              try { signals = JSON.parse(myProf.avatar_url); } catch(e) {}
-            }
-            // Only write if there's no active_order yet or if it's stale
-            if (!signals.active_order || signals.active_order.id !== data.id) {
-              signals.active_order = {
-                id: data.id,
-                status: finalStatus,
-                delivery_method: data.delivery_method,
-                payment_state: data.payment_state,
-                amount_due: finalAmount,
-                user_email: user?.email,
-                notes: notes || null,
-                images: images,
-                requires_ironing: !!ironing,
-                requires_dry_cleaning: !!dryCleaning,
-                created_at: data.created_at
-              };
-              await supabase.from("profiles").update({ avatar_url: JSON.stringify(signals) }).eq("id", session.user.id);
-            }
-          }
-        } catch(syncErr) {
-          console.error("Retroactive order sync error:", syncErr);
-        }
+        // Retroactive sync removed to prevent race conditions during order creation.
       } else {
         setOrderState("none");
+        setActiveOrderId(null);
+        setActiveOrderDate(null);
       }
     } catch (err) {
       console.error("Error refreshing active order:", err);
@@ -499,6 +512,14 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
   // Fetch initial state from Supabase when user is logged in
   useEffect(() => {
     refreshActiveOrder();
+    
+    // Cross-tab real-time synchronization listener
+    const handleStorage = (e: StorageEvent) => {
+      // Re-fetch order when laundry dashboard triggers a sync or notifications change
+      refreshActiveOrder();
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
   }, [user, refreshActiveOrder]);
 
   // Set up real-time listener for Admin sync signal changes (bypasses RLS database limitations!)
@@ -569,6 +590,8 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     setDeliveryMethod("none");
     setPaymentState("unpaid");
     setAmountDue(0);
+    setActiveOrderId(null);
+    setActiveOrderDate(null);
     setInvoices([]);
     setRequiresIroning(false);
     setRequiresDryCleaning(false);
@@ -675,7 +698,18 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         if (myProf?.avatar_url) {
           try { signals = JSON.parse(myProf.avatar_url); } catch(e) {}
         }
+        if (!signals.orders) signals.orders = [];
+        
+        // Preserve the existing active_order before we overwrite it!
+        if (signals.active_order) {
+          const exists = signals.orders.find((o: any) => o.id === signals.active_order.id);
+          if (!exists) {
+            signals.orders.push(signals.active_order);
+          }
+        }
+
         signals.active_order = orderSnapshot;
+        signals.orders.unshift(orderSnapshot);
         await supabase.from("profiles").update({ avatar_url: JSON.stringify(signals) }).eq("id", session.user.id);
       }
     } catch(err) {
@@ -760,6 +794,8 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     setOrderState("none");
     setDeliveryMethod("none");
     setPaymentState("unpaid");
+    setActiveOrderId(null);
+    setActiveOrderDate(null);
     setOrderNotes(null);
     setOrderImages([]);
     setRequiresIroning(false);
@@ -775,6 +811,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       value={{
         user, loading, login, logout,
         orderState, deliveryMethod, paymentState, amountDue, invoices,
+        activeOrderId, activeOrderDate,
         orderNotes, orderImages, requiresIroning, requiresDryCleaning,
         createOrder, advanceOrder, setDelivery, payAndInvoice, reset,
         refreshActiveOrder,

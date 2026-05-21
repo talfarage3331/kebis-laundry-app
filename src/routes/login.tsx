@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLaundry } from "@/lib/laundry-store";
 import { Flower2 } from "lucide-react";
 import { toast } from "sonner";
@@ -8,12 +8,18 @@ import { supabase } from "@/lib/supabase";
 export const Route = createFileRoute("/login")({ component: Login });
 
 function Login() {
-  const { login } = useLaundry();
+  const { user, loading: authLoading } = useLaundry();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (user && !authLoading) {
+      navigate({ to: "/" });
+    }
+  }, [user, authLoading, navigate]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();

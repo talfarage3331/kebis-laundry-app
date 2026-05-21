@@ -208,12 +208,23 @@ function LaundryDashboard() {
         if (targetOrder) {
           if (!signals.status_overrides) signals.status_overrides = {};
           signals.status_overrides[targetOrder.user_email] = newStatus;
+          
+          if (signals.active_order && signals.active_order.id === orderId) {
+            signals.active_order.status = newStatus;
+          }
+          if (signals.orders && Array.isArray(signals.orders)) {
+            const idx = signals.orders.findIndex((o: any) => o.id === orderId);
+            if (idx >= 0) signals.orders[idx].status = newStatus;
+          }
+
           await supabase.from("profiles").update({ avatar_url: JSON.stringify(signals) }).eq("id", session.user.id);
         }
       }
 
       setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
       toast.success("סטטוס ההזמנה עודכן בהצלחה!");
+      localStorage.setItem("laundry_sync_trigger", Date.now().toString());
+      window.dispatchEvent(new Event("storage"));
     } catch (err: any) {
       toast.error("שגיאה בעדכון הסטטוס: " + err.message);
     }
@@ -236,6 +247,19 @@ function LaundryDashboard() {
         if (targetOrder) {
           if (!signals.price_overrides) signals.price_overrides = {};
           signals.price_overrides[targetOrder.user_email] = newPrice;
+          
+          if (signals.active_order && signals.active_order.id === orderId) {
+            signals.active_order.amount_due = newPrice;
+            signals.active_order.total_price = newPrice;
+          }
+          if (signals.orders && Array.isArray(signals.orders)) {
+            const idx = signals.orders.findIndex((o: any) => o.id === orderId);
+            if (idx >= 0) {
+              signals.orders[idx].amount_due = newPrice;
+              signals.orders[idx].total_price = newPrice;
+            }
+          }
+
           await supabase.from("profiles").update({ avatar_url: JSON.stringify(signals) }).eq("id", session.user.id);
         }
       }
@@ -277,14 +301,63 @@ function LaundryDashboard() {
         if (targetOrder) {
           if (!signals.msg_overrides) signals.msg_overrides = {};
           signals.msg_overrides[targetOrder.user_email] = combined;
+
+          if (signals.active_order && signals.active_order.id === orderId) {
+            signals.active_order.notes = combined;
+          }
+          if (signals.orders && Array.isArray(signals.orders)) {
+            const idx = signals.orders.findIndex((o: any) => o.id === orderId);
+            if (idx >= 0) signals.orders[idx].notes = combined;
+          }
+
           await supabase.from("profiles").update({ avatar_url: JSON.stringify(signals) }).eq("id", session.user.id);
         }
       }
 
       setOrders(prev => prev.map(o => o.id === orderId ? { ...o, notes: combined } : o));
       toast.success("הודעת המכבסה עודכנה בהצלחה!");
+      localStorage.setItem("laundry_sync_trigger", Date.now().toString());
+      window.dispatchEvent(new Event("storage"));
     } catch (err: any) {
       toast.error("שגיאה בעדכון ההודעה: " + err.message);
+    }
+  };
+
+  const uploadInvoice = async (orderId: string, file: File) => {
+    try {
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const base64data = reader.result;
+        const targetOrder = orders.find(o => o.id === orderId);
+        
+        if (targetOrder) {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) {
+            const { data: myProf } = await supabase.from("profiles").select("*").eq("id", session.user.id).maybeSingle();
+            let signals: any = {};
+            if (myProf?.avatar_url) {
+              try { signals = JSON.parse(myProf.avatar_url); } catch(e) {}
+            }
+            if (!signals.invoices) signals.invoices = {};
+            if (!signals.invoices[targetOrder.user_email]) signals.invoices[targetOrder.user_email] = [];
+            
+            signals.invoices[targetOrder.user_email].push({
+              id: orderId,
+              date: new Date().toISOString(),
+              name: file.name,
+              data: base64data
+            });
+            
+            await supabase.from("profiles").update({ avatar_url: JSON.stringify(signals) }).eq("id", session.user.id);
+            toast.success("החשבונית צורפה ונשלחה ללקוח!");
+            localStorage.setItem("laundry_sync_trigger", Date.now().toString());
+            window.dispatchEvent(new Event("storage"));
+          }
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err: any) {
+      toast.error("שגיאה בהעלאת חשבונית: " + err.message);
     }
   };
 
@@ -459,7 +532,7 @@ function LaundryDashboard() {
                             </div>
                           </div>
                           {custNotes && (
-                            <p className="text-xs bg-lavender/20 text-muted-foreground p-3 rounded-2xl leading-relaxed border border-lavender-foreground/5 font-semibold">
+                            <p className="text-xs bg-lavender/20 text-muted-foreground p-3 rounded-2xl leading-relaxed border border-lavender-foreground/5 font-semibold whitespace-pre-wrap">
                               {custNotes}
                             </p>
                           )}
@@ -587,6 +660,21 @@ function LaundryDashboard() {
                           );
                         })}
                       </div>
+                    </div>
+
+                    {/* Upload Invoice */}
+                    <div className="space-y-2 pt-2 border-t border-muted-foreground/5">
+                      <label className="text-[11px] font-extrabold text-muted-foreground block">צירוף ושליחת חשבונית:</label>
+                      <input 
+                        type="file" 
+                        accept="application/pdf,image/*"
+                        className="text-[11px] block w-full text-muted-foreground file:mr-0 file:ml-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-[10px] file:font-extrabold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90 file:cursor-pointer cursor-pointer transition"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files[0]) {
+                            uploadInvoice(order.id, e.target.files[0]);
+                          }
+                        }}
+                      />
                     </div>
 
                   </div>

@@ -1,10 +1,10 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { useLaundry } from "@/lib/laundry-store";
-import { ArrowRight, FileText, Download, CreditCard, Smartphone, Apple, Wallet } from "lucide-react";
+import { ArrowRight, FileText, Download, CreditCard, Smartphone, Apple, Wallet, Sparkles, Loader2, PackageOpen } from "lucide-react";
 import { toast } from "sonner";
-import { Switch } from "@/components/ui/switch";
+import { supabase } from "@/lib/supabase";
 
 export const Route = createFileRoute("/payments")({ component: Payments });
 
@@ -15,50 +15,89 @@ const methods = [
   { id: "google", label: "Google Pay", Icon: Wallet },
 ] as const;
 
-import { useEffect } from "react";
-import { Sparkles } from "lucide-react";
-
 function Payments() {
-  const { amountDue, invoices, payAndInvoice, paymentState, refreshActiveOrder } = useLaundry();
+  const { user, invoices } = useLaundry();
   const navigate = useNavigate();
   const [method, setMethod] = useState<string>("credit");
-  const [whatsapp, setWhatsapp] = useState(true);
-  const [email, setEmail] = useState(false);
+  
+  const [orders, setOrders] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Poll for price changes if the price is currently unset or 0
-  useEffect(() => {
-    refreshActiveOrder();
+  const fetchOrders = async () => {
+    if (!user) return;
+    try {
+      const { data, error } = await supabase
+        .from("orders")
+        .select("*")
+        .eq("user_email", user.email)
+        .order("created_at", { ascending: false });
 
-    // Set up polling interval to check for price updates in background (cross-device/tab fallback)
-    const interval = setInterval(() => {
-      if (amountDue <= 0 && paymentState !== "paid") {
-        refreshActiveOrder();
+      let activeOrders = [];
+      if (data && !error) {
+        activeOrders = data.filter((o: any) => 
+          o.status !== "profile_sync" && 
+          o.delivery_method !== "placeholder" && 
+          !(o.delivery_method || "").startsWith("PROFILE_SYNC:") &&
+          o.status !== "completed" &&
+          o.payment_state !== "paid"
+        );
       }
-    }, 4000);
 
-    // Listen to real-time storage event (cross-tab local speed trigger)
-    const handleStorage = () => {
-      refreshActiveOrder();
-    };
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const { data: myProf } = await supabase.from("profiles").select("avatar_url").eq("id", session.user.id).maybeSingle();
+        if (myProf?.avatar_url) {
+          try {
+            const signals = JSON.parse(myProf.avatar_url);
+            
+            const isUnpaidActive = (o: any) => o && o.status !== "completed" && o.payment_state !== "paid";
 
-    window.addEventListener("storage", handleStorage);
+            if (isUnpaidActive(signals.active_order) && !activeOrders.find((o: any) => o.id === signals.active_order.id)) {
+              activeOrders.push(signals.active_order);
+            }
+            if (signals.orders && Array.isArray(signals.orders)) {
+              signals.orders.forEach((o: any) => {
+                if (isUnpaidActive(o) && !activeOrders.find((existing: any) => existing.id === o.id)) {
+                  activeOrders.push(o);
+                }
+              });
+            }
+          } catch(e) {}
+        }
+      }
 
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener("storage", handleStorage);
-    };
-  }, [amountDue, paymentState, refreshActiveOrder]);
+      // Sort
+      activeOrders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-  const handlePay = () => {
+      setOrders(activeOrders);
+    } catch (err) {
+      console.error("Error fetching orders:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchOrders();
+    const interval = setInterval(fetchOrders, 4000);
+    return () => clearInterval(interval);
+  }, [user]);
+
+  const handlePay = async (orderId: string, amountDue: number) => {
     if (amountDue <= 0) {
       toast.info("אין סכום לתשלום");
       return;
     }
-    payAndInvoice();
-    toast.success("התשלום בוצע בהצלחה! החשבונית נוצרה.");
+    
+    const toastId = toast.loading("מעבד תשלום...");
+    try {
+      await supabase.from("orders").update({ payment_state: "paid" }).eq("id", orderId);
+      toast.success("התשלום בוצע בהצלחה!", { id: toastId });
+      fetchOrders();
+    } catch (e) {
+      toast.error("שגיאה בביצוע התשלום", { id: toastId });
+    }
   };
-
-  const isPricePending = amountDue <= 0 && paymentState !== "paid";
 
   return (
     <AppLayout>
@@ -69,107 +108,141 @@ function Payments() {
         <h1 className="text-3xl font-extrabold mt-8">תשלום וחשבוניות</h1>
       </header>
 
-      <main className="px-5 mt-6 space-y-4 pb-4">
-        {/* Price Card */}
-        <div className={`rounded-3xl p-5 shadow-sm border transition-all duration-500 ${
-          isPricePending 
-            ? "bg-slate-50 border-slate-200 text-slate-700" 
-            : "bg-lime text-lime-foreground border-lime/20 shadow-[0_15px_40px_-15px_oklch(0.92_0.18_125/0.6)] animate-fade-in"
-        }`}>
-          <p className="text-sm font-semibold opacity-70">
-            {isPricePending ? "ממתין לעדכון סכום מהמכבסה" : "סכום לתשלום"}
-          </p>
-          <p className="text-4xl font-extrabold mt-1">
-            {isPricePending ? "₪0.00" : `₪${amountDue.toFixed(2)}`}
-          </p>
-          {paymentState === "paid" && <p className="text-xs font-bold mt-2 text-primary">✓ שולם</p>}
-        </div>
-
-        {/* Dynamic Pricing Banner & Conditional Payment Methods */}
-        {isPricePending ? (
-          <div className="bg-lavender/30 border border-lavender-foreground/10 rounded-3xl p-6 text-center space-y-4 animate-pulse">
-            <div className="size-14 bg-lavender/80 rounded-full grid place-items-center mx-auto shadow-sm">
-              <Sparkles className="size-7 text-primary animate-spin duration-3000" />
-            </div>
-            <div className="space-y-1">
-              <h3 className="text-sm font-extrabold text-foreground">המכבסה מעדכנת את סכום ההזמנה</h3>
-              <p className="text-[11px] text-muted-foreground leading-relaxed px-4">אפשרות התשלום תפתח בקרוב ברגע שצוות המכבסה יסיים לשקול ולתמחר את הכביסה שלך.</p>
-            </div>
-            <div className="flex items-center justify-center gap-1.5 text-[9px] font-black text-primary bg-primary/10 py-1.5 px-3 rounded-full w-fit mx-auto">
-              <span className="size-1.5 bg-primary rounded-full animate-ping" />
-              <span>בודק סטטוס תמחור בזמן אמת...</span>
-            </div>
+      <main className="px-5 mt-6 space-y-6 pb-20 dir-rtl text-right" dir="rtl">
+        {loading && orders.length === 0 ? (
+          <div className="py-20 flex justify-center items-center gap-2">
+            <Loader2 className="size-6 animate-spin text-primary" />
+            <span className="text-sm text-muted-foreground">טוען נתוני תשלום...</span>
+          </div>
+        ) : orders.length === 0 ? (
+          <div className="rounded-3xl bg-lavender/40 text-lavender-foreground p-8 text-center border border-lavender-foreground/5 shadow-sm">
+            <PackageOpen className="size-12 mx-auto mb-3 opacity-60" strokeWidth={1.5} />
+            <p className="font-semibold">אין תשלומים פתוחים</p>
+            <p className="text-sm opacity-70 mt-1">כל ההזמנות שולמו או שאין הזמנות פעילות</p>
           </div>
         ) : (
-          <>
-            <div className="rounded-3xl border border-border p-5 animate-fade-in">
-              <h3 className="font-bold mb-3">אמצעי תשלום</h3>
-              <div className="space-y-2">
-                {methods.map(({ id, label, Icon }) => (
-                  <label
-                    key={id}
-                    className={`flex items-center gap-3 rounded-2xl px-4 py-3 cursor-pointer transition ${
-                      method === id ? "bg-primary text-primary-foreground" : "bg-muted"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="pm"
-                      className="sr-only"
-                      checked={method === id}
-                      onChange={() => setMethod(id)}
-                    />
-                    <Icon className="size-5" strokeWidth={1.75} />
-                    <span className="font-semibold flex-1">{label}</span>
-                    <span className={`size-4 rounded-full border-2 ${method === id ? "bg-primary-foreground border-primary-foreground" : "border-muted-foreground"}`} />
-                  </label>
-                ))}
-              </div>
-            </div>
+          <div className="space-y-8">
+            {orders.map((order) => {
+              const isPricePending = !order.amount_due || order.amount_due <= 0;
+              
+              return (
+                <div key={order.id} className="space-y-4">
+                  {/* Price Card */}
+                  <div className={`rounded-3xl p-5 shadow-sm border transition-all duration-500 ${
+                    isPricePending 
+                      ? "bg-slate-50 border-slate-200 text-slate-700" 
+                      : "bg-lime text-lime-foreground border-lime/20 shadow-[0_15px_40px_-15px_oklch(0.92_0.18_125/0.6)] animate-fade-in"
+                  }`}>
+                    <div className="flex justify-between items-center text-xs opacity-80 mb-3 font-bold border-b border-current/20 pb-2">
+                      <span>הזמנה #{order.id.split('-')[0]}</span>
+                      <span>{new Date(order.created_at).toLocaleDateString("he-IL")}</span>
+                    </div>
+                    <p className="text-sm font-semibold opacity-70">
+                      {isPricePending ? "ממתין לעדכון סכום מהמכבסה" : "סכום לתשלום"}
+                    </p>
+                    <p className="text-4xl font-extrabold mt-1">
+                      {isPricePending ? "₪0.00" : `₪${order.amount_due.toFixed(2)}`}
+                    </p>
+                  </div>
 
-            <button
-              onClick={handlePay}
-              className="w-full rounded-3xl bg-primary text-primary-foreground py-5 text-lg font-extrabold shadow-[0_15px_40px_-15px_oklch(0.34_0.13_333/0.6)] active:scale-[0.98] transition animate-fade-in"
-            >
-              בצע תשלום וקבל חשבונית
-            </button>
-          </>
+                  {/* Dynamic Pricing Banner & Conditional Payment Methods */}
+                  {isPricePending ? (
+                    <div className="bg-lavender/30 border border-lavender-foreground/10 rounded-3xl p-6 text-center space-y-4 animate-pulse">
+                      <div className="size-14 bg-lavender/80 rounded-full grid place-items-center mx-auto shadow-sm">
+                        <Sparkles className="size-7 text-primary animate-spin duration-3000" />
+                      </div>
+                      <div className="space-y-1">
+                        <h3 className="text-sm font-extrabold text-foreground">המכבסה מעדכנת את סכום ההזמנה</h3>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed px-4">אפשרות התשלום תפתח בקרוב ברגע שצוות המכבסה יסיים לשקול ולתמחר את הכביסה שלך.</p>
+                      </div>
+                      <div className="flex items-center justify-center gap-1.5 text-[9px] font-black text-primary bg-primary/10 py-1.5 px-3 rounded-full w-fit mx-auto">
+                        <span className="size-1.5 bg-primary rounded-full animate-ping" />
+                        <span>בודק סטטוס תמחור בזמן אמת...</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="rounded-3xl border border-border p-5 animate-fade-in">
+                        <h3 className="font-bold mb-3">אמצעי תשלום</h3>
+                        <div className="space-y-2">
+                          {methods.map(({ id, label, Icon }) => (
+                            <label
+                              key={id}
+                              className={`flex items-center gap-3 rounded-2xl px-4 py-3 cursor-pointer transition ${
+                                method === id ? "bg-primary text-primary-foreground" : "bg-muted"
+                              }`}
+                            >
+                              <input
+                                type="radio"
+                                name={`pm-${order.id}`}
+                                className="sr-only"
+                                checked={method === id}
+                                onChange={() => setMethod(id)}
+                              />
+                              <Icon className="size-5" strokeWidth={1.75} />
+                              <span className="font-semibold flex-1">{label}</span>
+                              <span className={`size-4 rounded-full border-2 ${method === id ? "bg-primary-foreground border-primary-foreground" : "border-muted-foreground"}`} />
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => handlePay(order.id, order.amount_due)}
+                        className="w-full rounded-3xl bg-primary text-primary-foreground py-5 text-lg font-extrabold shadow-[0_15px_40px_-15px_oklch(0.34_0.13_333/0.6)] active:scale-[0.98] transition animate-fade-in"
+                      >
+                        בצע תשלום
+                      </button>
+                    </>
+                  )}
+                  {/* Visual separator between multiple unpaid orders, except last one */}
+                  <hr className="my-8 border-muted/50 last:hidden" />
+                </div>
+              );
+            })}
+          </div>
         )}
 
-        <div className="rounded-3xl bg-lavender text-lavender-foreground p-5">
-          <h3 className="font-bold mb-3">חשבוניות אחרונות</h3>
+        <div className="rounded-3xl bg-lavender text-lavender-foreground p-5 shadow-sm border border-lavender-foreground/5">
+          <h3 className="font-bold mb-3 flex items-center gap-2">
+            <FileText className="size-5" />
+            תיקיית חשבוניות
+          </h3>
           {invoices.length === 0 ? (
-            <p className="text-sm opacity-70">אין חשבוניות עדיין</p>
+            <p className="text-sm opacity-70 text-center py-4 font-semibold">אין חשבוניות עדיין</p>
           ) : (
             <ul className="space-y-2">
-              {invoices.map((inv) => (
-                <li key={inv.id}>
+              {invoices.map((inv: any, idx) => (
+                <li key={idx}>
                   <button
-                    onClick={() => toast.success(`מוריד הזמנה ${inv.id} (PDF)`)}
-                    className="w-full flex items-center justify-between bg-background/60 rounded-2xl px-4 py-3 text-sm"
+                    onClick={() => {
+                      if (inv.data) {
+                        const link = document.createElement('a');
+                        link.href = inv.data;
+                        link.download = inv.name || `invoice_${inv.id}.pdf`;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        toast.success(`מוריד חשבונית: ${inv.name || inv.id}`);
+                      } else {
+                        toast.error("קובץ החשבונית לא תקין או חסר.");
+                      }
+                    }}
+                    className="w-full flex items-center justify-between bg-background/60 hover:bg-background/80 transition rounded-2xl px-4 py-3 text-sm shadow-sm"
                   >
-                    <span className="flex items-center gap-2 font-semibold">
-                      <FileText className="size-4" strokeWidth={1.75} />
-                      הזמנה {inv.id} (PDF)
+                    <span className="flex items-center gap-2 font-semibold truncate pr-2">
+                      <FileText className="size-4 shrink-0 text-primary" strokeWidth={2} />
+                      <span className="truncate">{inv.name || `חשבונית להזמנה ${inv.id}`}</span>
                     </span>
-                    <Download className="size-4 opacity-70" strokeWidth={1.75} />
+                    <span className="flex items-center gap-3 shrink-0 pl-1">
+                      <span className="text-[10px] text-muted-foreground font-bold">{new Date(inv.date).toLocaleDateString("he-IL")}</span>
+                      <Download className="size-4 text-primary opacity-80" strokeWidth={2} />
+                    </span>
                   </button>
                 </li>
               ))}
             </ul>
           )}
-        </div>
-
-        <div className="rounded-3xl border border-border p-5 space-y-3">
-          <h3 className="font-bold">שליחת חשבונית</h3>
-          <div className="flex items-center justify-between">
-            <span className="text-sm">שלח לוואטסאפ (WhatsApp)</span>
-            <Switch checked={whatsapp} onCheckedChange={setWhatsapp} />
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm">שלח למייל</span>
-            <Switch checked={email} onCheckedChange={setEmail} />
-          </div>
         </div>
       </main>
     </AppLayout>
