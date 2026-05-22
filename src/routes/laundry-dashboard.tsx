@@ -5,7 +5,7 @@ import { useLaundry, ORDER_STEPS, stateLabel } from "@/lib/laundry-store";
 import { supabase } from "@/lib/supabase";
 import { 
   ShoppingBasket, Truck, Sparkles, CheckCircle2, AlertCircle, 
-  ArrowLeft, LogOut, RefreshCw, MessageSquare, Image as ImageIcon, ChevronDown 
+  ArrowLeft, LogOut, RefreshCw, MessageSquare, Image as ImageIcon, ChevronDown, Save 
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -36,6 +36,9 @@ function LaundryDashboard() {
   const [activeTab, setActiveTab] = useState<string>("active");
   const [typedPrices, setTypedPrices] = useState<Record<string, string>>({});
   const [typedMessages, setTypedMessages] = useState<Record<string, string>>({});
+  const [pendingStatuses, setPendingStatuses] = useState<Record<string, string>>({});
+  const [pendingInvoices, setPendingInvoices] = useState<Record<string, File | null>>({});
+  const [savingOrder, setSavingOrder] = useState<Record<string, boolean>>({});
 
   const fetchOrders = async () => {
     setIsLoading(true);
@@ -373,6 +376,43 @@ function LaundryDashboard() {
     }
   };
 
+  const saveAllChanges = async (orderId: string) => {
+    setSavingOrder(prev => ({ ...prev, [orderId]: true }));
+    try {
+      // 1. Save price if changed
+      const priceVal = typedPrices[orderId];
+      if (priceVal !== undefined && priceVal !== "") {
+        await updateOrderPrice(orderId, Number(priceVal));
+      }
+
+      // 2. Save status if changed
+      const newStatus = pendingStatuses[orderId];
+      const currentOrder = orders.find(o => o.id === orderId);
+      if (newStatus && newStatus !== currentOrder?.status) {
+        await updateOrderStatus(orderId, newStatus as any);
+      }
+
+      // 3. Save message if changed
+      const newMessage = typedMessages[orderId];
+      if (newMessage !== undefined && newMessage.trim() !== "") {
+        await updateOrderMessage(orderId, newMessage);
+      }
+
+      // 4. Upload invoice if selected
+      const invoiceFile = pendingInvoices[orderId];
+      if (invoiceFile) {
+        await uploadInvoice(orderId, invoiceFile);
+        setPendingInvoices(prev => { const n = { ...prev }; delete n[orderId]; return n; });
+      }
+
+      toast.success("✅ כל השינויים נשמרו ועודכנו אצל הלקוח!");
+    } catch (err: any) {
+      toast.error("שגיאה בשמירת השינויים: " + err.message);
+    } finally {
+      setSavingOrder(prev => ({ ...prev, [orderId]: false }));
+    }
+  };
+
   const getStatusLabel = (status: string) => {
     switch (status) {
       case "pending": return "ממתין לאיסוף";
@@ -606,12 +646,7 @@ function LaundryDashboard() {
                             placeholder="הזן סכום לתשלום"
                             className="bg-background border border-muted-foreground/20 rounded-xl px-3 py-2 text-xs font-bold w-full focus:outline-none focus:ring-2 focus:ring-primary"
                           />
-                          <button
-                            onClick={() => updateOrderPrice(order.id, Number(typedPrices[order.id] || 0))}
-                            className="bg-primary text-primary-foreground font-bold text-[11px] px-3.5 py-2 rounded-xl transition active:scale-95 whitespace-nowrap"
-                          >
-                            עדכן מחיר
-                          </button>
+
                         </div>
                       </div>
                       <div className="text-left min-w-[70px]">
@@ -636,12 +671,7 @@ function LaundryDashboard() {
                           placeholder="הקלד הודעה ללקוח (למשל: הכביסה נשקלה, המחיר עודכן והיא בטיפול)..."
                           className="bg-background border border-muted-foreground/20 rounded-xl px-3 py-2 text-[11px] font-semibold w-full focus:outline-none focus:ring-2 focus:ring-primary leading-normal resize-none"
                         />
-                        <button
-                          onClick={() => updateOrderMessage(order.id, typedMessages[order.id] || "")}
-                          className="bg-lime text-lime-foreground hover:shadow-md font-extrabold text-[10px] px-3 py-2 rounded-xl transition active:scale-95 flex items-center justify-center self-end h-10"
-                        >
-                          שלח הודעה
-                        </button>
+
                       </div>
                     </div>
 
@@ -656,11 +686,11 @@ function LaundryDashboard() {
                           { key: "ready", label: "מוכן" },
                           { key: "completed", label: "הושלם" }
                         ].map((step) => {
-                          const isCurrent = order.status === step.key;
+                          const isCurrent = (pendingStatuses[order.id] || order.status) === step.key;
                           return (
                             <button
                               key={step.key}
-                              onClick={() => updateOrderStatus(order.id, step.key as any)}
+                              onClick={() => setPendingStatuses(prev => ({ ...prev, [order.id]: step.key }))}
                               className={`py-2 rounded-xl text-[10px] font-bold transition active:scale-95 border ${
                                 isCurrent 
                                   ? "bg-primary text-primary-foreground border-primary" 
@@ -683,10 +713,35 @@ function LaundryDashboard() {
                         className="text-[11px] block w-full text-muted-foreground file:mr-0 file:ml-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-[10px] file:font-extrabold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90 file:cursor-pointer cursor-pointer transition"
                         onChange={(e) => {
                           if (e.target.files && e.target.files[0]) {
-                            uploadInvoice(order.id, e.target.files[0]);
+                            setPendingInvoices(prev => ({ ...prev, [order.id]: e.target.files![0] }));
+                            toast.info(`קובץ "${e.target.files[0].name}" נבחר — לחץ 'שמור את כל השינויים' לשליחה`);
                           }
                         }}
                       />
+                      {pendingInvoices[order.id] && (
+                        <p className="text-[10px] text-primary font-bold mt-1">📎 {pendingInvoices[order.id]!.name} — ממתין לשמירה</p>
+                      )}
+                    </div>
+
+                    {/* Save All Changes Button */}
+                    <div className="pt-4 border-t-2 border-primary/10">
+                      <button
+                        onClick={() => saveAllChanges(order.id)}
+                        disabled={savingOrder[order.id]}
+                        className="w-full bg-gradient-to-l from-primary to-primary/80 text-primary-foreground font-black text-sm py-4 rounded-2xl transition active:scale-[0.98] hover:shadow-lg hover:shadow-primary/20 flex items-center justify-center gap-2.5 disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        {savingOrder[order.id] ? (
+                          <>
+                            <div className="animate-spin rounded-full size-5 border-2 border-primary-foreground border-t-transparent" />
+                            <span>שומר שינויים...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Save className="size-5" />
+                            <span>💾 שמור את כל השינויים</span>
+                          </>
+                        )}
+                      </button>
                     </div>
 
                   </div>
