@@ -91,6 +91,14 @@ function Tracking() {
                     o.notes = parsed.msg_overrides[o.user_email];
                   }
                 }
+                // Apply image overrides
+                if (parsed?.image_overrides) {
+                  if (parsed.image_overrides[o.id] !== undefined) {
+                    o.images = parsed.image_overrides[o.id];
+                  } else if (parsed.image_overrides[o.user_email] !== undefined) {
+                    o.images = parsed.image_overrides[o.user_email];
+                  }
+                }
                 // Apply invoices
                 if (parsed?.invoices && parsed.invoices[o.user_email]) {
                   const myInvoices = parsed.invoices[o.user_email].filter((inv: any) => inv.id === o.id);

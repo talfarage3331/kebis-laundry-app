@@ -443,8 +443,9 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         let finalStatus = data.status as OrderState;
         let finalAmount = data.amount_due || 0;
         let finalNotes = (data as any).notes || "";
+        let finalImages = (data as any).images;
 
-        // Check all profiles for laundry staff overrides (status, price, message, invoices)
+        // Check all profiles for laundry staff overrides (status, price, message, invoices, images)
         try {
           const { data: allProfiles } = await supabase.from("profiles").select("*");
           const collectedInvoices: any[] = [];
@@ -455,11 +456,26 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
                 if (parsed?.status_overrides?.[user?.email || ""]) {
                   finalStatus = parsed.status_overrides[user?.email || ""] as OrderState;
                 }
+                if (parsed?.status_overrides?.[data.id]) {
+                  finalStatus = parsed.status_overrides[data.id] as OrderState;
+                }
                 if (parsed?.price_overrides?.[user?.email || ""] !== undefined) {
                   finalAmount = parsed.price_overrides[user?.email || ""];
                 }
+                if (parsed?.price_overrides?.[data.id] !== undefined) {
+                  finalAmount = parsed.price_overrides[data.id];
+                }
                 if (parsed?.msg_overrides?.[user?.email || ""]) {
                   finalNotes = parsed.msg_overrides[user?.email || ""];
+                }
+                if (parsed?.msg_overrides?.[data.id]) {
+                  finalNotes = parsed.msg_overrides[data.id];
+                }
+                if (parsed?.image_overrides?.[user?.email || ""]) {
+                  finalImages = parsed.image_overrides[user?.email || ""];
+                }
+                if (parsed?.image_overrides?.[data.id]) {
+                  finalImages = parsed.image_overrides[data.id];
                 }
                 if (parsed?.invoices?.[user?.email || ""]) {
                   const userInvs = parsed.invoices[user?.email || ""];
@@ -495,7 +511,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
 
         // Dynamic fallback schema: load notes and images by user email prefix
         const dbNotes = finalNotes || (data as any).notes;
-        const dbImages = (data as any).images;
+        const dbImages = finalImages;
 
         const notes = dbNotes || localStorage.getItem(`laundry_notes_${user?.email}`) || localStorage.getItem("laundry_notes") || null;
         setOrderNotes(notes);
@@ -528,13 +544,15 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
                   signals.active_order.amount_due !== finalAmount ||
                   signals.active_order.notes !== dbNotes ||
                   signals.active_order.delivery_method !== data.delivery_method ||
-                  signals.active_order.payment_state !== data.payment_state
+                  signals.active_order.payment_state !== data.payment_state ||
+                  JSON.stringify(signals.active_order.images) !== JSON.stringify(images)
                 ) {
                   signals.active_order.status = finalStatus;
                   signals.active_order.amount_due = finalAmount;
                   signals.active_order.notes = dbNotes;
                   signals.active_order.delivery_method = data.delivery_method;
                   signals.active_order.payment_state = data.payment_state;
+                  signals.active_order.images = images;
                   needsUpdate = true;
                 }
               }
@@ -548,13 +566,15 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
                     o.amount_due !== finalAmount ||
                     o.notes !== dbNotes ||
                     o.delivery_method !== data.delivery_method ||
-                    o.payment_state !== data.payment_state
+                    o.payment_state !== data.payment_state ||
+                    JSON.stringify(o.images) !== JSON.stringify(images)
                   ) {
                     o.status = finalStatus;
                     o.amount_due = finalAmount;
                     o.notes = dbNotes;
                     o.delivery_method = data.delivery_method;
                     o.payment_state = data.payment_state;
+                    o.images = images;
                     needsUpdate = true;
                   }
                 }

@@ -55,12 +55,15 @@ function LaundryDashboard() {
         .from("profiles")
         .select("*");
 
-      // Build a map of orderId -> array of invoices
+      // Build a map of orderId -> array of invoices and image overrides
       const orderInvoicesMap: Record<string, any[]> = {};
+      const orderImagesOverrideMap: Record<string, string[]> = {};
       (allProfiles || []).forEach(p => {
         try {
           if (p.avatar_url) {
             const parsed = JSON.parse(p.avatar_url);
+            
+            // Build invoices
             if (parsed && parsed.invoices) {
               Object.keys(parsed.invoices).forEach(email => {
                 const userInvs = parsed.invoices[email];
@@ -79,6 +82,13 @@ function LaundryDashboard() {
                 }
               });
             }
+
+            // Build image overrides
+            if (parsed && parsed.image_overrides) {
+              Object.keys(parsed.image_overrides).forEach(orderId => {
+                orderImagesOverrideMap[orderId] = parsed.image_overrides[orderId];
+              });
+            }
           }
         } catch (e) {}
       });
@@ -87,20 +97,27 @@ function LaundryDashboard() {
         .filter((o: any) => 
           o.delivery_method !== "placeholder" && 
           !(o.delivery_method || "").startsWith("PROFILE_SYNC:")
-        ).map((o: any) => ({
-          id: o.id,
-          created_at: o.created_at || new Date().toISOString(),
-          status: o.status,
-          delivery_method: o.delivery_method,
-          payment_state: o.payment_state,
-          amount_due: o.amount_due,
-          user_email: o.user_email,
-          notes: o.notes || localStorage.getItem(`laundry_notes_${o.user_email}`) || localStorage.getItem("laundry_notes") || "",
-          images: o.images || JSON.parse(localStorage.getItem(`laundry_images_${o.user_email}`) || localStorage.getItem("laundry_images") || "[]"),
-          requires_ironing: o.requires_ironing || localStorage.getItem(`laundry_ironing_${o.user_email}`) === "true",
-          requires_dry_cleaning: o.requires_dry_cleaning || localStorage.getItem(`laundry_dry_cleaning_${o.user_email}`) === "true",
-          invoices: orderInvoicesMap[o.id] || []
-        }));
+        ).map((o: any) => {
+          let parsedImages = o.images;
+          if (typeof parsedImages === 'string') {
+            try { parsedImages = JSON.parse(parsedImages); } catch(e) {}
+          }
+          const finalImages = orderImagesOverrideMap[o.id] || parsedImages || JSON.parse(localStorage.getItem(`laundry_images_${o.user_email}`) || localStorage.getItem("laundry_images") || "[]");
+          return {
+            id: o.id,
+            created_at: o.created_at || new Date().toISOString(),
+            status: o.status,
+            delivery_method: o.delivery_method,
+            payment_state: o.payment_state,
+            amount_due: o.amount_due,
+            user_email: o.user_email,
+            notes: o.notes || localStorage.getItem(`laundry_notes_${o.user_email}`) || localStorage.getItem("laundry_notes") || "",
+            images: finalImages,
+            requires_ironing: o.requires_ironing || localStorage.getItem(`laundry_ironing_${o.user_email}`) === "true",
+            requires_dry_cleaning: o.requires_dry_cleaning || localStorage.getItem(`laundry_dry_cleaning_${o.user_email}`) === "true",
+            invoices: orderInvoicesMap[o.id] || []
+          };
+        });
 
       const globalOrders: LaundryOrder[] = [];
       (allProfiles || []).forEach(p => {
@@ -119,6 +136,11 @@ function LaundryDashboard() {
               ordersToAdd.forEach((o: any) => {
                 // Check if order is already fulfilled/completed to prevent ghost orders showing forever
                 if (o.status !== "completed" && o.status !== "none") {
+                  let parsedImages = o.images;
+                  if (typeof parsedImages === 'string') {
+                    try { parsedImages = JSON.parse(parsedImages); } catch(e) {}
+                  }
+                  const finalImages = orderImagesOverrideMap[o.id] || parsedImages || JSON.parse(localStorage.getItem(`laundry_images_${o.user_email}`) || "[]");
                   globalOrders.push({
                     id: o.id,
                     created_at: o.created_at || o.timestamp || new Date().toISOString(),
@@ -128,7 +150,7 @@ function LaundryDashboard() {
                     amount_due: o.amount_due,
                     user_email: o.user_email,
                     notes: o.notes || localStorage.getItem(`laundry_notes_${o.user_email}`) || localStorage.getItem("laundry_notes") || "",
-                    images: o.images || JSON.parse(localStorage.getItem(`laundry_images_${o.user_email}`) || "[]"),
+                    images: finalImages,
                     requires_ironing: o.requires_ironing || localStorage.getItem(`laundry_ironing_${o.user_email}`) === "true",
                     requires_dry_cleaning: o.requires_dry_cleaning || localStorage.getItem(`laundry_dry_cleaning_${o.user_email}`) === "true",
                     invoices: orderInvoicesMap[o.id] || []
@@ -513,6 +535,77 @@ function LaundryDashboard() {
     }
   };
 
+  const deleteOrderImage = async (orderId: string, imageUrl: string) => {
+    if (!confirm("האם אתה בטוח שברצונך למחוק תמונה זו מההזמנה?")) {
+      return;
+    }
+    
+    try {
+      const targetOrder = orders.find(o => o.id === orderId);
+      if (!targetOrder) {
+        toast.error("ההזמנה לא נמצאה");
+        return;
+      }
+
+      const currentImages = targetOrder.images || [];
+      const updatedImages = currentImages.filter(img => img !== imageUrl);
+
+      // 1. Update in the DB (Supabase orders table)
+      await supabase
+        .from("orders")
+        .update({ images: updatedImages })
+        .eq("id", orderId);
+
+      // 2. Persist override to Laundry user's own profile registry
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const { data: myProf } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", session.user.id)
+          .maybeSingle();
+
+        let signals: any = {};
+        if (myProf?.avatar_url) {
+          try { signals = JSON.parse(myProf.avatar_url); } catch(e) {}
+        }
+        
+        if (!signals.image_overrides) {
+          signals.image_overrides = {};
+        }
+        signals.image_overrides[orderId] = updatedImages;
+        signals.image_overrides[targetOrder.user_email] = updatedImages;
+
+        // Also update inside active_order and orders list in signals if they match
+        if (signals.active_order && signals.active_order.id === orderId) {
+          signals.active_order.images = updatedImages;
+        }
+        if (signals.orders && Array.isArray(signals.orders)) {
+          const idx = signals.orders.findIndex((o: any) => o.id === orderId);
+          if (idx >= 0) {
+            signals.orders[idx].images = updatedImages;
+          }
+        }
+
+        await supabase
+          .from("profiles")
+          .update({ avatar_url: JSON.stringify(signals) })
+          .eq("id", session.user.id);
+      }
+
+      // Sync to local storage
+      localStorage.setItem(`laundry_images_${targetOrder.user_email}`, JSON.stringify(updatedImages));
+
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, images: updatedImages } : o));
+      toast.success("התמונה נמחקה בהצלחה מההזמנה!");
+      
+      localStorage.setItem("laundry_sync_trigger", Date.now().toString());
+      window.dispatchEvent(new Event("storage"));
+    } catch (err: any) {
+      toast.error("שגיאה במחיקת התמונה: " + err.message);
+    }
+  };
+
   const getStatusLabel = (status: string) => {
     switch (status) {
       case "pending": return "ממתין לאיסוף";
@@ -726,8 +819,29 @@ function LaundryDashboard() {
                         </h4>
                         <div className="flex gap-2 flex-wrap">
                           {order.images.map((img, idx) => (
-                            <div key={idx} className="relative size-14 rounded-xl overflow-hidden border border-muted-foreground/10 hover:scale-105 transition-transform cursor-pointer">
-                              <img src={img} alt="תצוגת דגש" className="size-full object-cover" onClick={() => toast.info("תמונה מצורפת מהלקוח")} />
+                            <div key={idx} className="relative size-16 rounded-2xl overflow-hidden border border-muted-foreground/10 hover:scale-105 transition-all shadow-sm cursor-pointer group">
+                              <img 
+                                src={img} 
+                                alt="תצוגת דגש" 
+                                className="size-full object-cover" 
+                                onClick={() => {
+                                  const win = window.open();
+                                  if (win) {
+                                    win.document.write(`<img src="${img}" style="max-width:100%; max-height:100vh; display:block; margin:auto;" />`);
+                                  }
+                                }} 
+                              />
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  deleteOrderImage(order.id, img);
+                                }}
+                                className="absolute top-1 left-1 bg-destructive/95 hover:bg-destructive text-destructive-foreground rounded-full p-1 shadow-md transition-all scale-90 hover:scale-100 active:scale-90 flex items-center justify-center"
+                                title="מחק תמונה"
+                              >
+                                <Trash2 className="size-3" />
+                              </button>
                             </div>
                           ))}
                         </div>
