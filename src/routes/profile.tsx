@@ -147,6 +147,17 @@ function Profile() {
           </div>
         </div>
 
+        {/* Logout Button */}
+        <button
+          onClick={() => { logout(); navigate({ to: "/login" }); }}
+          className="w-full flex items-center justify-between rounded-3xl bg-primary text-primary-foreground p-5 font-bold shadow-md hover:shadow-lg active:scale-[0.98] transition group"
+        >
+          <span className="flex items-center gap-3">
+            <LogOut className="size-5 group-hover:translate-x-1 transition-transform" strokeWidth={2} /> 
+            <span>התנתקות</span>
+          </span>
+        </button>
+
         {/* Order History Section */}
         <div className="space-y-4">
           <div className="flex justify-between items-center px-1">
@@ -222,17 +233,6 @@ function Profile() {
             </div>
           )}
         </div>
-
-        {/* Logout Button */}
-        <button
-          onClick={() => { logout(); navigate({ to: "/login" }); }}
-          className="w-full flex items-center justify-between rounded-3xl bg-primary text-primary-foreground p-5 font-bold shadow-md hover:shadow-lg active:scale-[0.98] transition group"
-        >
-          <span className="flex items-center gap-3">
-            <LogOut className="size-5 group-hover:translate-x-1 transition-transform" strokeWidth={2} /> 
-            <span>התנתקות</span>
-          </span>
-        </button>
       </main>
 
       {/* Order Details Dialog */}
