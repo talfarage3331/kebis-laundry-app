@@ -217,6 +217,7 @@ function LaundryDashboard() {
         if (targetOrder) {
           if (!signals.status_overrides) signals.status_overrides = {};
           signals.status_overrides[targetOrder.user_email] = newStatus;
+          signals.status_overrides[orderId] = newStatus;
           
           if (signals.active_order && signals.active_order.id === orderId) {
             signals.active_order.status = newStatus;
@@ -256,6 +257,7 @@ function LaundryDashboard() {
         if (targetOrder) {
           if (!signals.price_overrides) signals.price_overrides = {};
           signals.price_overrides[targetOrder.user_email] = newPrice;
+          signals.price_overrides[orderId] = newPrice;
           
           if (signals.active_order && signals.active_order.id === orderId) {
             signals.active_order.amount_due = newPrice;
@@ -310,7 +312,8 @@ function LaundryDashboard() {
         if (targetOrder) {
           if (!signals.msg_overrides) signals.msg_overrides = {};
           signals.msg_overrides[targetOrder.user_email] = combined;
-
+          signals.msg_overrides[orderId] = combined;
+          
           if (signals.active_order && signals.active_order.id === orderId) {
             signals.active_order.notes = combined;
           }

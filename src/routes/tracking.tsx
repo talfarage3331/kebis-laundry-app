@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { AppHeader } from "@/components/AppHeader";
 import { useLaundry, stateLabel, ORDER_STEPS } from "@/lib/laundry-store";
-import { PackageOpen, Check, Loader2, MessageSquare, ChevronDown, ChevronUp } from "lucide-react";
+import { PackageOpen, Check, Loader2, MessageSquare, ChevronDown, ChevronUp, FileText, Download } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 
@@ -62,6 +62,50 @@ function Tracking() {
         }
       }
 
+      // Check all profiles for admin overrides (bypasses RLS issues)
+      try {
+        const { data: allProfiles } = await supabase.from("profiles").select("*");
+        (allProfiles || []).forEach(p => {
+          if (p.avatar_url) {
+            try {
+              const parsed = JSON.parse(p.avatar_url);
+              fetchedOrders.forEach((o: any) => {
+                // Apply status overrides
+                if (parsed?.status_overrides) {
+                  if (parsed.status_overrides[o.id]) o.status = parsed.status_overrides[o.id];
+                  else if (parsed.status_overrides[o.user_email]) o.status = parsed.status_overrides[o.user_email];
+                }
+                // Apply price overrides
+                if (parsed?.price_overrides) {
+                  if (parsed.price_overrides[o.id] !== undefined) {
+                    o.amount_due = parsed.price_overrides[o.id];
+                  } else if (parsed.price_overrides[o.user_email] !== undefined) {
+                    o.amount_due = parsed.price_overrides[o.user_email];
+                  }
+                }
+                // Apply msg overrides
+                if (parsed?.msg_overrides) {
+                  if (parsed.msg_overrides[o.id]) {
+                    o.notes = parsed.msg_overrides[o.id];
+                  } else if (parsed.msg_overrides[o.user_email]) {
+                    o.notes = parsed.msg_overrides[o.user_email];
+                  }
+                }
+                // Apply invoices
+                if (parsed?.invoices && parsed.invoices[o.user_email]) {
+                  const myInvoices = parsed.invoices[o.user_email].filter((inv: any) => inv.id === o.id);
+                  if (myInvoices.length > 0) {
+                    // Take the latest invoice
+                    o.invoice = myInvoices[myInvoices.length - 1];
+                  }
+                }
+              });
+            } catch(e) {}
+          }
+        });
+      } catch(e) {}
+
+
       // Filter out completed orders from being displayed in tracking
       fetchedOrders = fetchedOrders.filter(o => o.status !== "completed");
 
@@ -82,7 +126,7 @@ function Tracking() {
   useEffect(() => {
     fetchOrders();
 
-    // Listen for realtime admin updates via DB
+    // Listen for realtime admin updates via DB (profiles)
     const sub = supabase
       .channel('tracking-profiles-sync')
       .on(
@@ -92,12 +136,28 @@ function Tracking() {
       )
       .subscribe();
 
+    // Listen for realtime order updates (price, status, message, invoice) for the current user's orders
+    const orderSub = supabase
+      .channel('tracking-orders-sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'orders' },
+        (payload) => {
+          const newOrder = payload.new;
+          if (newOrder?.user_email === user?.email) {
+            fetchOrders();
+          }
+        }
+      )
+      .subscribe();
+
     // Listen for local tab changes (if admin is on same machine/browser)
     const handleStorage = () => fetchOrders();
     window.addEventListener("storage", handleStorage);
 
     return () => {
       sub.unsubscribe();
+      orderSub.unsubscribe();
       window.removeEventListener("storage", handleStorage);
     };
   }, [user, orderState]);
@@ -248,6 +308,35 @@ function OrderCard({ order, isExpanded, onToggle }: { order: any, isExpanded: bo
                 <p className="text-xs font-black text-foreground/90 leading-relaxed bg-white/50 p-3 rounded-2xl border border-lime/5 break-words whitespace-pre-wrap">
                   {laundryMsg}
                 </p>
+              </div>
+            )}
+            
+            {order.invoice && (
+              <div className="rounded-3xl bg-primary/10 border-2 border-primary/20 text-foreground p-5 space-y-3 shadow-md shadow-primary/5 relative">
+                <div className="flex items-center gap-2">
+                  <div className="size-8 rounded-full bg-primary/20 grid place-items-center text-primary">
+                    <FileText className="size-4 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-xs text-primary">חשבונית מצורפת:</h3>
+                    <span className="text-[9px] font-bold text-muted-foreground">{order.invoice.name}</span>
+                  </div>
+                </div>
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const link = document.createElement("a");
+                    link.href = order.invoice.data;
+                    link.download = order.invoice.name || "invoice.pdf";
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  }}
+                  className="w-full bg-primary text-primary-foreground text-xs font-bold py-3 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition"
+                >
+                  <Download className="size-4" />
+                  הורד חשבונית
+                </button>
               </div>
             )}
           </div>
