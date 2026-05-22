@@ -183,7 +183,7 @@ function Profile() {
               </div>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="relative"><div className="space-y-3 max-h-[12rem] overflow-y-auto pr-2">
               {orders.map((order) => {
                 const date = new Date(order.created_at);
                 const dateString = date.toLocaleDateString("he-IL", {
@@ -231,6 +231,7 @@ function Profile() {
                 );
               })}
             </div>
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-background to-transparent" />
           )}
         </div>
       </main>
