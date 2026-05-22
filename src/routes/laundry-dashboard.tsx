@@ -5,7 +5,7 @@ import { useLaundry, ORDER_STEPS, stateLabel } from "@/lib/laundry-store";
 import { supabase } from "@/lib/supabase";
 import { 
   ShoppingBasket, Truck, Sparkles, CheckCircle2, AlertCircle, 
-  ArrowLeft, LogOut, RefreshCw, MessageSquare, Image as ImageIcon, ChevronDown, Save 
+  ArrowLeft, LogOut, RefreshCw, MessageSquare, Image as ImageIcon, ChevronDown, Save, Trash2, X
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -25,6 +25,7 @@ interface LaundryOrder {
   images?: string[];
   requires_ironing?: boolean;
   requires_dry_cleaning?: boolean;
+  invoices?: Array<{ id: string; date: string; name: string; data: string }>;
 }
 
 function LaundryDashboard() {
@@ -49,6 +50,39 @@ function LaundryDashboard() {
         .select("*")
         .order("created_at", { ascending: false });
 
+      // 2. Fetch from Profiles global registry (to completely bypass strict RLS limits on orders table)
+      const { data: allProfiles } = await supabase
+        .from("profiles")
+        .select("*");
+
+      // Build a map of orderId -> array of invoices
+      const orderInvoicesMap: Record<string, any[]> = {};
+      (allProfiles || []).forEach(p => {
+        try {
+          if (p.avatar_url) {
+            const parsed = JSON.parse(p.avatar_url);
+            if (parsed && parsed.invoices) {
+              Object.keys(parsed.invoices).forEach(email => {
+                const userInvs = parsed.invoices[email];
+                if (Array.isArray(userInvs)) {
+                  userInvs.forEach((inv: any) => {
+                    if (inv && inv.id) {
+                      if (!orderInvoicesMap[inv.id]) {
+                        orderInvoicesMap[inv.id] = [];
+                      }
+                      // Avoid duplicates
+                      if (!orderInvoicesMap[inv.id].some((x: any) => x.date === inv.date && x.name === inv.name)) {
+                        orderInvoicesMap[inv.id].push(inv);
+                      }
+                    }
+                  });
+                }
+              });
+            }
+          }
+        } catch (e) {}
+      });
+
       const realOrders = (dbOrders || [])
         .filter((o: any) => 
           o.delivery_method !== "placeholder" && 
@@ -64,13 +98,9 @@ function LaundryDashboard() {
           notes: o.notes || localStorage.getItem(`laundry_notes_${o.user_email}`) || localStorage.getItem("laundry_notes") || "",
           images: o.images || JSON.parse(localStorage.getItem(`laundry_images_${o.user_email}`) || localStorage.getItem("laundry_images") || "[]"),
           requires_ironing: o.requires_ironing || localStorage.getItem(`laundry_ironing_${o.user_email}`) === "true",
-          requires_dry_cleaning: o.requires_dry_cleaning || localStorage.getItem(`laundry_dry_cleaning_${o.user_email}`) === "true"
+          requires_dry_cleaning: o.requires_dry_cleaning || localStorage.getItem(`laundry_dry_cleaning_${o.user_email}`) === "true",
+          invoices: orderInvoicesMap[o.id] || []
         }));
-
-      // 2. Fetch from Profiles global registry (to completely bypass strict RLS limits on orders table)
-      const { data: allProfiles } = await supabase
-        .from("profiles")
-        .select("*");
 
       const globalOrders: LaundryOrder[] = [];
       (allProfiles || []).forEach(p => {
@@ -100,7 +130,8 @@ function LaundryDashboard() {
                     notes: o.notes || localStorage.getItem(`laundry_notes_${o.user_email}`) || localStorage.getItem("laundry_notes") || "",
                     images: o.images || JSON.parse(localStorage.getItem(`laundry_images_${o.user_email}`) || "[]"),
                     requires_ironing: o.requires_ironing || localStorage.getItem(`laundry_ironing_${o.user_email}`) === "true",
-                    requires_dry_cleaning: o.requires_dry_cleaning || localStorage.getItem(`laundry_dry_cleaning_${o.user_email}`) === "true"
+                    requires_dry_cleaning: o.requires_dry_cleaning || localStorage.getItem(`laundry_dry_cleaning_${o.user_email}`) === "true",
+                    invoices: orderInvoicesMap[o.id] || []
                   });
                 }
               });
@@ -113,7 +144,15 @@ function LaundryDashboard() {
       const mergedRaw = [...realOrders, ...globalOrders];
       const mergedMap = new Map();
       mergedRaw.forEach(o => {
-        if (!mergedMap.has(o.id)) mergedMap.set(o.id, o);
+        if (!mergedMap.has(o.id)) {
+          mergedMap.set(o.id, o);
+        } else {
+          // Merge invoices if one of them has them
+          const existing = mergedMap.get(o.id);
+          if ((!existing.invoices || existing.invoices.length === 0) && o.invoices && o.invoices.length > 0) {
+            existing.invoices = o.invoices;
+          }
+        }
       });
       const finalOrders = Array.from(mergedMap.values()).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
@@ -413,6 +452,67 @@ function LaundryDashboard() {
     }
   };
 
+  const deleteUploadedInvoice = async (orderId: string, userEmail: string, invoiceDate: string, invoiceName: string) => {
+    if (!confirm("האם אתה בטוח שברצונך למחוק חשבונית זו?")) {
+      return;
+    }
+    
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
+        toast.error("נא להתחבר מחדש");
+        return;
+      }
+
+      // Fetch the laundry user's own profile
+      const { data: myProf, error: fetchErr } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", session.user.id)
+        .maybeSingle();
+
+      if (fetchErr) throw fetchErr;
+      if (!myProf) {
+        throw new Error("לא נמצא פרופיל מכבסה מתאים");
+      }
+
+      let signals: any = {};
+      if (myProf.avatar_url) {
+        try {
+          signals = JSON.parse(myProf.avatar_url);
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
+      if (signals.invoices && signals.invoices[userEmail]) {
+        // Filter out the invoice
+        signals.invoices[userEmail] = signals.invoices[userEmail].filter(
+          (inv: any) => !(inv.id === orderId && inv.date === invoiceDate && inv.name === invoiceName)
+        );
+
+        // Update the laundry user's own profile
+        await supabase
+          .from("profiles")
+          .update({ avatar_url: JSON.stringify(signals) })
+          .eq("id", session.user.id);
+
+        toast.success("החשבונית נמחקה בהצלחה!");
+        
+        // Refresh local orders list
+        fetchOrders();
+        
+        // Trigger storage event for local updates
+        localStorage.setItem("laundry_sync_trigger", Date.now().toString());
+        window.dispatchEvent(new Event("storage"));
+      } else {
+        toast.error("לא נמצאה חשבונית למחיקה");
+      }
+    } catch (err: any) {
+      toast.error("שגיאה במחיקת החשבונית: " + err.message);
+    }
+  };
+
   const getStatusLabel = (status: string) => {
     switch (status) {
       case "pending": return "ממתין לאיסוף";
@@ -704,6 +804,40 @@ function LaundryDashboard() {
                       </div>
                     </div>
 
+                    {/* Already Uploaded Invoices */}
+                    {order.invoices && order.invoices.length > 0 && (
+                      <div className="space-y-1.5 pt-2 border-t border-muted-foreground/5">
+                        <label className="text-[11px] font-extrabold text-muted-foreground block">חשבוניות שנשלחו ללקוח:</label>
+                        <div className="space-y-1">
+                          {order.invoices.map((inv, idx) => (
+                            <div key={idx} className="flex items-center justify-between bg-muted/30 hover:bg-muted/50 rounded-xl p-2.5 border border-muted-foreground/10 transition-colors">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className="text-[11px] font-bold text-foreground truncate max-w-[130px]" title={inv.name}>📄 {inv.name}</span>
+                                <span className="text-[9px] text-muted-foreground font-semibold">({new Date(inv.date).toLocaleDateString("he-IL")})</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <a 
+                                  href={inv.data} 
+                                  download={inv.name}
+                                  className="text-[10px] font-black text-primary hover:text-primary/80 bg-primary/10 px-2 py-1 rounded-lg transition active:scale-95"
+                                >
+                                  הורדה
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteUploadedInvoice(order.id, order.user_email, inv.date, inv.name)}
+                                  className="text-[10px] font-black text-destructive hover:text-destructive/80 bg-destructive/10 px-2 py-1 rounded-lg transition active:scale-95 flex items-center gap-0.5"
+                                >
+                                  <Trash2 className="size-3" />
+                                  <span>מחק</span>
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Upload Invoice */}
                     <div className="space-y-2 pt-2 border-t border-muted-foreground/5">
                       <label className="text-[11px] font-extrabold text-muted-foreground block">צירוף ושליחת חשבונית:</label>
@@ -719,7 +853,23 @@ function LaundryDashboard() {
                         }}
                       />
                       {pendingInvoices[order.id] && (
-                        <p className="text-[10px] text-primary font-bold mt-1">📎 {pendingInvoices[order.id]!.name} — ממתין לשמירה</p>
+                        <div className="flex items-center justify-between bg-primary/5 rounded-xl p-2 mt-1 border border-primary/10">
+                          <p className="text-[10px] text-primary font-bold">📎 {pendingInvoices[order.id]!.name} — ממתין לשמירה</p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPendingInvoices(prev => {
+                                const n = { ...prev };
+                                delete n[order.id];
+                                return n;
+                              });
+                            }}
+                            className="text-[10px] text-destructive hover:text-destructive/80 font-black flex items-center gap-0.5 bg-destructive/10 px-2 py-1 rounded-lg transition active:scale-95"
+                          >
+                            <X className="size-3" />
+                            <span>בטל</span>
+                          </button>
+                        </div>
                       )}
                     </div>
 

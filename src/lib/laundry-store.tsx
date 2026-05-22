@@ -444,9 +444,10 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         let finalAmount = data.amount_due || 0;
         let finalNotes = (data as any).notes || "";
 
-        // Check all profiles for laundry staff overrides (status, price, message)
+        // Check all profiles for laundry staff overrides (status, price, message, invoices)
         try {
           const { data: allProfiles } = await supabase.from("profiles").select("*");
+          const collectedInvoices: any[] = [];
           (allProfiles || []).forEach(p => {
             try {
               if (p.avatar_url) {
@@ -460,9 +461,22 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
                 if (parsed?.msg_overrides?.[user?.email || ""]) {
                   finalNotes = parsed.msg_overrides[user?.email || ""];
                 }
+                if (parsed?.invoices?.[user?.email || ""]) {
+                  const userInvs = parsed.invoices[user?.email || ""];
+                  if (Array.isArray(userInvs)) {
+                    userInvs.forEach((inv: any) => {
+                      if (!collectedInvoices.some((x: any) => x.date === inv.date && x.name === inv.name)) {
+                        collectedInvoices.push(inv);
+                      }
+                    });
+                  }
+                }
               }
             } catch(e) {}
           });
+          if (collectedInvoices.length > 0) {
+            setInvoices(collectedInvoices.slice().reverse());
+          }
         } catch(e) {}
 
         setOrderState(finalStatus);
