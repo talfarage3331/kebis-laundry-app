@@ -39,14 +39,22 @@ function Tracking() {
             const signals = JSON.parse(myProf.avatar_url);
             
             // Merge active_order
-            if (signals.active_order && !fetchedOrders.find(o => o.id === signals.active_order.id)) {
-              fetchedOrders.push(signals.active_order);
+            if (signals.active_order) {
+              const existingIdx = fetchedOrders.findIndex(o => o.id === signals.active_order.id);
+              if (existingIdx === -1) {
+                fetchedOrders.push(signals.active_order);
+              } else {
+                fetchedOrders[existingIdx] = { ...fetchedOrders[existingIdx], ...signals.active_order };
+              }
             }
             // Merge orders array if it exists
             if (signals.orders && Array.isArray(signals.orders)) {
               signals.orders.forEach((o: any) => {
-                if (!fetchedOrders.find(existing => existing.id === o.id)) {
+                const existingIdx = fetchedOrders.findIndex(existing => existing.id === o.id);
+                if (existingIdx === -1) {
                   fetchedOrders.push(o);
+                } else {
+                  fetchedOrders[existingIdx] = { ...fetchedOrders[existingIdx], ...o };
                 }
               });
             }
@@ -73,6 +81,25 @@ function Tracking() {
 
   useEffect(() => {
     fetchOrders();
+
+    // Listen for realtime admin updates via DB
+    const sub = supabase
+      .channel('tracking-profiles-sync')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'profiles' },
+        () => fetchOrders()
+      )
+      .subscribe();
+
+    // Listen for local tab changes (if admin is on same machine/browser)
+    const handleStorage = () => fetchOrders();
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      sub.unsubscribe();
+      window.removeEventListener("storage", handleStorage);
+    };
   }, [user, orderState]);
 
   return (
@@ -218,7 +245,7 @@ function OrderCard({ order, isExpanded, onToggle }: { order: any, isExpanded: bo
                     <span className="text-[9px] font-bold text-muted-foreground">הודעה רשמית מצוות המכבסה</span>
                   </div>
                 </div>
-                <p className="text-xs font-black text-foreground/90 leading-relaxed bg-white/50 p-3 rounded-2xl border border-lime/5">
+                <p className="text-xs font-black text-foreground/90 leading-relaxed bg-white/50 p-3 rounded-2xl border border-lime/5 break-words whitespace-pre-wrap">
                   {laundryMsg}
                 </p>
               </div>
