@@ -74,24 +74,33 @@ function LaundryDashboard() {
         try {
           if (p.avatar_url) {
             const parsed = JSON.parse(p.avatar_url);
-            if (parsed && parsed.active_order) {
-              const o = parsed.active_order;
-              // Check if order is already fulfilled/completed to prevent ghost orders showing forever
-              if (o.status !== "completed" && o.status !== "none") {
-                globalOrders.push({
-                  id: o.id,
-                  created_at: o.created_at || o.timestamp || new Date().toISOString(),
-                  status: o.status,
-                  delivery_method: o.delivery_method,
-                  payment_state: o.payment_state,
-                  amount_due: o.amount_due,
-                  user_email: o.user_email,
-                  notes: o.notes || localStorage.getItem(`laundry_notes_${o.user_email}`) || localStorage.getItem("laundry_notes") || "",
-                  images: o.images || JSON.parse(localStorage.getItem(`laundry_images_${o.user_email}`) || "[]"),
-                  requires_ironing: o.requires_ironing || localStorage.getItem(`laundry_ironing_${o.user_email}`) === "true",
-                  requires_dry_cleaning: o.requires_dry_cleaning || localStorage.getItem(`laundry_dry_cleaning_${o.user_email}`) === "true"
-                });
+            if (parsed) {
+              const ordersToAdd = [];
+              if (parsed.active_order) {
+                ordersToAdd.push(parsed.active_order);
               }
+              if (parsed.orders && Array.isArray(parsed.orders)) {
+                ordersToAdd.push(...parsed.orders);
+              }
+              
+              ordersToAdd.forEach((o: any) => {
+                // Check if order is already fulfilled/completed to prevent ghost orders showing forever
+                if (o.status !== "completed" && o.status !== "none") {
+                  globalOrders.push({
+                    id: o.id,
+                    created_at: o.created_at || o.timestamp || new Date().toISOString(),
+                    status: o.status,
+                    delivery_method: o.delivery_method,
+                    payment_state: o.payment_state,
+                    amount_due: o.amount_due,
+                    user_email: o.user_email,
+                    notes: o.notes || localStorage.getItem(`laundry_notes_${o.user_email}`) || localStorage.getItem("laundry_notes") || "",
+                    images: o.images || JSON.parse(localStorage.getItem(`laundry_images_${o.user_email}`) || "[]"),
+                    requires_ironing: o.requires_ironing || localStorage.getItem(`laundry_ironing_${o.user_email}`) === "true",
+                    requires_dry_cleaning: o.requires_dry_cleaning || localStorage.getItem(`laundry_dry_cleaning_${o.user_email}`) === "true"
+                  });
+                }
+              });
             }
           }
         } catch (e) {}
