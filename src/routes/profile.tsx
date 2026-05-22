@@ -2,13 +2,13 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { AppLayout } from "@/components/AppLayout";
 import { AppHeader } from "@/components/AppHeader";
 import { useLaundry } from "@/lib/laundry-store";
-import { LogOut, RotateCcw, User as UserIcon, Mail } from "lucide-react";
+import { LogOut, User as UserIcon, Mail } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/profile")({ component: Profile });
 
 function Profile() {
-  const { user, logout, reset } = useLaundry();
+  const { user, logout } = useLaundry();
   const navigate = useNavigate();
 
   return (
@@ -26,13 +26,6 @@ function Profile() {
             </p>
           </div>
         </div>
-
-        <button
-          onClick={() => { reset(); toast.success("ההזמנה אופסה"); }}
-          className="w-full flex items-center justify-between rounded-3xl bg-muted p-5 font-semibold"
-        >
-          <span className="flex items-center gap-3"><RotateCcw className="size-5" strokeWidth={1.75} /> אפס הזמנה (דמו)</span>
-        </button>
 
         <button
           onClick={() => { logout(); navigate({ to: "/login" }); }}
