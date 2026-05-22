@@ -21,7 +21,7 @@ function Dashboard() {
     <AppLayout>
       <AppHeader subtitle={user ? `שלום, ${user.name}` : undefined} />
       <main className="px-5 mt-6 pb-8">
-        {orderState === "none" ? (
+        {orderState === "none" || orderState === "completed" ? (
           <EmptyState onOpenModal={() => setIsModalOpen(true)} />
         ) : (
           <div className="space-y-6">
