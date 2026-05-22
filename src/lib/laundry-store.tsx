@@ -498,7 +498,62 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         }
         setOrderImages(images);
 
-        // Retroactive sync removed to prevent race conditions during order creation.
+        // Safe, auto-correcting sync: if the customer's own profile snapshot is outdated compared to the database/overrides,
+        // update the snapshot in their own profile so that it stays perfectly in sync for the laundry dashboard!
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) {
+            const { data: myProf } = await supabase.from("profiles").select("avatar_url").eq("id", session.user.id).maybeSingle();
+            if (myProf?.avatar_url) {
+              const signals = JSON.parse(myProf.avatar_url);
+              let needsUpdate = false;
+              
+              if (signals.active_order && signals.active_order.id === data.id) {
+                if (
+                  signals.active_order.status !== finalStatus ||
+                  signals.active_order.amount_due !== finalAmount ||
+                  signals.active_order.notes !== dbNotes ||
+                  signals.active_order.delivery_method !== data.delivery_method ||
+                  signals.active_order.payment_state !== data.payment_state
+                ) {
+                  signals.active_order.status = finalStatus;
+                  signals.active_order.amount_due = finalAmount;
+                  signals.active_order.notes = dbNotes;
+                  signals.active_order.delivery_method = data.delivery_method;
+                  signals.active_order.payment_state = data.payment_state;
+                  needsUpdate = true;
+                }
+              }
+              
+              if (signals.orders && Array.isArray(signals.orders)) {
+                const idx = signals.orders.findIndex((o: any) => o.id === data.id);
+                if (idx >= 0) {
+                  const o = signals.orders[idx];
+                  if (
+                    o.status !== finalStatus ||
+                    o.amount_due !== finalAmount ||
+                    o.notes !== dbNotes ||
+                    o.delivery_method !== data.delivery_method ||
+                    o.payment_state !== data.payment_state
+                  ) {
+                    o.status = finalStatus;
+                    o.amount_due = finalAmount;
+                    o.notes = dbNotes;
+                    o.delivery_method = data.delivery_method;
+                    o.payment_state = data.payment_state;
+                    needsUpdate = true;
+                  }
+                }
+              }
+              
+              if (needsUpdate) {
+                await supabase.from("profiles").update({ avatar_url: JSON.stringify(signals) }).eq("id", session.user.id);
+              }
+            }
+          }
+        } catch (syncErr) {
+          console.error("Error auto-syncing overrides to customer profile:", syncErr);
+        }
       } else {
         setOrderState("none");
         setActiveOrderId(null);

@@ -44,7 +44,7 @@ function Tracking() {
               if (existingIdx === -1) {
                 fetchedOrders.push(signals.active_order);
               } else {
-                fetchedOrders[existingIdx] = { ...fetchedOrders[existingIdx], ...signals.active_order };
+                fetchedOrders[existingIdx] = { ...signals.active_order, ...fetchedOrders[existingIdx] };
               }
             }
             // Merge orders array if it exists
@@ -54,7 +54,7 @@ function Tracking() {
                 if (existingIdx === -1) {
                   fetchedOrders.push(o);
                 } else {
-                  fetchedOrders[existingIdx] = { ...fetchedOrders[existingIdx], ...o };
+                  fetchedOrders[existingIdx] = { ...o, ...fetchedOrders[existingIdx] };
                 }
               });
             }
