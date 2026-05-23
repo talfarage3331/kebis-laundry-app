@@ -7,8 +7,10 @@ export type PaymentState = "unpaid" | "paid";
 
 export interface Invoice {
   id: string;
-  amount: number;
+  amount?: number;
   date: string;
+  name?: string;
+  data?: string;
 }
 
 export interface User {
@@ -265,61 +267,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
   const refreshActiveOrder = useCallback(async () => {
     if (!user) return;
     try {
-      // 0.5 Fetch global sync signals from the Admin's profile row (bypasses all RLS blocks!)
-      try {
-        const { data: adminProf } = await supabase
-          .from("profiles")
-          .select("avatar_url")
-          .eq("email", "talfarage3331@gmail.com")
-          .maybeSingle();
-
-        if (adminProf?.avatar_url) {
-          const signals = JSON.parse(adminProf.avatar_url);
-          const mySignal = signals[user.email];
-          if (mySignal) {
-            const newName = mySignal.name || "";
-            const newRole = mySignal.role || "customer";
-
-            // Get current active session
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session?.user) {
-              // Fetch our own current profile from standard DB
-              const { data: myProf } = await supabase
-                .from("profiles")
-                .select("*")
-                .eq("id", session.user.id)
-                .maybeSingle();
-
-              if (myProf && (myProf.full_name !== newName || myProf.role !== newRole)) {
-                await supabase
-                  .from("profiles")
-                  .update({
-                    full_name: newName,
-                    role: newRole
-                  })
-                  .eq("id", session.user.id);
-              }
-
-              setUser(prev => {
-                if (!prev) return prev;
-                if (prev.name !== newName || prev.role !== newRole) {
-                  return {
-                    ...prev,
-                    name: newName,
-                    role: newRole as any
-                  };
-                }
-                return prev;
-              });
-              window.dispatchEvent(new Event("storage"));
-            }
-          }
-        }
-      } catch (signalsErr) {
-        console.error("Error parsing admin sync signals in refreshActiveOrder:", signalsErr);
-      }
-
-      // 1. Process profile sync orders sent by the Admin in real-time (bypasses RLS)
+      // 1. Process profile sync orders sent by the Admin in real-time
       const { data: syncOrders } = await supabase
         .from("orders")
         .select("*")
@@ -400,100 +348,35 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         .eq('user_email', user?.email)
         .order('created_at', { ascending: false });
 
+      if (error) throw error;
+
       let data = (allOrders || []).find(o => 
         o.delivery_method !== "placeholder" && 
         !(o.delivery_method || "").startsWith("PROFILE_SYNC:")
       );
 
-      // Fallback: If not found in orders table, check our own profile's active_order snapshot
-      if (!data) {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          const { data: myProf } = await supabase.from("profiles").select("avatar_url").eq("id", session.user.id).maybeSingle();
-          if (myProf?.avatar_url) {
-            try {
-              const signals = JSON.parse(myProf.avatar_url);
-              if (signals.active_order) {
-                data = signals.active_order;
-              }
-              // Fetch invoices
-              if (signals.invoices && signals.invoices[user?.email]) {
-                setInvoices(signals.invoices[user?.email].reverse()); // reverse to show newest first
-              }
-            } catch(e) {}
-          }
-        }
-      } else {
-        // Also fetch invoices when we DO have data
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          const { data: myProf } = await supabase.from("profiles").select("avatar_url").eq("id", session.user.id).maybeSingle();
-          if (myProf?.avatar_url) {
-            try {
-              const signals = JSON.parse(myProf.avatar_url);
-              if (signals.invoices && signals.invoices[user?.email]) {
-                setInvoices(signals.invoices[user?.email].reverse());
-              }
-            } catch(e) {}
-          }
-        }
+      // 3. Fetch invoices directly from the new structured SQL invoices table
+      const { data: dbInvoices } = await supabase
+        .from("invoices")
+        .select("*")
+        .eq("user_email", user.email)
+        .order("created_at", { ascending: false });
+
+      if (dbInvoices) {
+        setInvoices(dbInvoices.map((inv: any) => ({
+          id: inv.id,
+          amount: data?.amount_due || 0,
+          date: inv.created_at,
+          name: inv.name,
+          data: inv.data
+        })));
       }
 
-      if (data && !error) {
-        let finalStatus = data.status as OrderState;
-        let finalAmount = data.amount_due || 0;
-        let finalNotes = (data as any).notes || "";
-        let finalImages = (data as any).images;
-
-        // Check all profiles for laundry staff overrides (status, price, message, invoices, images)
-        try {
-          const { data: allProfiles } = await supabase.from("profiles").select("*");
-          const collectedInvoices: any[] = [];
-          (allProfiles || []).forEach(p => {
-            try {
-              if (p.avatar_url) {
-                const parsed = JSON.parse(p.avatar_url);
-                if (parsed?.status_overrides?.[user?.email || ""]) {
-                  finalStatus = parsed.status_overrides[user?.email || ""] as OrderState;
-                }
-                if (parsed?.status_overrides?.[data.id]) {
-                  finalStatus = parsed.status_overrides[data.id] as OrderState;
-                }
-                if (parsed?.price_overrides?.[user?.email || ""] !== undefined) {
-                  finalAmount = parsed.price_overrides[user?.email || ""];
-                }
-                if (parsed?.price_overrides?.[data.id] !== undefined) {
-                  finalAmount = parsed.price_overrides[data.id];
-                }
-                if (parsed?.msg_overrides?.[user?.email || ""]) {
-                  finalNotes = parsed.msg_overrides[user?.email || ""];
-                }
-                if (parsed?.msg_overrides?.[data.id]) {
-                  finalNotes = parsed.msg_overrides[data.id];
-                }
-                if (parsed?.image_overrides?.[user?.email || ""]) {
-                  finalImages = parsed.image_overrides[user?.email || ""];
-                }
-                if (parsed?.image_overrides?.[data.id]) {
-                  finalImages = parsed.image_overrides[data.id];
-                }
-                if (parsed?.invoices?.[user?.email || ""]) {
-                  const userInvs = parsed.invoices[user?.email || ""];
-                  if (Array.isArray(userInvs)) {
-                    userInvs.forEach((inv: any) => {
-                      if (!collectedInvoices.some((x: any) => x.date === inv.date && x.name === inv.name)) {
-                        collectedInvoices.push(inv);
-                      }
-                    });
-                  }
-                }
-              }
-            } catch(e) {}
-          });
-          if (collectedInvoices.length > 0) {
-            setInvoices(collectedInvoices.slice().reverse());
-          }
-        } catch(e) {}
+      if (data) {
+        const finalStatus = data.status as OrderState;
+        const finalAmount = data.amount_due || 0;
+        const finalNotes = data.notes || "";
+        const finalImages = data.images;
 
         setOrderState(finalStatus);
         setDeliveryMethod(data.delivery_method as DeliveryMethod);
@@ -502,92 +385,21 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         setActiveOrderId(data.id || null);
         setActiveOrderDate(data.created_at || null);
 
-        // Fetch optional services with localStorage fallbacks
-        const ironing = (data as any).requires_ironing || localStorage.getItem(`laundry_ironing_${user?.email}`) === "true";
-        setRequiresIroning(!!ironing);
+        // Fetch optional services
+        setRequiresIroning(!!data.requires_ironing);
+        setRequiresDryCleaning(!!data.requires_dry_cleaning);
 
-        const dryCleaning = (data as any).requires_dry_cleaning || localStorage.getItem(`laundry_dry_cleaning_${user?.email}`) === "true";
-        setRequiresDryCleaning(!!dryCleaning);
-
-        // Dynamic fallback schema: load notes and images by user email prefix
-        const dbNotes = finalNotes || (data as any).notes;
-        const dbImages = finalImages;
-
-        const notes = dbNotes || localStorage.getItem(`laundry_notes_${user?.email}`) || localStorage.getItem("laundry_notes") || null;
-        setOrderNotes(notes);
+        setOrderNotes(finalNotes || null);
 
         let images: string[] = [];
         try {
-          if (dbImages) {
-            images = typeof dbImages === 'string' ? JSON.parse(dbImages) : dbImages;
-          } else {
-            images = JSON.parse(localStorage.getItem(`laundry_images_${user?.email}`) || localStorage.getItem("laundry_images") || "[]");
+          if (finalImages) {
+            images = typeof finalImages === 'string' ? JSON.parse(finalImages) : finalImages;
           }
         } catch (e) {
           console.error("Error parsing images:", e);
         }
         setOrderImages(images);
-
-        // Safe, auto-correcting sync: if the customer's own profile snapshot is outdated compared to the database/overrides,
-        // update the snapshot in their own profile so that it stays perfectly in sync for the laundry dashboard!
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session?.user) {
-            const { data: myProf } = await supabase.from("profiles").select("avatar_url").eq("id", session.user.id).maybeSingle();
-            if (myProf?.avatar_url) {
-              const signals = JSON.parse(myProf.avatar_url);
-              let needsUpdate = false;
-              
-              if (signals.active_order && signals.active_order.id === data.id) {
-                if (
-                  signals.active_order.status !== finalStatus ||
-                  signals.active_order.amount_due !== finalAmount ||
-                  signals.active_order.notes !== dbNotes ||
-                  signals.active_order.delivery_method !== data.delivery_method ||
-                  signals.active_order.payment_state !== data.payment_state ||
-                  JSON.stringify(signals.active_order.images) !== JSON.stringify(images)
-                ) {
-                  signals.active_order.status = finalStatus;
-                  signals.active_order.amount_due = finalAmount;
-                  signals.active_order.notes = dbNotes;
-                  signals.active_order.delivery_method = data.delivery_method;
-                  signals.active_order.payment_state = data.payment_state;
-                  signals.active_order.images = images;
-                  needsUpdate = true;
-                }
-              }
-              
-              if (signals.orders && Array.isArray(signals.orders)) {
-                const idx = signals.orders.findIndex((o: any) => o.id === data.id);
-                if (idx >= 0) {
-                  const o = signals.orders[idx];
-                  if (
-                    o.status !== finalStatus ||
-                    o.amount_due !== finalAmount ||
-                    o.notes !== dbNotes ||
-                    o.delivery_method !== data.delivery_method ||
-                    o.payment_state !== data.payment_state ||
-                    JSON.stringify(o.images) !== JSON.stringify(images)
-                  ) {
-                    o.status = finalStatus;
-                    o.amount_due = finalAmount;
-                    o.notes = dbNotes;
-                    o.delivery_method = data.delivery_method;
-                    o.payment_state = data.payment_state;
-                    o.images = images;
-                    needsUpdate = true;
-                  }
-                }
-              }
-              
-              if (needsUpdate) {
-                await supabase.from("profiles").update({ avatar_url: JSON.stringify(signals) }).eq("id", session.user.id);
-              }
-            }
-          }
-        } catch (syncErr) {
-          console.error("Error auto-syncing overrides to customer profile:", syncErr);
-        }
       } else {
         setOrderState("none");
         setActiveOrderId(null);
@@ -762,48 +574,6 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     
     // Dispatch standard storage event to trigger real-time UI reaction
     window.dispatchEvent(new Event("storage"));
-
-    // NEW: Push the active order snapshot to the customer's own public profiles.avatar_url
-    // This perfectly bypasses the orders table RLS, allowing the Laundry user to fetch it globally!
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        const orderSnapshot = {
-          id: insertedOrder?.[0]?.id || newNotification.id,
-          status: newState,
-          delivery_method: "none",
-          payment_state: "unpaid",
-          amount_due: amount,
-          user_email: user?.email,
-          notes: notes || null,
-          images: images || [],
-          requires_ironing: ironing,
-          requires_dry_cleaning: dryCleaning,
-          created_at: new Date().toISOString()
-        };
-
-        const { data: myProf } = await supabase.from("profiles").select("*").eq("id", session.user.id).maybeSingle();
-        let signals: any = {};
-        if (myProf?.avatar_url) {
-          try { signals = JSON.parse(myProf.avatar_url); } catch(e) {}
-        }
-        if (!signals.orders) signals.orders = [];
-        
-        // Preserve the existing active_order before we overwrite it!
-        if (signals.active_order) {
-          const exists = signals.orders.find((o: any) => o.id === signals.active_order.id);
-          if (!exists) {
-            signals.orders.push(signals.active_order);
-          }
-        }
-
-        signals.active_order = orderSnapshot;
-        signals.orders.unshift(orderSnapshot);
-        await supabase.from("profiles").update({ avatar_url: JSON.stringify(signals) }).eq("id", session.user.id);
-      }
-    } catch(err) {
-      console.error("Failed to sync order to profile registry", err);
-    }
   }, [user]);
 
   const advanceOrder = useCallback(async () => {

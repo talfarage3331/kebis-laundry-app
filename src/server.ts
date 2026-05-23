@@ -66,9 +66,57 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
   return brandedErrorResponse();
 }
 
+// Simple in-memory Rate Limiting cache for Cloudflare Worker Isolate
+// Fixed-window: 100 requests per minute per IP.
+const rateLimitCache = new Map<string, { count: number; resetTime: number }>();
+const LIMIT_PER_MINUTE = 100;
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const client = rateLimitCache.get(ip);
+
+  if (!client || now > client.resetTime) {
+    rateLimitCache.set(ip, {
+      count: 1,
+      resetTime: now + 60000,
+    });
+    return false;
+  }
+
+  client.count += 1;
+  if (client.count > LIMIT_PER_MINUTE) {
+    return true;
+  }
+  return false;
+}
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      const ip = request.headers.get("CF-Connecting-IP") || "127.0.0.1";
+      const url = new URL(request.url);
+
+      // Protect SSR rendering and sensitive page paths from denial of service
+      if (
+        url.pathname === "/login" ||
+        url.pathname === "/signup" ||
+        url.pathname === "/" ||
+        url.pathname.startsWith("/api")
+      ) {
+        if (isRateLimited(ip)) {
+          return new Response(
+            JSON.stringify({ error: "Too many requests. Please try again in a minute." }),
+            {
+              status: 429,
+              headers: {
+                "content-type": "application/json",
+                "Retry-After": "60",
+              },
+            }
+          );
+        }
+      }
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);
@@ -78,3 +126,4 @@ export default {
     }
   },
 };
+

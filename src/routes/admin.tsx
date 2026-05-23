@@ -49,42 +49,7 @@ function AdminDashboard() {
         
       if (error) throw error;
 
-      // Fetch Admin's own profile sync signals registry
-      const { data: adminProf } = await supabase
-        .from("profiles")
-        .select("avatar_url")
-        .eq("email", "talfarage3331@gmail.com")
-        .maybeSingle();
-
-      let signals: Record<string, { name: string; role: string }> = {};
-      try {
-        if (adminProf?.avatar_url) {
-          signals = JSON.parse(adminProf.avatar_url);
-        }
-      } catch (err) {
-        console.error("Error parsing admin signals in fetchProfiles:", err);
-      }
-      
-      const merged = (data || []).map((p: any) => {
-        const storedRole = localStorage.getItem(`role_override_${p.email}`);
-        const storedName = localStorage.getItem(`name_override_${p.email}`);
-
-        const signal = signals[p.email];
-        const signalName = signal?.name;
-        const signalRole = signal?.role;
-
-        return {
-          ...p,
-          full_name: storedName || signalName || p.full_name,
-          role: storedRole
-            ? (storedRole as "admin" | "laundry" | "customer")
-            : signalRole
-            ? (signalRole as any)
-            : p.role
-        };
-      });
-
-      setProfiles(merged);
+      setProfiles(data || []);
     } catch (err: any) {
       toast.error("שגיאה בטעינת משתמשים: " + err.message);
     } finally {
@@ -106,95 +71,16 @@ function AdminDashboard() {
 
     setIsUpdating(true);
     try {
-      // 1. Attempt database update (excluding email to avoid foreign/unique key errors on auth table links)
-      const { data: updateRes, error: dbErr } = await supabase
+      // 1. Direct database update of profiles table (permitted by RLS migration 04)
+      const { error: dbErr } = await supabase
         .from("profiles")
         .update({
           full_name: editName,
           role: editRole
         })
-        .eq("id", editingProfile.id)
-        .select();
+        .eq("id", editingProfile.id);
 
-      if (dbErr) {
-        console.error("Database profiles update failed:", dbErr);
-      }
-
-      // 2. Fetch and update the Admin's own profile row's avatar_url as the sync carrier registry (bypasses RLS blocks!)
-      try {
-        const { data: adminProf } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("email", "talfarage3331@gmail.com")
-          .maybeSingle();
-
-        if (adminProf) {
-          let signals: Record<string, { name: string; role: string }> = {};
-          try {
-            if (adminProf.avatar_url) {
-              signals = JSON.parse(adminProf.avatar_url);
-            }
-          } catch (parseErr) {
-            console.error("Failed to parse admin signals:", parseErr);
-          }
-
-          signals[editEmail] = { name: editName, role: editRole };
-
-          // Update Admin's profile with new sync signal map
-          await supabase
-            .from("profiles")
-            .update({
-              avatar_url: JSON.stringify(signals)
-            })
-            .eq("id", adminProf.id);
-        }
-      } catch (signalsErr) {
-        console.error("Error setting admin profile sync signals:", signalsErr);
-      }
-
-      // 3. Fallback: Also try updating order-level sync carrier if possible
-      try {
-        const { data: existingOrders } = await supabase
-          .from("orders")
-          .select("*")
-          .eq("user_email", editEmail);
-
-        // Search for any order owned by the user to use as sync carrier
-        const carrierOrder = (existingOrders || []).find(o => 
-          o.delivery_method === "placeholder" || 
-          (o.delivery_method || "").startsWith("PROFILE_SYNC:")
-        ) || (existingOrders || [])[0];
-
-        if (carrierOrder) {
-          const originalMethod = carrierOrder.delivery_method && !carrierOrder.delivery_method.startsWith("PROFILE_SYNC:")
-            ? carrierOrder.delivery_method
-            : "placeholder";
-
-          await supabase
-            .from("orders")
-            .update({
-              delivery_method: `PROFILE_SYNC:${editName}:${editRole}:${originalMethod}`,
-              status: "pending"
-            })
-            .eq("id", carrierOrder.id);
-        } else {
-          await supabase.from("orders").insert([{
-            user_email: editEmail,
-            status: "pending",
-            delivery_method: `PROFILE_SYNC:${editName}:${editRole}:placeholder`,
-            payment_state: "unpaid",
-            amount_due: 0,
-            total_price: 0
-          }]);
-        }
-      } catch (orderCarrierErr) {
-        console.warn("Order sync carrier skipped or failed due to RLS/schema limits:", orderCarrierErr);
-      }
-
-      // 3. Always persist role and name changes in localStorage fallbacks to bypass RLS limits!
-      localStorage.setItem(`role_override_${editEmail}`, editRole);
-      localStorage.setItem(`name_override_${editEmail}`, editName);
-      window.dispatchEvent(new Event("storage"));
+      if (dbErr) throw dbErr;
 
       toast.success("פרופיל המשתמש עודכן בהצלחה!");
       setEditingProfile(null);

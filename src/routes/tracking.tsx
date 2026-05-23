@@ -20,105 +20,57 @@ function Tracking() {
     if (!user) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      // 1. Fetch active orders from Supabase (excluding completed)
+      const { data: dbOrders, error: ordersError } = await supabase
         .from("orders")
         .select("*")
         .eq("user_email", user.email)
+        .neq("status", "completed")
         .order("created_at", { ascending: false });
 
-      let fetchedOrders = [];
-      if (data && !error) {
-        fetchedOrders = data.filter((o: any) => o.status !== "profile_sync" && o.delivery_method !== "placeholder" && !(o.delivery_method || "").startsWith("PROFILE_SYNC:"));
-      }
+      if (ordersError) throw ordersError;
 
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        const { data: myProf } = await supabase.from("profiles").select("avatar_url").eq("id", session.user.id).maybeSingle();
-        if (myProf?.avatar_url) {
-          try {
-            const signals = JSON.parse(myProf.avatar_url);
-            
-            // Merge active_order
-            if (signals.active_order) {
-              const existingIdx = fetchedOrders.findIndex(o => o.id === signals.active_order.id);
-              if (existingIdx === -1) {
-                fetchedOrders.push(signals.active_order);
-              } else {
-                fetchedOrders[existingIdx] = { ...signals.active_order, ...fetchedOrders[existingIdx] };
-              }
-            }
-            // Merge orders array if it exists
-            if (signals.orders && Array.isArray(signals.orders)) {
-              signals.orders.forEach((o: any) => {
-                const existingIdx = fetchedOrders.findIndex(existing => existing.id === o.id);
-                if (existingIdx === -1) {
-                  fetchedOrders.push(o);
-                } else {
-                  fetchedOrders[existingIdx] = { ...o, ...fetchedOrders[existingIdx] };
-                }
-              });
-            }
-          } catch(e) {}
+      // 2. Fetch invoices for this user from SQL table
+      const { data: dbInvoices, error: invoicesError } = await supabase
+        .from("invoices")
+        .select("*")
+        .eq("user_email", user.email);
+
+      if (invoicesError) throw invoicesError;
+
+      const orderInvoicesMap: Record<string, any> = {};
+      (dbInvoices || []).forEach(inv => {
+        if (inv.order_id) {
+          orderInvoicesMap[inv.order_id] = {
+            id: inv.id,
+            order_id: inv.order_id,
+            date: inv.created_at,
+            name: inv.name,
+            data: inv.data
+          };
         }
-      }
+      });
 
-      // Check all profiles for admin overrides (bypasses RLS issues)
-      try {
-        const { data: allProfiles } = await supabase.from("profiles").select("*");
-        (allProfiles || []).forEach(p => {
-          if (p.avatar_url) {
-            try {
-              const parsed = JSON.parse(p.avatar_url);
-              fetchedOrders.forEach((o: any) => {
-                // Apply status overrides
-                if (parsed?.status_overrides) {
-                  if (parsed.status_overrides[o.id]) o.status = parsed.status_overrides[o.id];
-                  else if (parsed.status_overrides[o.user_email]) o.status = parsed.status_overrides[o.user_email];
-                }
-                // Apply price overrides
-                if (parsed?.price_overrides) {
-                  if (parsed.price_overrides[o.id] !== undefined) {
-                    o.amount_due = parsed.price_overrides[o.id];
-                  } else if (parsed.price_overrides[o.user_email] !== undefined) {
-                    o.amount_due = parsed.price_overrides[o.user_email];
-                  }
-                }
-                // Apply msg overrides
-                if (parsed?.msg_overrides) {
-                  if (parsed.msg_overrides[o.id]) {
-                    o.notes = parsed.msg_overrides[o.id];
-                  } else if (parsed.msg_overrides[o.user_email]) {
-                    o.notes = parsed.msg_overrides[o.user_email];
-                  }
-                }
-                // Apply image overrides
-                if (parsed?.image_overrides) {
-                  if (parsed.image_overrides[o.id] !== undefined) {
-                    o.images = parsed.image_overrides[o.id];
-                  } else if (parsed.image_overrides[o.user_email] !== undefined) {
-                    o.images = parsed.image_overrides[o.user_email];
-                  }
-                }
-                // Apply invoices
-                if (parsed?.invoices && parsed.invoices[o.user_email]) {
-                  const myInvoices = parsed.invoices[o.user_email].filter((inv: any) => inv.id === o.id);
-                  if (myInvoices.length > 0) {
-                    // Take the latest invoice
-                    o.invoice = myInvoices[myInvoices.length - 1];
-                  }
-                }
-              });
-            } catch(e) {}
-          }
+      const fetchedOrders = (dbOrders || [])
+        .filter((o: any) => 
+          o.delivery_method !== "placeholder" && 
+          !(o.delivery_method || "").startsWith("PROFILE_SYNC:")
+        ).map((o: any) => {
+          return {
+            id: o.id,
+            created_at: o.created_at || new Date().toISOString(),
+            status: o.status,
+            delivery_method: o.delivery_method,
+            payment_state: o.payment_state,
+            amount_due: o.amount_due,
+            user_email: o.user_email,
+            notes: o.notes || "",
+            images: o.images || [],
+            requires_ironing: !!o.requires_ironing,
+            requires_dry_cleaning: !!o.requires_dry_cleaning,
+            invoice: orderInvoicesMap[o.id] || null
+          };
         });
-      } catch(e) {}
-
-
-      // Filter out completed orders from being displayed in tracking
-      fetchedOrders = fetchedOrders.filter(o => o.status !== "completed");
-
-      // Sort explicitly so fallback items are placed correctly
-      fetchedOrders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
       setOrders(fetchedOrders);
       if (fetchedOrders.length > 0 && !expandedId) {
@@ -134,16 +86,6 @@ function Tracking() {
   useEffect(() => {
     fetchOrders();
 
-    // Listen for realtime admin updates via DB (profiles)
-    const sub = supabase
-      .channel('tracking-profiles-sync')
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'profiles' },
-        () => fetchOrders()
-      )
-      .subscribe();
-
     // Listen for realtime order updates (price, status, message, invoice) for the current user's orders
     const orderSub = supabase
       .channel('tracking-orders-sync')
@@ -151,10 +93,17 @@ function Tracking() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'orders' },
         (payload) => {
-          const newOrder = payload.new;
+          const newOrder = payload.new as any;
           if (newOrder?.user_email === user?.email) {
             fetchOrders();
           }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'invoices' },
+        () => {
+          fetchOrders();
         }
       )
       .subscribe();
@@ -164,7 +113,6 @@ function Tracking() {
     window.addEventListener("storage", handleStorage);
 
     return () => {
-      sub.unsubscribe();
       orderSub.unsubscribe();
       window.removeEventListener("storage", handleStorage);
     };
