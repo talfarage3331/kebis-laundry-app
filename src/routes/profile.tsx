@@ -183,55 +183,54 @@ function Profile() {
               </div>
             </div>
           ) : (
-            <div className="relative"><div className="space-y-3 max-h-[12rem] overflow-y-auto pr-2">
-              {orders.map((order) => {
-                const date = new Date(order.created_at);
-                const dateString = date.toLocaleDateString("he-IL", {
-                  day: "2-digit",
-                  month: "2-digit",
-                  year: "numeric",
-                });
-                const timeString = date.toLocaleTimeString("he-IL", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                });
-                
-                const statusBadgeStyle = getStatusBadgeStyle(order.status);
-                
-                return (
-                  <button
-                    key={order.id}
-                    onClick={() => setSelectedOrder(order)}
-                    className="w-full text-right rounded-3xl border border-muted-foreground/10 bg-background/60 hover:bg-muted/30 p-5 flex items-center justify-between transition active:scale-[0.98] shadow-sm group hover:border-primary/20"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="size-12 rounded-2xl bg-lavender text-lavender-foreground grid place-items-center flex-shrink-0 group-hover:scale-105 transition-transform duration-300 shadow-sm">
-                        <ShoppingBasket className="size-6" strokeWidth={1.75} />
-                      </div>
-                      <div className="space-y-1">
-                        <p className="font-black text-sm text-foreground">
-                          הזמנה #{order.id.slice(0, 8)}
-                        </p>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-[10px] font-bold text-muted-foreground">{dateString} ב-{timeString}</span>
-                          <span className={`text-[9px] px-2 py-0.5 rounded-full font-black ${statusBadgeStyle}`}>
-                            {stateLabel[order.status as keyof typeof stateLabel] || order.status}
-                          </span>
+            <div className="relative">
+              <div className="space-y-2 max-h-[18rem] overflow-y-auto pr-1">
+                {orders.map((order) => {
+                  const date = new Date(order.created_at);
+                  const dateString = date.toLocaleDateString("he-IL");
+                  const timeString = date.toLocaleTimeString("he-IL", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  });
+                  const statusBadgeStyle = getStatusBadgeStyle(order.status);
+                  return (
+                    <button
+                      key={order.id}
+                      onClick={() => setSelectedOrder(order)}
+                      className="w-full text-right rounded-3xl border border-muted-foreground/10 bg-background/60 hover:bg-muted/30 p-5 flex items-center justify-between transition active:scale-[0.98] shadow-sm group hover:border-primary/20"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="size-12 rounded-2xl bg-lavender text-lavender-foreground grid place-items-center flex-shrink-0 group-hover:scale-105 transition-transform duration-300 shadow-sm">
+                          <ShoppingBasket className="size-6" strokeWidth={1.75} />
+                        </div>
+                        <div className="space-y-1">
+                          <p className="font-black text-sm text-foreground">
+                            הזמנה #{order.id.slice(0, 8)}
+                          </p>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[10px] font-bold text-muted-foreground">
+                              {dateString} ב-{timeString}
+                            </span>
+                            <span className={`text-[9px] px-2 py-0.5 rounded-full font-black ${statusBadgeStyle}`}>
+                              {stateLabel[order.status as keyof typeof stateLabel] || order.status}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm font-black text-foreground">
-                        ₪{order.amount_due || order.total_price || 0}
-                      </span>
-                      <ChevronLeft className="size-5 text-muted-foreground group-hover:text-primary transition-colors" strokeWidth={2.5} />
-                    </div>
-                  </button>
-                );
-              })}
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-black text-foreground">
+                          ₪{order.amount_due || order.total_price || 0}
+                        </span>
+                        <ChevronLeft className="size-5 text-muted-foreground group-hover:text-primary transition-colors" strokeWidth={2.5} />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              {orders.length > 3 && (
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-background to-transparent" />
+              )}
             </div>
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-background to-transparent" />
           )}
         </div>
       </main>
