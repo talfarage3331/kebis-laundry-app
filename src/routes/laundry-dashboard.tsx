@@ -41,8 +41,8 @@ function LaundryDashboard() {
   const [pendingInvoices, setPendingInvoices] = useState<Record<string, File | null>>({});
   const [savingOrder, setSavingOrder] = useState<Record<string, boolean>>({});
 
-  const fetchOrders = async () => {
-    setIsLoading(true);
+  const fetchOrders = async (showLoader = true) => {
+    if (showLoader) setIsLoading(true);
     try {
       // 1. Fetch all orders from Supabase (including completed)
       const { data: dbOrders, error: ordersError } = await supabase
@@ -162,7 +162,7 @@ function LaundryDashboard() {
             console.log("Audio auto-play blocked by browser sandbox");
           }
 
-          fetchOrders();
+          fetchOrders(false);
         }
       }
     };
@@ -179,14 +179,14 @@ function LaundryDashboard() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'orders' },
         () => {
-          fetchOrders();
+          fetchOrders(false);
         }
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'invoices' },
         () => {
-          fetchOrders();
+          fetchOrders(false);
         }
       )
       .subscribe();
@@ -269,7 +269,7 @@ function LaundryDashboard() {
           if (error) throw error;
 
           toast.success("החשבונית צורפה ונשלחה ללקוח!");
-          fetchOrders();
+          fetchOrders(false);
           localStorage.setItem("laundry_sync_trigger", Date.now().toString());
           window.dispatchEvent(new Event("storage"));
         }
@@ -332,7 +332,8 @@ function LaundryDashboard() {
       if (error) throw error;
 
       toast.success("החשבונית נמחקה בהצלחה!");
-      fetchOrders();
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, invoices: (o.invoices || []).filter(i => i.name !== invoiceName) } : o));
+      fetchOrders(false);
       localStorage.setItem("laundry_sync_trigger", Date.now().toString());
       window.dispatchEvent(new Event("storage"));
     } catch (err: any) {
@@ -476,7 +477,7 @@ function LaundryDashboard() {
                 {activeTab === "active" ? "הזמנות לטיפול" : "הזמנות שהושלמו"}
               </h2>
               <button 
-                onClick={fetchOrders}
+                onClick={() => fetchOrders(true)}
                 className="size-8 rounded-full hover:bg-muted flex items-center justify-center text-primary transition active:rotate-180 duration-500"
                 title="רענן"
               >

@@ -16,9 +16,9 @@ function Tracking() {
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const fetchOrders = async () => {
+  const fetchOrders = async (showLoader = true) => {
     if (!user) return;
-    setLoading(true);
+    if (showLoader) setLoading(true);
     try {
       // 1. Fetch active orders from Supabase (excluding completed)
       const { data: dbOrders, error: ordersError } = await supabase
@@ -95,7 +95,7 @@ function Tracking() {
         (payload) => {
           const newOrder = payload.new as any;
           if (newOrder?.user_email === user?.email) {
-            fetchOrders();
+            fetchOrders(false);
           }
         }
       )
@@ -103,13 +103,13 @@ function Tracking() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'invoices' },
         () => {
-          fetchOrders();
+          fetchOrders(false);
         }
       )
       .subscribe();
 
     // Listen for local tab changes (if admin is on same machine/browser)
-    const handleStorage = () => fetchOrders();
+    const handleStorage = () => fetchOrders(false);
     window.addEventListener("storage", handleStorage);
 
     return () => {

@@ -126,7 +126,7 @@ function Payments() {
               const isPricePending = !order.amount_due || order.amount_due <= 0;
               
               return (
-                <div key={order.id} className="space-y-4">
+                <div key={order.id} className="space-y-4 border-2 border-primary/10 p-4 rounded-[2.5rem] bg-background/50 shadow-sm">
                   {/* Price Card */}
                   <div className={`rounded-3xl p-5 shadow-sm border transition-all duration-500 ${
                     isPricePending 
@@ -195,8 +195,6 @@ function Payments() {
                       </button>
                     </>
                   )}
-                  {/* Visual separator between multiple unpaid orders, except last one */}
-                  <hr className="my-8 border-muted/50 last:hidden" />
                 </div>
               );
             })}
