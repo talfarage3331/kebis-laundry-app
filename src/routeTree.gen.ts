@@ -16,6 +16,8 @@ import { Route as PaymentsRouteImport } from './routes/payments'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LaundryDashboardRouteImport } from './routes/laundry-dashboard'
 import { Route as DeliveryRouteImport } from './routes/delivery'
+import { Route as ChatRouteImport } from './routes/chat'
+import { Route as AdminChatRouteImport } from './routes/admin-chat'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 
@@ -54,6 +56,16 @@ const DeliveryRoute = DeliveryRouteImport.update({
   path: '/delivery',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ChatRoute = ChatRouteImport.update({
+  id: '/chat',
+  path: '/chat',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminChatRoute = AdminChatRouteImport.update({
+  id: '/admin-chat',
+  path: '/admin-chat',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -68,6 +80,8 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/admin-chat': typeof AdminChatRoute
+  '/chat': typeof ChatRoute
   '/delivery': typeof DeliveryRoute
   '/laundry-dashboard': typeof LaundryDashboardRoute
   '/login': typeof LoginRoute
@@ -79,6 +93,8 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/admin-chat': typeof AdminChatRoute
+  '/chat': typeof ChatRoute
   '/delivery': typeof DeliveryRoute
   '/laundry-dashboard': typeof LaundryDashboardRoute
   '/login': typeof LoginRoute
@@ -91,6 +107,8 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/admin-chat': typeof AdminChatRoute
+  '/chat': typeof ChatRoute
   '/delivery': typeof DeliveryRoute
   '/laundry-dashboard': typeof LaundryDashboardRoute
   '/login': typeof LoginRoute
@@ -104,6 +122,8 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
+    | '/admin-chat'
+    | '/chat'
     | '/delivery'
     | '/laundry-dashboard'
     | '/login'
@@ -115,6 +135,8 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/admin'
+    | '/admin-chat'
+    | '/chat'
     | '/delivery'
     | '/laundry-dashboard'
     | '/login'
@@ -126,6 +148,8 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/admin'
+    | '/admin-chat'
+    | '/chat'
     | '/delivery'
     | '/laundry-dashboard'
     | '/login'
@@ -138,6 +162,8 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
+  AdminChatRoute: typeof AdminChatRoute
+  ChatRoute: typeof ChatRoute
   DeliveryRoute: typeof DeliveryRoute
   LaundryDashboardRoute: typeof LaundryDashboardRoute
   LoginRoute: typeof LoginRoute
@@ -198,6 +224,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DeliveryRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/chat': {
+      id: '/chat'
+      path: '/chat'
+      fullPath: '/chat'
+      preLoaderRoute: typeof ChatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin-chat': {
+      id: '/admin-chat'
+      path: '/admin-chat'
+      fullPath: '/admin-chat'
+      preLoaderRoute: typeof AdminChatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin': {
       id: '/admin'
       path: '/admin'
@@ -218,6 +258,8 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
+  AdminChatRoute: AdminChatRoute,
+  ChatRoute: ChatRoute,
   DeliveryRoute: DeliveryRoute,
   LaundryDashboardRoute: LaundryDashboardRoute,
   LoginRoute: LoginRoute,

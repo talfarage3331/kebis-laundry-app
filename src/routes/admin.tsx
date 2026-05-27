@@ -5,7 +5,7 @@ import { useLaundry } from "@/lib/laundry-store";
 import { supabase } from "@/lib/supabase";
 import { 
   Users, UserCheck, Shield, Trash2, Edit2, Search, 
-  LogOut, Plus, X, Check, ArrowRight, UserPlus, Filter 
+  LogOut, Plus, X, Check, ArrowRight, UserPlus, Filter, MessageSquareText
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -199,6 +199,23 @@ function AdminDashboard() {
               <span className="text-[10px] text-rose-600 font-bold">מנהלים</span>
             </div>
           </section>
+
+          {/* Chat Dashboard Link */}
+          <button
+            onClick={() => navigate({ to: "/admin-chat" })}
+            className="w-full bg-primary/10 border-2 border-primary/20 text-primary hover:bg-primary hover:text-primary-foreground hover:border-primary rounded-2xl p-4 flex items-center justify-between font-extrabold transition-all group active:scale-95"
+          >
+            <div className="flex items-center gap-3">
+              <div className="size-10 rounded-full bg-background/50 grid place-items-center group-hover:bg-primary-foreground/20">
+                <MessageSquareText className="size-5" />
+              </div>
+              <div className="text-right">
+                <span className="block text-base">לוח הודעות לקוחות (צ'אט)</span>
+                <span className="text-xs opacity-80 font-semibold block mt-0.5">מענה מיידי ללקוחות בזמן אמת</span>
+              </div>
+            </div>
+            <ArrowRight className="size-5 rotate-180 opacity-50 group-hover:opacity-100 group-hover:-translate-x-1 transition-all" />
+          </button>
 
           {/* Filter and search bar */}
           <div className="space-y-3">
