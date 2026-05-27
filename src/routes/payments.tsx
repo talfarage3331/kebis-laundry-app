@@ -126,7 +126,7 @@ function Payments() {
               const isPricePending = !order.amount_due || order.amount_due <= 0;
               
               return (
-                <div key={order.id} className="space-y-4 border-2 border-primary/10 p-4 rounded-[2.5rem] bg-background/50 shadow-sm">
+                <div key={order.id} className="flex flex-col gap-4 border-2 border-border p-4 rounded-[2.5rem] bg-card shadow-sm">
                   {/* Price Card */}
                   <div className={`rounded-3xl p-5 shadow-sm border transition-all duration-500 ${
                     isPricePending 
