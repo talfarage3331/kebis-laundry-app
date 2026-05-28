@@ -126,42 +126,45 @@ function Payments() {
               const isPricePending = !order.amount_due || order.amount_due <= 0;
               
               return (
-                <div key={order.id} className="flex flex-col gap-4 border-2 border-border p-4 rounded-[2.5rem] bg-card shadow-sm">
-                  {/* Price Card */}
-                  <div className={`rounded-3xl p-5 shadow-sm border transition-all duration-500 ${
-                    isPricePending 
-                      ? "bg-slate-50 border-slate-200 text-slate-700" 
-                      : "bg-lime text-lime-foreground border-lime/20 shadow-[0_15px_40px_-15px_oklch(0.92_0.18_125/0.6)] animate-fade-in"
-                  }`}>
-                    <div className="flex justify-between items-center text-xs opacity-80 mb-3 font-bold border-b border-current/20 pb-2">
-                      <span>הזמנה #{order.id.split('-')[0]}</span>
-                      <span>{new Date(order.created_at).toLocaleDateString("he-IL")}</span>
-                    </div>
-                    <p className="text-sm font-semibold opacity-70">
-                      {isPricePending ? "ממתין לעדכון סכום מהמכבסה" : "סכום לתשלום"}
-                    </p>
-                    <p className="text-4xl font-extrabold mt-1">
-                      {isPricePending ? "₪0.00" : `₪${order.amount_due.toFixed(2)}`}
-                    </p>
-                  </div>
-
-                  {/* Dynamic Pricing Banner & Conditional Payment Methods */}
+                <div key={order.id} className="flex flex-col w-full mb-6">
                   {isPricePending ? (
-                    <div className="bg-lavender/30 border border-lavender-foreground/10 rounded-3xl p-6 text-center space-y-4 animate-pulse">
-                      <div className="size-14 bg-lavender/80 rounded-full grid place-items-center mx-auto shadow-sm">
-                        <Sparkles className="size-7 text-primary animate-spin duration-3000" />
+                    // Bottom Order Block (Pending)
+                    <div className="border-2 border-border p-5 rounded-[2.5rem] bg-card shadow-sm space-y-4">
+                      <div className="bg-slate-50 border border-slate-200 text-slate-700 rounded-3xl p-5 shadow-sm">
+                        <div className="flex justify-between items-center text-xs opacity-80 mb-3 font-bold border-b border-current/20 pb-2">
+                          <span>הזמנה #{order.id.split('-')[0]}</span>
+                          <span>{new Date(order.created_at).toLocaleDateString("he-IL")}</span>
+                        </div>
+                        <p className="text-sm font-semibold opacity-70">ממתין לעדכון סכום מהמכבסה</p>
+                        <p className="text-4xl font-extrabold mt-1">₪0.00</p>
                       </div>
-                      <div className="space-y-1">
-                        <h3 className="text-sm font-extrabold text-foreground">המכבסה מעדכנת את סכום ההזמנה</h3>
-                        <p className="text-[11px] text-muted-foreground leading-relaxed px-4">אפשרות התשלום תפתח בקרוב ברגע שצוות המכבסה יסיים לשקול ולתמחר את הכביסה שלך.</p>
-                      </div>
-                      <div className="flex items-center justify-center gap-1.5 text-[9px] font-black text-primary bg-primary/10 py-1.5 px-3 rounded-full w-fit mx-auto">
-                        <span className="size-1.5 bg-primary rounded-full animate-ping" />
-                        <span>בודק סטטוס תמחור בזמן אמת...</span>
+
+                      <div className="bg-lavender/30 border border-lavender-foreground/10 rounded-3xl p-6 text-center space-y-4 animate-pulse">
+                        <div className="size-14 bg-lavender/80 rounded-full grid place-items-center mx-auto shadow-sm">
+                          <Sparkles className="size-7 text-primary animate-spin duration-3000" />
+                        </div>
+                        <div className="space-y-1">
+                          <h3 className="text-sm font-extrabold text-foreground">המכבסה מעדכנת את סכום ההזמנה</h3>
+                          <p className="text-[11px] text-muted-foreground leading-relaxed px-4">אפשרות התשלום תפתח בקרוב ברגע שצוות המכבסה יסיים לשקול ולתמחר את הכביסה שלך.</p>
+                        </div>
+                        <div className="flex items-center justify-center gap-1.5 text-[9px] font-black text-primary bg-primary/10 py-1.5 px-3 rounded-full w-fit mx-auto">
+                          <span className="size-1.5 bg-primary rounded-full animate-ping" />
+                          <span>בודק סטטוס תמחור בזמן אמת...</span>
+                        </div>
                       </div>
                     </div>
                   ) : (
-                    <>
+                    // Top Order Block (Payable)
+                    <div className="border-2 border-primary/20 p-5 rounded-[2.5rem] bg-card shadow-sm space-y-4">
+                      <div className="bg-lime text-lime-foreground border border-lime/20 shadow-[0_15px_40px_-15px_oklch(0.92_0.18_125/0.6)] rounded-3xl p-5 animate-fade-in">
+                        <div className="flex justify-between items-center text-xs opacity-80 mb-3 font-bold border-b border-current/20 pb-2">
+                          <span>הזמנה #{order.id.split('-')[0]}</span>
+                          <span>{new Date(order.created_at).toLocaleDateString("he-IL")}</span>
+                        </div>
+                        <p className="text-sm font-semibold opacity-70">סכום לתשלום</p>
+                        <p className="text-4xl font-extrabold mt-1">₪{order.amount_due.toFixed(2)}</p>
+                      </div>
+
                       <div className="rounded-3xl border border-border p-5 animate-fade-in">
                         <h3 className="font-bold mb-3">אמצעי תשלום</h3>
                         <div className="space-y-2">
@@ -193,7 +196,7 @@ function Payments() {
                       >
                         בצע תשלום
                       </button>
-                    </>
+                    </div>
                   )}
                 </div>
               );
