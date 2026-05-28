@@ -20,16 +20,16 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
     // Role-Based Access Control Redirection
     if (user.role === "admin") {
-      if (pathname !== "/admin" && !pathname.startsWith("/admin/")) {
+      if (pathname !== "/admin" && !pathname.startsWith("/admin/") && pathname !== "/admin-chat") {
         navigate({ to: "/admin" });
       }
     } else if (user.role === "laundry") {
-      if (pathname !== "/laundry-dashboard") {
+      if (pathname !== "/laundry-dashboard" && pathname !== "/admin-chat") {
         navigate({ to: "/laundry-dashboard" });
       }
     } else {
       // customer
-      if (pathname === "/admin" || pathname.startsWith("/admin/") || pathname === "/laundry-dashboard") {
+      if (pathname === "/admin" || pathname.startsWith("/admin/") || pathname === "/laundry-dashboard" || pathname === "/admin-chat") {
         navigate({ to: "/" });
       }
     }

@@ -211,7 +211,7 @@ function AdminDashboard() {
                 <MessageSquareText className="size-5" />
               </div>
               <div className="text-right">
-                <span className="block text-base">לוח הודעות לקוחות (צ'אט)</span>
+                <span className="block text-base">לוח הודעות ללקוחות (צ'אט)</span>
                 <span className="text-xs opacity-80 font-semibold block mt-0.5">מענה מיידי ללקוחות בזמן אמת</span>
               </div>
             </div>
