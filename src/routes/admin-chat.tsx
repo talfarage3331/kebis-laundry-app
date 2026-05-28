@@ -318,7 +318,7 @@ function AdminChat() {
         </aside>
 
         {/* Main Chat Area */}
-        <main className={`flex-1 flex flex-col bg-white ${!activeConvId ? 'hidden md:flex' : 'flex'}`}>
+        <main className={`flex-1 flex flex-col bg-white min-w-0 ${!activeConvId ? 'hidden md:flex' : 'flex'}`}>
           {!activeConvId ? (
             <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground bg-slate-50/30">
               <MessageSquareText className="size-16 mb-4 opacity-20" />
@@ -371,7 +371,7 @@ function AdminChat() {
                               ? 'bg-primary text-primary-foreground rounded-tr-sm' 
                               : 'bg-white text-foreground border border-border/50 rounded-tl-sm'
                           }`}>
-                            <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                            <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
                             <div className={`text-[10px] mt-1 text-left ${
                               isAdmin ? 'text-primary-foreground/70' : 'text-muted-foreground'
                             }`}>

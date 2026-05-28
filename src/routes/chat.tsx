@@ -248,7 +248,7 @@ function Chat() {
                         ? 'bg-primary text-primary-foreground rounded-tr-sm' 
                         : 'bg-white border border-border text-foreground rounded-tl-sm'
                     }`}>
-                      <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{msg.content}</p>
                       <div className={`text-[10px] mt-1 text-left flex items-center gap-1 ${
                         isCustomer ? 'text-primary-foreground/70' : 'text-muted-foreground'
                       }`}>
