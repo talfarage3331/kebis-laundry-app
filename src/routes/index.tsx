@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { AppHeader } from "@/components/AppHeader";
 import { useLaundry, ORDER_STEPS, stateLabel } from "@/lib/laundry-store";
+import { supabase } from "@/lib/supabase";
 import { ShoppingBasket, ChevronLeft, Check, Camera, Trash2, Sparkles, Loader2, Shirt, MapPin, MessageCircle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,26 +17,71 @@ function Dashboard() {
   const { user, orderState, createOrder } = useLaundry();
   const navigate = useNavigate();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Fetch unread message count for the customer
+  useEffect(() => {
+    if (!user?.email) return;
+
+    const fetchUnread = async () => {
+      try {
+        // Find customer's conversation
+        const { data: conv } = await supabase
+          .from("chat_conversations")
+          .select("id")
+          .eq("customer_email", user.email)
+          .maybeSingle();
+
+        if (!conv) { setUnreadCount(0); return; }
+
+        // Count unread messages NOT sent by the customer
+        const { count } = await supabase
+          .from("chat_messages")
+          .select("*", { count: "exact", head: true })
+          .eq("conversation_id", conv.id)
+          .eq("is_read", false)
+          .neq("sender_email", user.email);
+
+        setUnreadCount(count || 0);
+      } catch (err) {
+        console.error("Error fetching unread count:", err);
+      }
+    };
+
+    fetchUnread();
+
+    // Subscribe to realtime changes to keep badge updated
+    const channel = supabase
+      .channel("customer_unread_badge")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "chat_messages" },
+        () => { fetchUnread(); }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.email]);
 
   return (
     <AppLayout>
       <AppHeader subtitle={user ? `שלום, ${user.name}` : undefined} />
-      <main className="px-5 mt-6 pb-8">
+      <main className="px-4 sm:px-5 mt-4 sm:mt-6 pb-8">
         {orderState === "none" || orderState === "completed" ? (
           <EmptyState onOpenModal={() => setIsModalOpen(true)} />
         ) : (
           <div className="space-y-6">
-            <div className="bg-lavender/40 border border-lavender-foreground/10 rounded-3xl p-6 text-center space-y-4">
+            <div className="bg-lavender/40 border border-lavender-foreground/10 rounded-3xl p-4 sm:p-6 text-center space-y-3 sm:space-y-4">
               <div className="size-16 bg-lime rounded-full grid place-items-center mx-auto shadow-sm">
                 <ShoppingBasket className="size-8 text-lime-foreground animate-pulse" />
               </div>
               <div className="space-y-1">
                 <h3 className="text-base font-extrabold text-foreground">יש לך כביסה בטיפול!</h3>
-                <p className="text-xs text-muted-foreground leading-relaxed px-4">הזמנתך התקבלה בהצלחה ונמצאת כעת בשלבי טיפול. תוכל לעקוב אחר ההתקדמות ולבצע תשלום במסך המעקב.</p>
+                <p className="text-xs text-muted-foreground leading-relaxed px-2 sm:px-4 break-words">הזמנתך התקבלה בהצלחה ונמצאת כעת בשלבי טיפול. תוכל לעקוב אחר ההתקדמות ולבצע תשלום במסך המעקב.</p>
               </div>
               <button
                 onClick={() => navigate({ to: "/tracking" })}
-                className="mt-2 w-full rounded-2xl bg-primary text-primary-foreground py-3 text-sm font-semibold hover:shadow-lg active:scale-95 transition"
+                className="mt-2 w-full rounded-2xl bg-primary text-primary-foreground py-3 min-h-[44px] text-sm font-semibold hover:shadow-lg active:scale-95 transition"
               >
                 עבור למסך מעקב הזמנה
               </button>
@@ -43,7 +89,7 @@ function Dashboard() {
 
             <button
               onClick={() => navigate({ to: "/delivery" })}
-              className="w-full rounded-3xl border-2 border-primary text-primary px-5 py-4 font-semibold active:scale-[0.98] transition"
+              className="w-full rounded-3xl border-2 border-primary text-primary px-4 sm:px-5 py-3.5 sm:py-4 min-h-[44px] font-semibold active:scale-[0.98] transition"
             >
               המשך לבחירת מסירה
             </button>
@@ -74,6 +120,11 @@ function Dashboard() {
         className="fixed bottom-24 right-5 size-14 bg-primary text-primary-foreground rounded-full shadow-[0_10px_25px_-5px_oklch(0.34_0.13_333/0.5)] grid place-items-center active:scale-95 transition-all z-40 hover:bg-primary/90"
       >
         <MessageCircle className="size-6" strokeWidth={2} />
+        {unreadCount > 0 && (
+          <span className="absolute -top-1 -right-1 min-w-[22px] h-[22px] px-1.5 bg-red-500 text-white text-[11px] font-bold rounded-full flex items-center justify-center shadow-md animate-bounce">
+            {unreadCount > 99 ? "99+" : unreadCount}
+          </span>
+        )}
       </Link>
     </AppLayout>
   );
@@ -84,10 +135,10 @@ function EmptyState({ onOpenModal }: { onOpenModal: () => void }) {
     <div className="flex flex-col items-center gap-4 pt-4">
       <button
         onClick={onOpenModal}
-        className="relative group size-64 rounded-full bg-lime text-lime-foreground shadow-[0_20px_50px_-12px_oklch(0.92_0.18_125/0.6)] active:scale-95 transition-all duration-300 flex flex-col items-center justify-center gap-3"
+        className="relative group size-48 sm:size-64 rounded-full bg-lime text-lime-foreground shadow-[0_20px_50px_-12px_oklch(0.92_0.18_125/0.6)] active:scale-95 transition-all duration-300 flex flex-col items-center justify-center gap-2 sm:gap-3"
       >
-        <ShoppingBasket className="size-16" strokeWidth={1.5} />
-        <span className="text-xl font-extrabold leading-tight px-6 text-center">
+        <ShoppingBasket className="size-12 sm:size-16" strokeWidth={1.5} />
+        <span className="text-base sm:text-xl font-extrabold leading-tight px-4 sm:px-6 text-center">
           הזמן איסוף כביסה
         </span>
       </button>
@@ -380,9 +431,9 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-md w-[92%] max-h-[90vh] overflow-y-auto overflow-x-hidden rounded-3xl p-6 text-right dir-rtl backdrop-blur-xl bg-background/95 border-none shadow-[0_20px_50px_rgba(0,0,0,0.15)] focus:outline-none" dir="rtl">
+      <DialogContent className="max-w-md w-[95%] sm:w-[92%] max-h-[90vh] overflow-y-auto overflow-x-hidden rounded-2xl sm:rounded-3xl p-4 sm:p-6 text-right dir-rtl backdrop-blur-xl bg-background/95 border-none shadow-[0_20px_50px_rgba(0,0,0,0.15)] focus:outline-none" dir="rtl">
         <DialogHeader className="space-y-2 text-right">
-          <DialogTitle className="text-2xl font-extrabold text-foreground flex items-center gap-2 justify-start">
+          <DialogTitle className="text-xl sm:text-2xl font-extrabold text-foreground flex items-center gap-2 justify-start">
             <Sparkles className="size-6 text-primary animate-pulse" />
             <span>פרטי איסוף כביסה</span>
           </DialogTitle>
@@ -422,7 +473,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
                     }
                   }}
                   placeholder="הקלד רחוב ועיר לאימות הכתובת..."
-                  className="w-full rounded-2xl border border-muted-foreground/20 focus-visible:ring-primary focus-visible:border-primary text-sm pl-12 pr-4 py-3.5 leading-normal text-right focus:outline-none focus:ring-2 focus:ring-primary bg-background"
+                  className="w-full rounded-2xl border border-muted-foreground/20 focus-visible:ring-primary focus-visible:border-primary text-sm pl-12 pr-4 py-3.5 min-h-[44px] leading-normal text-right focus:outline-none focus:ring-2 focus:ring-primary bg-background"
                   dir="rtl"
                 />
                 <button
@@ -432,7 +483,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
                     handleGetLocation();
                   }}
                   disabled={isLocating}
-                  className="absolute left-2.5 p-2 rounded-xl text-primary hover:bg-primary/10 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center"
+                  className="absolute left-2.5 p-2 min-w-[44px] min-h-[44px] rounded-xl text-primary hover:bg-primary/10 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center"
                   title="זהה מיקום נוכחי"
                 >
                   {isLocating ? (
@@ -455,7 +506,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
                           e.preventDefault();
                           handleSelectSuggestion(item);
                         }}
-                        className="w-full text-right px-4 py-3 hover:bg-muted text-xs font-semibold text-foreground transition flex items-center gap-2"
+                        className="w-full text-right px-4 py-3 min-h-[44px] hover:bg-muted text-xs font-semibold text-foreground transition flex items-center gap-2"
                       >
                         <MapPin className="size-3.5 text-primary flex-shrink-0" />
                         <span className="truncate">{item.display_name}</span>
@@ -468,7 +519,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
 
             {/* Structured Sub-fields (House Number, Floor, Apartment, Entrance) */}
             {selectedAddress && (
-              <div className="grid grid-cols-4 gap-3 pt-2 animate-in slide-in-from-top-2 duration-300">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 pt-2 animate-in slide-in-from-top-2 duration-300">
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-foreground block text-right">בית <span className="text-destructive font-black">*</span></label>
                   <input
@@ -476,7 +527,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
                     value={houseNumber}
                     onChange={(e) => setHouseNumber(e.target.value)}
                     placeholder="בית"
-                    className="w-full rounded-xl border border-muted-foreground/20 focus-visible:ring-primary focus-visible:border-primary text-xs p-3 text-center focus:outline-none focus:ring-2 focus:ring-primary bg-background font-bold"
+                    className="w-full rounded-xl border border-muted-foreground/20 focus-visible:ring-primary focus-visible:border-primary text-xs p-3 min-h-[44px] text-center focus:outline-none focus:ring-2 focus:ring-primary bg-background font-bold"
                   />
                 </div>
                 <div className="space-y-1">
@@ -527,7 +578,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
                           e.preventDefault();
                           handleSelectRecent(addr);
                         }}
-                        className="text-xs px-3 py-1.5 rounded-full border border-muted-foreground/10 bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 select-none"
+                        className="text-xs px-3 py-1.5 min-h-[36px] rounded-full border border-muted-foreground/10 bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 select-none"
                       >
                         <MapPin className="size-3 flex-shrink-0" />
                         <span className="truncate max-w-[150px]">{disp}</span>
@@ -545,7 +596,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="יש לך דגשים מיוחדים לכביסה? כתוב לנו כאן... (למשל: כביסה עדינה, כתם שומן בשרוול, להפריד צבעים)"
-              className="min-h-[100px] rounded-2xl border-muted-foreground/20 focus-visible:ring-primary focus-visible:border-primary text-sm p-4 leading-relaxed text-right"
+              className="min-h-[100px] rounded-2xl border-muted-foreground/20 focus-visible:ring-primary focus-visible:border-primary text-sm p-3 sm:p-4 leading-relaxed text-right"
               dir="rtl"
             />
           </div>
@@ -557,7 +608,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
               {/* Ironing Card */}
               <div
                 onClick={() => setRequiresIroning(!requiresIroning)}
-                className={`relative overflow-hidden rounded-3xl p-4 flex flex-col items-center justify-center gap-3 text-center cursor-pointer transition-all duration-300 border select-none ${
+                className={`relative overflow-hidden rounded-2xl sm:rounded-3xl p-3 sm:p-4 min-h-[44px] flex flex-col items-center justify-center gap-2 sm:gap-3 text-center cursor-pointer transition-all duration-300 border select-none ${
                   requiresIroning
                     ? "border-2 border-primary bg-primary/10 shadow-[0_8px_30px_rgba(124,58,237,0.15)] scale-[1.02]"
                     : "border-muted-foreground/10 bg-background/50 hover:bg-muted/30 hover:shadow-sm"
@@ -582,7 +633,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
               {/* Dry Cleaning Card */}
               <div
                 onClick={() => setRequiresDryCleaning(!requiresDryCleaning)}
-                className={`relative overflow-hidden rounded-3xl p-4 flex flex-col items-center justify-center gap-3 text-center cursor-pointer transition-all duration-300 border select-none ${
+                className={`relative overflow-hidden rounded-2xl sm:rounded-3xl p-3 sm:p-4 min-h-[44px] flex flex-col items-center justify-center gap-2 sm:gap-3 text-center cursor-pointer transition-all duration-300 border select-none ${
                   requiresDryCleaning
                     ? "border-2 border-primary bg-primary/10 shadow-[0_8px_30px_rgba(124,58,237,0.15)] scale-[1.02]"
                     : "border-muted-foreground/10 bg-background/50 hover:bg-muted/30 hover:shadow-sm"
@@ -611,7 +662,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
             
             <div
               onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-muted-foreground/20 hover:border-primary/50 transition-colors rounded-2xl p-6 text-center cursor-pointer flex flex-col items-center justify-center gap-2 bg-muted/30 group"
+              className="border-2 border-dashed border-muted-foreground/20 hover:border-primary/50 transition-colors rounded-2xl p-4 sm:p-6 text-center cursor-pointer flex flex-col items-center justify-center gap-2 bg-muted/30 group min-h-[44px]"
             >
               <div className="size-12 rounded-full bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
                 <Camera className="size-6 text-primary" />
@@ -631,12 +682,12 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
             {images.length > 0 && (
               <div className="flex flex-wrap gap-2 pt-2 justify-start">
                 {images.map((img, idx) => (
-                  <div key={idx} className="relative size-20 rounded-2xl overflow-hidden group border border-muted-foreground/10 shadow-sm">
+                  <div key={idx} className="relative size-16 sm:size-20 rounded-2xl overflow-hidden group border border-muted-foreground/10 shadow-sm">
                     <img src={img} alt="תצוגה מקדימה" className="size-full object-cover" />
                     <button
                       type="button"
                       onClick={() => removeImage(idx)}
-                      className="absolute top-1 left-1 size-6 rounded-full bg-destructive/90 text-destructive-foreground grid place-items-center opacity-0 group-hover:opacity-100 transition-opacity active:scale-95 shadow-sm"
+                      className="absolute top-1 left-1 size-7 sm:size-6 rounded-full bg-destructive/90 text-destructive-foreground grid place-items-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity active:scale-95 shadow-sm"
                     >
                       <Trash2 className="size-3.5" />
                     </button>
@@ -647,11 +698,11 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
           </div>
         </div>
 
-        <div className="mt-4 flex gap-3">
+        <div className="mt-4 flex flex-col-reverse sm:flex-row gap-2 sm:gap-3">
           <button
             onClick={handleSubmit}
             disabled={isSubmitting}
-            className="flex-1 rounded-3xl bg-lime text-lime-foreground py-4 font-bold active:scale-[0.98] transition hover:shadow-lg hover:shadow-lime/20 flex items-center justify-center gap-2 disabled:opacity-50"
+            className="flex-1 rounded-3xl bg-lime text-lime-foreground py-3.5 sm:py-4 min-h-[48px] font-bold active:scale-[0.98] transition hover:shadow-lg hover:shadow-lime/20 flex items-center justify-center gap-2 disabled:opacity-50"
           >
             {isSubmitting ? (
               <>
@@ -665,7 +716,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
           <button
             onClick={onClose}
             disabled={isSubmitting}
-            className="rounded-3xl border border-muted-foreground/20 text-muted-foreground px-6 py-4 font-bold active:scale-[0.98] transition"
+            className="rounded-3xl border border-muted-foreground/20 text-muted-foreground px-6 py-3.5 sm:py-4 min-h-[48px] font-bold active:scale-[0.98] transition w-full sm:w-auto"
           >
             ביטול
           </button>

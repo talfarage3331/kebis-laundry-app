@@ -40,6 +40,39 @@ function LaundryDashboard() {
   const [pendingStatuses, setPendingStatuses] = useState<Record<string, string>>({});
   const [pendingInvoices, setPendingInvoices] = useState<Record<string, File | null>>({});
   const [savingOrder, setSavingOrder] = useState<Record<string, boolean>>({});
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
+
+  // Fetch unread chat messages count for laundry staff
+  useEffect(() => {
+    if (!user?.email) return;
+
+    const fetchUnreadChat = async () => {
+      try {
+        const { count } = await supabase
+          .from("chat_messages")
+          .select("*", { count: "exact", head: true })
+          .eq("is_read", false)
+          .neq("sender_email", user.email);
+
+        setUnreadChatCount(count || 0);
+      } catch (err) {
+        console.error("Error fetching unread chat count:", err);
+      }
+    };
+
+    fetchUnreadChat();
+
+    const channel = supabase
+      .channel("laundry_unread_badge")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "chat_messages" },
+        () => { fetchUnreadChat(); }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.email]);
 
   const fetchOrders = async (showLoader = true) => {
     if (showLoader) setIsLoading(true);
@@ -410,12 +443,12 @@ function LaundryDashboard() {
 
   return (
     <AppLayout>
-      <div className="min-h-screen bg-background pb-12 dir-rtl text-right" dir="rtl">
+      <div className="min-h-screen bg-background pb-12 dir-rtl text-right overflow-x-hidden" dir="rtl">
         {/* Top Header */}
-        <header className="bg-lavender p-6 rounded-b-[2rem] shadow-sm flex items-center justify-between">
+        <header className="bg-lavender p-4 sm:p-6 rounded-b-[2rem] shadow-sm flex items-center justify-between gap-3">
           <div>
             <span className="text-xs font-bold text-primary bg-primary/10 px-3 py-1 rounded-full">מכונת כביסה וטיפול</span>
-            <h1 className="text-2xl font-black mt-2 text-lavender-foreground">לוח עבודה צוות מכבסה</h1>
+            <h1 className="text-xl sm:text-2xl font-black mt-2 text-lavender-foreground">לוח עבודה צוות מכבסה</h1>
           </div>
           <button
             onClick={() => {
@@ -429,9 +462,9 @@ function LaundryDashboard() {
           </button>
         </header>
 
-        <main className="px-5 mt-6 space-y-5">
+        <main className="px-3 sm:px-5 mt-4 sm:mt-6 space-y-4 sm:space-y-5 max-w-full">
           {/* Quick Stats Banner */}
-          <section className="grid grid-cols-5 gap-2">
+          <section className="grid grid-cols-3 sm:grid-cols-5 gap-2">
             {[
               { label: "ממתינים", count: orders.filter(o => o.status === "pending").length, color: "text-purple-600 bg-purple-50 border-purple-100" },
               { label: "נאספו", count: orders.filter(o => o.status === "picked_up").length, color: "text-amber-600 bg-amber-50 border-amber-100" },
@@ -439,9 +472,9 @@ function LaundryDashboard() {
               { label: "מוכנים", count: orders.filter(o => o.status === "ready").length, color: "text-lime-foreground bg-lime/10 border-lime/20" },
               { label: "הושלמו", count: orders.filter(o => o.status === "completed").length, color: "text-slate-600 bg-slate-50 border-slate-100" }
             ].map((stat, idx) => (
-              <div key={idx} className={`border rounded-2xl p-2.5 flex flex-col items-center justify-center text-center ${stat.color}`}>
-                <span className="text-lg font-black">{stat.count}</span>
-                <span className="text-[9px] font-bold opacity-80">{stat.label}</span>
+              <div key={idx} className={`border rounded-2xl p-2 sm:p-2.5 flex flex-col items-center justify-center text-center ${stat.color}`}>
+                <span className="text-base sm:text-lg font-black">{stat.count}</span>
+                <span className="text-[9px] sm:text-[10px] font-bold opacity-80">{stat.label}</span>
               </div>
             ))}
           </section>
@@ -449,14 +482,19 @@ function LaundryDashboard() {
           {/* Chat Dashboard Link */}
           <button
             onClick={() => navigate({ to: "/admin-chat" })}
-            className="w-full bg-primary/10 border-2 border-primary/20 text-primary hover:bg-primary hover:text-primary-foreground hover:border-primary rounded-2xl p-4 flex items-center justify-between font-extrabold transition-all group active:scale-95 no-underline cursor-pointer"
+            className="relative w-full bg-primary/10 border-2 border-primary/20 text-primary hover:bg-primary hover:text-primary-foreground hover:border-primary rounded-2xl p-3 sm:p-4 flex items-center justify-between font-extrabold transition-all group active:scale-95 no-underline cursor-pointer"
           >
             <div className="flex items-center gap-3">
-              <div className="size-10 rounded-full bg-background/50 grid place-items-center group-hover:bg-primary-foreground/20">
+              <div className="relative size-10 rounded-full bg-background/50 grid place-items-center group-hover:bg-primary-foreground/20">
                 <MessageSquareText className="size-5" />
+                {unreadChatCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-[20px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-md">
+                    {unreadChatCount > 99 ? "99+" : unreadChatCount}
+                  </span>
+                )}
               </div>
               <div className="text-right">
-                <span className="block text-base">לוח הודעות ללקוחות (צ'אט)</span>
+                <span className="block text-sm sm:text-base">לוח הודעות ללקוחות (צ'אט)</span>
                 <span className="text-xs opacity-80 font-semibold block mt-0.5">מענה מיידי ללקוחות בזמן אמת</span>
               </div>
             </div>
@@ -467,7 +505,7 @@ function LaundryDashboard() {
           <div className="flex gap-2">
             <button
               onClick={() => setActiveTab("active")}
-              className={`flex-1 py-3 rounded-2xl text-xs font-black transition border active:scale-95 ${
+              className={`flex-1 py-2.5 sm:py-3 rounded-2xl text-[11px] sm:text-xs font-black transition border active:scale-95 min-h-[44px] ${
                 activeTab === "active"
                   ? "bg-primary text-primary-foreground border-primary"
                   : "bg-muted text-muted-foreground border-muted-foreground/10"
@@ -477,7 +515,7 @@ function LaundryDashboard() {
             </button>
             <button
               onClick={() => setActiveTab("completed")}
-              className={`flex-1 py-3 rounded-2xl text-xs font-black transition border active:scale-95 ${
+              className={`flex-1 py-2.5 sm:py-3 rounded-2xl text-[11px] sm:text-xs font-black transition border active:scale-95 min-h-[44px] ${
                 activeTab === "completed"
                   ? "bg-primary text-primary-foreground border-primary"
                   : "bg-muted text-muted-foreground border-muted-foreground/10"
@@ -516,22 +554,22 @@ function LaundryDashboard() {
                 {filteredOrders.map((order) => (
                   <div 
                     key={order.id}
-                    className="bg-card border border-muted-foreground/10 rounded-3xl p-5 shadow-sm space-y-4"
+                    className="bg-card border border-muted-foreground/10 rounded-2xl sm:rounded-3xl p-3 sm:p-5 shadow-sm space-y-3 sm:space-y-4 max-w-full overflow-hidden"
                   >
                     {/* Card Top */}
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <span className="text-xs font-bold text-muted-foreground">מזהה הזמנה:</span>
-                        <h3 className="text-sm font-extrabold text-foreground">{order.id}</h3>
+                    <div className="flex items-start sm:items-center justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <span className="text-[10px] sm:text-xs font-bold text-muted-foreground">מזהה הזמנה:</span>
+                        <h3 className="text-xs sm:text-sm font-extrabold text-foreground truncate max-w-full" title={order.id}>{order.id}</h3>
                       </div>
-                      <span className={`px-3 py-1 rounded-full text-xs font-bold border ${getStatusColor(order.status)}`}>
+                      <span className={`px-2 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-bold border whitespace-nowrap shrink-0 ${getStatusColor(order.status)}`}>
                         {getStatusLabel(order.status)}
                       </span>
                     </div>
 
                     {/* Customer Info */}
-                    <div className="bg-muted/40 rounded-2xl p-3 text-xs space-y-1">
-                      <p className="font-bold text-foreground">לקוח: <span className="font-semibold text-muted-foreground">{order.user_email}</span></p>
+                    <div className="bg-muted/40 rounded-2xl p-2.5 sm:p-3 text-[11px] sm:text-xs space-y-1 break-words overflow-hidden">
+                      <p className="font-bold text-foreground break-all">לקוח: <span className="font-semibold text-muted-foreground">{order.user_email}</span></p>
                       <p className="font-bold text-foreground">
                         שיטת מסירה: <span className="font-semibold text-muted-foreground">
                           {order.delivery_method === "home_delivery" ? "משלוח עד הבית" : order.delivery_method === "self_pickup" ? "איסוף עצמי" : "טרם נקבע"}
@@ -637,7 +675,7 @@ function LaundryDashboard() {
                     )}
 
                     {/* Dynamic Pricing Input Area */}
-                    <div className="space-y-2 pt-2 border-t border-muted-foreground/5 flex items-center justify-between gap-3">
+                    <div className="space-y-2 pt-2 border-t border-muted-foreground/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3">
                       <div className="flex-1">
                         <label className="text-[11px] font-extrabold text-muted-foreground block mb-1">מחיר סופי להזמנה (₪):</label>
                         <div className="flex gap-2">
@@ -646,12 +684,12 @@ function LaundryDashboard() {
                             value={typedPrices[order.id] !== undefined ? typedPrices[order.id] : String(order.amount_due || "")}
                             onChange={(e) => setTypedPrices(prev => ({ ...prev, [order.id]: e.target.value }))}
                             placeholder="הזן סכום לתשלום"
-                            className="bg-background border border-muted-foreground/20 rounded-xl px-3 py-2 text-xs font-bold w-full focus:outline-none focus:ring-2 focus:ring-primary"
+                            className="bg-background border border-muted-foreground/20 rounded-xl px-3 py-2.5 sm:py-2 text-xs font-bold w-full focus:outline-none focus:ring-2 focus:ring-primary min-h-[44px]"
                           />
 
                         </div>
                       </div>
-                      <div className="text-left min-w-[70px]">
+                      <div className="text-left sm:min-w-[70px] flex sm:block items-center gap-2">
                         <span className="text-[10px] font-bold text-muted-foreground block">מחיר נוכחי</span>
                         <span className="text-sm font-black text-foreground">
                           {order.amount_due ? `₪${order.amount_due}` : "טרם נקבע"}
@@ -671,7 +709,7 @@ function LaundryDashboard() {
                           })()}
                           onChange={(e) => setTypedMessages(prev => ({ ...prev, [order.id]: e.target.value }))}
                           placeholder="הקלד הודעה ללקוח (למשל: הכביסה נשקלה, המחיר עודכן והיא בטיפול)..."
-                          className="bg-background border border-muted-foreground/20 rounded-xl px-3 py-2 text-[11px] font-semibold w-full focus:outline-none focus:ring-2 focus:ring-primary leading-normal resize-none"
+                          className="bg-background border border-muted-foreground/20 rounded-xl px-3 py-2.5 sm:py-2 text-[11px] font-semibold w-full focus:outline-none focus:ring-2 focus:ring-primary leading-normal resize-none min-h-[44px]"
                         />
 
                       </div>
@@ -680,7 +718,7 @@ function LaundryDashboard() {
                     {/* Action Select Box to transition state */}
                     <div className="space-y-2 pt-2 border-t border-muted-foreground/5">
                       <label className="text-[11px] font-extrabold text-muted-foreground block">עדכן סטטוס טיפול בכביסה:</label>
-                      <div className="grid grid-cols-5 gap-1">
+                      <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 sm:gap-1">
                         {[
                           { key: "pending", label: "ממתין" },
                           { key: "picked_up", label: "נאסף" },
@@ -693,7 +731,7 @@ function LaundryDashboard() {
                             <button
                               key={step.key}
                               onClick={() => setPendingStatuses(prev => ({ ...prev, [order.id]: step.key }))}
-                              className={`py-2 rounded-xl text-[10px] font-bold transition active:scale-95 border ${
+                              className={`py-2.5 sm:py-2 rounded-xl text-[10px] sm:text-[11px] font-bold transition active:scale-95 border min-h-[44px] ${
                                 isCurrent 
                                   ? "bg-primary text-primary-foreground border-primary" 
                                   : "bg-background text-muted-foreground border-muted-foreground/10 hover:bg-muted/50"
@@ -712,23 +750,23 @@ function LaundryDashboard() {
                         <label className="text-[11px] font-extrabold text-muted-foreground block">חשבוניות שנשלחו ללקוח:</label>
                         <div className="space-y-1">
                           {order.invoices.map((inv, idx) => (
-                            <div key={idx} className="flex items-center justify-between bg-muted/30 hover:bg-muted/50 rounded-xl p-2.5 border border-muted-foreground/10 transition-colors">
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                <span className="text-[11px] font-bold text-foreground truncate max-w-[130px]" title={inv.name}>📄 {inv.name}</span>
+                            <div key={idx} className="flex flex-wrap sm:flex-nowrap items-center justify-between bg-muted/30 hover:bg-muted/50 rounded-xl p-2 sm:p-2.5 border border-muted-foreground/10 transition-colors gap-1.5">
+                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                <span className="text-[11px] font-bold text-foreground truncate max-w-[120px] sm:max-w-[200px]" title={inv.name}>📄 {inv.name}</span>
                                 <span className="text-[9px] text-muted-foreground font-semibold">({new Date(inv.date).toLocaleDateString("he-IL")})</span>
                               </div>
-                              <div className="flex items-center gap-1.5 shrink-0">
+                              <div className="flex items-center gap-1.5 shrink-0 mr-auto sm:mr-0">
                                 <a 
                                   href={inv.data} 
                                   download={inv.name}
-                                  className="text-[10px] font-black text-primary hover:text-primary/80 bg-primary/10 px-2 py-1 rounded-lg transition active:scale-95"
+                                  className="text-[10px] font-black text-primary hover:text-primary/80 bg-primary/10 px-2 py-1.5 sm:py-1 rounded-lg transition active:scale-95 min-h-[36px] sm:min-h-0 flex items-center"
                                 >
                                   הורדה
                                 </a>
                                 <button
                                   type="button"
                                   onClick={() => deleteUploadedInvoice(order.id, order.user_email, inv.date, inv.name)}
-                                  className="text-[10px] font-black text-destructive hover:text-destructive/80 bg-destructive/10 px-2 py-1 rounded-lg transition active:scale-95 flex items-center gap-0.5"
+                                  className="text-[10px] font-black text-destructive hover:text-destructive/80 bg-destructive/10 px-2 py-1.5 sm:py-1 rounded-lg transition active:scale-95 flex items-center gap-0.5 min-h-[36px] sm:min-h-0"
                                 >
                                   <Trash2 className="size-3" />
                                   <span>מחק</span>
@@ -746,7 +784,7 @@ function LaundryDashboard() {
                       <input 
                         type="file" 
                         accept="application/pdf,image/*"
-                        className="text-[11px] block w-full text-muted-foreground file:mr-0 file:ml-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-[10px] file:font-extrabold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90 file:cursor-pointer cursor-pointer transition"
+                        className="text-[11px] block w-full text-muted-foreground file:mr-0 file:ml-4 file:py-2.5 sm:file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-[10px] file:font-extrabold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90 file:cursor-pointer cursor-pointer transition file:min-h-[44px] sm:file:min-h-0"
                         onChange={(e) => {
                           if (e.target.files && e.target.files[0]) {
                             setPendingInvoices(prev => ({ ...prev, [order.id]: e.target.files![0] }));
@@ -755,8 +793,8 @@ function LaundryDashboard() {
                         }}
                       />
                       {pendingInvoices[order.id] && (
-                        <div className="flex items-center justify-between bg-primary/5 rounded-xl p-2 mt-1 border border-primary/10">
-                          <p className="text-[10px] text-primary font-bold">📎 {pendingInvoices[order.id]!.name} — ממתין לשמירה</p>
+                        <div className="flex flex-wrap sm:flex-nowrap items-center justify-between bg-primary/5 rounded-xl p-2 mt-1 border border-primary/10 gap-1.5">
+                          <p className="text-[10px] text-primary font-bold truncate min-w-0 flex-1">📎 {pendingInvoices[order.id]!.name} — ממתין לשמירה</p>
                           <button
                             type="button"
                             onClick={() => {
@@ -766,7 +804,7 @@ function LaundryDashboard() {
                                 return n;
                               });
                             }}
-                            className="text-[10px] text-destructive hover:text-destructive/80 font-black flex items-center gap-0.5 bg-destructive/10 px-2 py-1 rounded-lg transition active:scale-95"
+                            className="text-[10px] text-destructive hover:text-destructive/80 font-black flex items-center gap-0.5 bg-destructive/10 px-2 py-1.5 sm:py-1 rounded-lg transition active:scale-95 min-h-[36px] sm:min-h-0 shrink-0"
                           >
                             <X className="size-3" />
                             <span>בטל</span>
@@ -780,7 +818,7 @@ function LaundryDashboard() {
                       <button
                         onClick={() => saveAllChanges(order.id)}
                         disabled={savingOrder[order.id]}
-                        className="w-full bg-gradient-to-l from-primary to-primary/80 text-primary-foreground font-black text-sm py-4 rounded-2xl transition active:scale-[0.98] hover:shadow-lg hover:shadow-primary/20 flex items-center justify-center gap-2.5 disabled:opacity-60 disabled:cursor-not-allowed"
+                        className="w-full bg-gradient-to-l from-primary to-primary/80 text-primary-foreground font-black text-xs sm:text-sm py-3.5 sm:py-4 rounded-2xl transition active:scale-[0.98] hover:shadow-lg hover:shadow-primary/20 flex items-center justify-center gap-2 sm:gap-2.5 disabled:opacity-60 disabled:cursor-not-allowed min-h-[48px]"
                       >
                         {savingOrder[order.id] ? (
                           <>

@@ -133,16 +133,16 @@ function Profile() {
   return (
     <AppLayout>
       <AppHeader subtitle="הפרופיל שלי" />
-      <main className="px-5 mt-6 space-y-6 pb-24">
+      <main className="px-4 sm:px-5 mt-4 sm:mt-6 space-y-4 sm:space-y-6 pb-24">
         {/* User Info Card */}
-        <div className="rounded-3xl bg-lavender text-lavender-foreground p-6 flex items-center gap-4 shadow-sm border border-lavender-foreground/5">
-          <div className="size-16 rounded-full bg-primary text-primary-foreground grid place-items-center text-2xl font-extrabold shadow-inner select-none">
+        <div className="rounded-3xl bg-lavender text-lavender-foreground p-4 sm:p-6 flex items-center gap-3 sm:gap-4 shadow-sm border border-lavender-foreground/5 min-w-0">
+          <div className="size-12 sm:size-16 rounded-full bg-primary text-primary-foreground grid place-items-center text-xl sm:text-2xl font-extrabold shadow-inner select-none flex-shrink-0">
             {user?.name?.[0] ?? "?"}
           </div>
-          <div>
-            <p className="text-lg font-extrabold text-foreground">{user?.name}</p>
-            <p className="text-sm opacity-80 flex items-center gap-1.5 text-muted-foreground mt-0.5">
-              <Mail className="size-3.5" strokeWidth={2} /> {user?.email}
+          <div className="min-w-0 flex-1">
+            <p className="text-base sm:text-lg font-extrabold text-foreground truncate">{user?.name}</p>
+            <p className="text-xs sm:text-sm opacity-80 flex items-center gap-1.5 text-muted-foreground mt-0.5 min-w-0">
+              <Mail className="size-3.5 flex-shrink-0" strokeWidth={2} /> <span className="truncate">{user?.email}</span>
             </p>
           </div>
         </div>
@@ -150,7 +150,7 @@ function Profile() {
         {/* Logout Button */}
         <button
           onClick={() => { logout(); navigate({ to: "/login" }); }}
-          className="w-full flex items-center justify-between rounded-3xl bg-primary text-primary-foreground p-5 font-bold shadow-md hover:shadow-lg active:scale-[0.98] transition group"
+          className="w-full flex items-center justify-between rounded-3xl bg-primary text-primary-foreground p-4 sm:p-5 min-h-[48px] font-bold shadow-md hover:shadow-lg active:scale-[0.98] transition group"
         >
           <span className="flex items-center gap-3">
             <LogOut className="size-5 group-hover:translate-x-1 transition-transform" strokeWidth={2} /> 
@@ -197,14 +197,14 @@ function Profile() {
                     <button
                       key={order.id}
                       onClick={() => setSelectedOrder(order)}
-                      className="w-full text-right rounded-3xl border border-muted-foreground/10 bg-background/60 hover:bg-muted/30 p-5 flex items-center justify-between transition active:scale-[0.98] shadow-sm group hover:border-primary/20"
+                      className="w-full text-right rounded-2xl sm:rounded-3xl border border-muted-foreground/10 bg-background/60 hover:bg-muted/30 p-3.5 sm:p-5 flex items-center justify-between transition active:scale-[0.98] shadow-sm group hover:border-primary/20 min-h-[44px]"
                     >
-                      <div className="flex items-center gap-4">
-                        <div className="size-12 rounded-2xl bg-lavender text-lavender-foreground grid place-items-center flex-shrink-0 group-hover:scale-105 transition-transform duration-300 shadow-sm">
-                          <ShoppingBasket className="size-6" strokeWidth={1.75} />
+                      <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
+                        <div className="size-10 sm:size-12 rounded-2xl bg-lavender text-lavender-foreground grid place-items-center flex-shrink-0 group-hover:scale-105 transition-transform duration-300 shadow-sm">
+                          <ShoppingBasket className="size-5 sm:size-6" strokeWidth={1.75} />
                         </div>
-                        <div className="space-y-1">
-                          <p className="font-black text-sm text-foreground">
+                        <div className="space-y-0.5 sm:space-y-1 min-w-0">
+                          <p className="font-black text-xs sm:text-sm text-foreground truncate">
                             הזמנה #{order.id.slice(0, 8)}
                           </p>
                           <div className="flex items-center gap-2 flex-wrap">
@@ -217,7 +217,7 @@ function Profile() {
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
                         <span className="text-sm font-black text-foreground">
                           ₪{order.amount_due || order.total_price || 0}
                         </span>
@@ -237,11 +237,11 @@ function Profile() {
 
       {/* Order Details Dialog */}
       <Dialog open={!!selectedOrder} onOpenChange={(open) => !open && setSelectedOrder(null)}>
-        <DialogContent className="max-w-md w-[92%] max-h-[85vh] overflow-y-auto overflow-x-hidden rounded-3xl p-6 text-right dir-rtl backdrop-blur-xl bg-background/95 border-none shadow-[0_25px_60px_rgba(0,0,0,0.2)] focus:outline-none" dir="rtl">
+        <DialogContent className="max-w-md w-[95%] sm:w-[92%] max-h-[85vh] overflow-y-auto overflow-x-hidden rounded-2xl sm:rounded-3xl p-4 sm:p-6 text-right dir-rtl backdrop-blur-xl bg-background/95 border-none shadow-[0_25px_60px_rgba(0,0,0,0.2)] focus:outline-none" dir="rtl">
           {selectedOrder && (
             <>
               <DialogHeader className="space-y-2 text-right">
-                <DialogTitle className="text-xl font-extrabold text-foreground flex items-center justify-start gap-2">
+                <DialogTitle className="text-lg sm:text-xl font-extrabold text-foreground flex items-center justify-start gap-2">
                   <ShoppingBasket className="size-6 text-primary" />
                   <span>פרטי הזמנה #{selectedOrder.id.slice(0, 8)}</span>
                 </DialogTitle>
@@ -289,7 +289,7 @@ function Profile() {
                 </div>
 
                 {/* Pricing & Payment Info */}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="rounded-2xl border border-muted-foreground/10 p-4 space-y-1 bg-background/50 shadow-sm">
                     <span className="text-[10px] font-black text-muted-foreground block">מחיר סופי</span>
                     <span className="text-xl font-black text-foreground">₪{selectedOrder.amount_due || selectedOrder.total_price || 0}</span>
@@ -351,7 +351,7 @@ function Profile() {
                 {selectedOrder.images && getImagesArray(selectedOrder.images).length > 0 && (
                   <div className="space-y-2">
                     <span className="text-[10px] font-black text-muted-foreground block">תמונות שצורפו</span>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                       {getImagesArray(selectedOrder.images).map((imgUrl: string, idx: number) => (
                         <div key={idx} className="aspect-square rounded-xl overflow-hidden border border-muted-foreground/10 shadow-sm relative group active:scale-95 transition">
                           <img 
@@ -370,7 +370,7 @@ function Profile() {
               <div className="mt-6">
                 <button
                   onClick={() => setSelectedOrder(null)}
-                  className="w-full rounded-3xl bg-lime text-lime-foreground py-3.5 font-bold active:scale-[0.98] transition hover:shadow-lg hover:shadow-lime/20"
+                  className="w-full rounded-3xl bg-lime text-lime-foreground py-3.5 min-h-[48px] font-bold active:scale-[0.98] transition hover:shadow-lg hover:shadow-lime/20"
                 >
                   סגור
                 </button>
