@@ -45,11 +45,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   if (!user) return null;
 
-  const isSpecialDashboard = ["/admin", "/laundry-dashboard"].includes(pathname) || user.role === "admin" || user.role === "laundry";
+  const isSpecialDashboard = ["/admin", "/laundry-dashboard", "/admin-chat"].includes(pathname) || user?.role === "admin" || user?.role === "laundry";
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="mx-auto max-w-md">
+      <div className={isSpecialDashboard ? "w-full" : "mx-auto max-w-md"}>
         {children}
         {/* Spacer to prevent content overlap with BottomNav if visible */}
         {!isSpecialDashboard && <div className="h-40" />}
