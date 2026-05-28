@@ -447,10 +447,9 @@ function LaundryDashboard() {
           </section>
 
           {/* Chat Dashboard Link */}
-          <Link
-            to="/admin-chat"
-            preload="intent"
-            className="w-full bg-primary/10 border-2 border-primary/20 text-primary hover:bg-primary hover:text-primary-foreground hover:border-primary rounded-2xl p-4 flex items-center justify-between font-extrabold transition-all group active:scale-95 no-underline"
+          <button
+            onClick={() => navigate({ to: "/admin-chat" })}
+            className="w-full bg-primary/10 border-2 border-primary/20 text-primary hover:bg-primary hover:text-primary-foreground hover:border-primary rounded-2xl p-4 flex items-center justify-between font-extrabold transition-all group active:scale-95 no-underline cursor-pointer"
           >
             <div className="flex items-center gap-3">
               <div className="size-10 rounded-full bg-background/50 grid place-items-center group-hover:bg-primary-foreground/20">
@@ -462,7 +461,7 @@ function LaundryDashboard() {
               </div>
             </div>
             <ArrowRight className="size-5 rotate-180 opacity-50 group-hover:opacity-100 group-hover:-translate-x-1 transition-all" />
-          </Link>
+          </button>
 
           {/* Active Tabs */}
           <div className="flex gap-2">

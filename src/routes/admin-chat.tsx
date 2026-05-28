@@ -253,7 +253,7 @@ function AdminChat() {
         <aside className={`w-full md:w-[350px] flex-shrink-0 flex flex-col border-l border-border bg-slate-50/50 ${activeConvId ? 'hidden md:flex' : 'flex'}`}>
           <header className="bg-lavender p-5 shadow-sm flex-shrink-0 relative">
             <button 
-              onClick={() => navigate({ to: "/admin" })} 
+              onClick={() => navigate({ to: user?.role === "admin" ? "/admin" : "/laundry-dashboard" })} 
               className="absolute top-5 left-5 size-10 grid place-items-center rounded-full bg-background/50 text-foreground shadow-sm hover:bg-background"
             >
               <ArrowRight className="size-5" />
