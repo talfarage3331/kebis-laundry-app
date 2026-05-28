@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { useLaundry } from "@/lib/laundry-store";
@@ -201,9 +201,10 @@ function AdminDashboard() {
           </section>
 
           {/* Chat Dashboard Link */}
-          <button
-            onClick={() => navigate({ to: "/admin-chat" })}
-            className="w-full bg-primary/10 border-2 border-primary/20 text-primary hover:bg-primary hover:text-primary-foreground hover:border-primary rounded-2xl p-4 flex items-center justify-between font-extrabold transition-all group active:scale-95"
+          <Link
+            to="/admin-chat"
+            preload="intent"
+            className="w-full bg-primary/10 border-2 border-primary/20 text-primary hover:bg-primary hover:text-primary-foreground hover:border-primary rounded-2xl p-4 flex items-center justify-between font-extrabold transition-all group active:scale-95 no-underline"
           >
             <div className="flex items-center gap-3">
               <div className="size-10 rounded-full bg-background/50 grid place-items-center group-hover:bg-primary-foreground/20">
@@ -215,7 +216,7 @@ function AdminDashboard() {
               </div>
             </div>
             <ArrowRight className="size-5 rotate-180 opacity-50 group-hover:opacity-100 group-hover:-translate-x-1 transition-all" />
-          </button>
+          </Link>
 
           {/* Filter and search bar */}
           <div className="space-y-3">

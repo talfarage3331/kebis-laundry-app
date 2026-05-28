@@ -1,11 +1,11 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { useLaundry, ORDER_STEPS, stateLabel } from "@/lib/laundry-store";
 import { supabase } from "@/lib/supabase";
 import { 
   ShoppingBasket, Truck, Sparkles, CheckCircle2, AlertCircle, 
-  ArrowLeft, LogOut, RefreshCw, MessageSquare, Image as ImageIcon, ChevronDown, Save, Trash2, X
+  ArrowLeft, LogOut, RefreshCw, MessageSquare, Image as ImageIcon, ChevronDown, Save, Trash2, X, MessageSquareText, ArrowRight
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -445,6 +445,24 @@ function LaundryDashboard() {
               </div>
             ))}
           </section>
+
+          {/* Chat Dashboard Link */}
+          <Link
+            to="/admin-chat"
+            preload="intent"
+            className="w-full bg-primary/10 border-2 border-primary/20 text-primary hover:bg-primary hover:text-primary-foreground hover:border-primary rounded-2xl p-4 flex items-center justify-between font-extrabold transition-all group active:scale-95 no-underline"
+          >
+            <div className="flex items-center gap-3">
+              <div className="size-10 rounded-full bg-background/50 grid place-items-center group-hover:bg-primary-foreground/20">
+                <MessageSquareText className="size-5" />
+              </div>
+              <div className="text-right">
+                <span className="block text-base">לוח הודעות לקוחות (צ'אט)</span>
+                <span className="text-xs opacity-80 font-semibold block mt-0.5">מענה מיידי ללקוחות בזמן אמת</span>
+              </div>
+            </div>
+            <ArrowRight className="size-5 rotate-180 opacity-50 group-hover:opacity-100 group-hover:-translate-x-1 transition-all" />
+          </Link>
 
           {/* Active Tabs */}
           <div className="flex gap-2">
