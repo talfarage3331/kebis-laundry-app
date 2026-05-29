@@ -193,7 +193,7 @@ function Chat() {
 
   return (
     <AppLayout>
-      <div className="flex flex-col h-screen max-h-[100dvh] bg-slate-50 dir-rtl text-right" dir="rtl">
+      <div className="flex flex-col h-[100dvh] max-h-[100dvh] bg-slate-50 dir-rtl text-right" dir="rtl">
         {/* Header */}
         <header className="bg-primary text-primary-foreground px-5 py-4 flex items-center shadow-md sticky top-0 z-10 shrink-0 rounded-b-3xl">
           <button 

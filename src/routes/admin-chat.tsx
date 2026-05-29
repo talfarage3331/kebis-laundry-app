@@ -248,7 +248,7 @@ function AdminChat() {
 
   return (
     <AppLayout>
-      <div className="fixed inset-0 flex bg-background text-right overflow-hidden" dir="rtl">
+      <div className="fixed inset-0 h-[100dvh] max-h-[100dvh] flex bg-background text-right overflow-hidden" dir="rtl">
         {/* Sidebar */}
         <aside className={`w-full md:w-[350px] flex-shrink-0 flex flex-col border-l border-border bg-slate-50/50 ${activeConvId ? 'hidden md:flex' : 'flex'}`}>
           <header className="bg-lavender p-5 shadow-sm flex-shrink-0 relative">
