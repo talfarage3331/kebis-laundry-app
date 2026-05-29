@@ -117,7 +117,7 @@ function Dashboard() {
       <Link
         to="/chat"
         preload="intent"
-        className="fixed bottom-24 right-5 size-14 bg-primary text-primary-foreground rounded-full shadow-[0_10px_25px_-5px_oklch(0.34_0.13_333/0.5)] grid place-items-center active:scale-95 transition-all z-40 hover:bg-primary/90"
+        className="fixed bottom-32 sm:bottom-24 right-5 size-14 bg-primary text-primary-foreground rounded-full shadow-[0_10px_25px_-5px_oklch(0.34_0.13_333/0.5)] grid place-items-center active:scale-95 transition-all z-50 hover:bg-primary/90"
       >
         <MessageCircle className="size-6" strokeWidth={2} />
         {unreadCount > 0 && (
