@@ -5,6 +5,7 @@ import { useLaundry } from "@/lib/laundry-store";
 import { supabase } from "@/lib/supabase";
 import { ArrowRight, Send, Loader2, MessageSquareText, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/admin-chat")({ component: AdminChat });
 
@@ -14,6 +15,8 @@ interface Conversation {
   updated_at: string;
   last_message?: string;
   unread_count: number;
+  is_placeholder?: boolean;
+  display_name?: string;
 }
 
 interface ChatMessage {
@@ -65,6 +68,19 @@ function AdminChat() {
 
       if (convError) throw convError;
 
+      // Fetch customer profiles to show their real names and fill the list with other registered users
+      const { data: customerProfiles, error: profilesError } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("role", "customer");
+
+      const profileMap = new Map<string, string>();
+      if (!profilesError && customerProfiles) {
+        customerProfiles.forEach(p => {
+          profileMap.set(p.email.toLowerCase(), p.full_name);
+        });
+      }
+
       // For each conversation, get unread count and last message
       const enriched = await Promise.all((convData || []).map(async (conv) => {
         // Get unread count (messages sent by customer that are not read)
@@ -84,16 +100,40 @@ function AdminChat() {
           .limit(1)
           .maybeSingle();
 
+        const name = profileMap.get(conv.customer_email.toLowerCase()) || conv.customer_email.split('@')[0];
+
         return {
           ...conv,
           unread_count: unreadCount || 0,
           last_message: lastMsgData?.content || "אין הודעות",
+          display_name: name,
         };
       }));
 
-      // Sort by updated_at (most recent first)
-      enriched.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
-      setConversations(enriched);
+      // Find profiles without conversations and add placeholders
+      const existingEmails = new Set((convData || []).map(c => c.customer_email.toLowerCase()));
+      const placeholders = (customerProfiles || [])
+        .filter(p => !existingEmails.has(p.email.toLowerCase()))
+        .map(p => ({
+          id: `new-${p.email}`,
+          customer_email: p.email,
+          updated_at: new Date(0).toISOString(), // Sort placeholders to the bottom
+          last_message: "לחץ להתחלת שיחה חדשה 💬",
+          unread_count: 0,
+          is_placeholder: true,
+          display_name: p.full_name || p.email.split('@')[0],
+        }));
+
+      const allConvs = [...enriched, ...placeholders];
+
+      // Sort: place active chats first, and empty ones sorted below
+      allConvs.sort((a, b) => {
+        const timeA = new Date(a.updated_at).getTime();
+        const timeB = new Date(b.updated_at).getTime();
+        return timeB - timeA;
+      });
+
+      setConversations(allConvs);
     } catch (err) {
       console.error("Error fetching conversations:", err);
     } finally {
@@ -126,6 +166,13 @@ function AdminChat() {
   // Fetch Active Chat Messages
   useEffect(() => {
     if (!activeConvId) return;
+
+    // For new placeholder chats, there are no messages in the DB yet
+    if (activeConvId.startsWith("new-")) {
+      setMessages([]);
+      setLoadingChat(false);
+      return;
+    }
 
     let isMounted = true;
     const fetchMessages = async () => {
@@ -218,11 +265,32 @@ function AdminChat() {
     
     setMessages((prev) => [...prev, optimisticMsg]);
 
+    let currentConvId = activeConvId;
+    let isNewConv = false;
+    let realNewId = "";
+
     try {
+      if (activeConvId.startsWith("new-")) {
+        isNewConv = true;
+        const targetEmail = activeConvId.replace("new-", "");
+        
+        // 1. Create a real conversation in the DB first
+        const { data: newConv, error: convErr } = await supabase
+          .from("chat_conversations")
+          .insert([{ customer_email: targetEmail }])
+          .select()
+          .single();
+
+        if (convErr) throw convErr;
+        currentConvId = newConv.id;
+        realNewId = newConv.id;
+      }
+
+      // 2. Insert the message under the (now active/real) conversation ID
       const { data, error } = await supabase
         .from("chat_messages")
         .insert([{
-          conversation_id: activeConvId,
+          conversation_id: currentConvId,
           sender_email: user.email,
           content: content,
         }])
@@ -230,9 +298,18 @@ function AdminChat() {
         .single();
 
       if (error) throw error;
-      setMessages((prev) => prev.map((m) => m.id === tempId ? data : m));
+
+      if (isNewConv) {
+        // Swap active ID to the newly created real ID to trigger live subscription
+        setActiveConvId(realNewId);
+        // Refresh conversations list to update sidebar and display the conversation as real
+        await fetchConversations();
+      } else {
+        setMessages((prev) => prev.map((m) => m.id === tempId ? data : m));
+      }
     } catch (err) {
       console.error(err);
+      toast.error("שגיאה בשליחת ההודעה");
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
     }
   };
@@ -243,7 +320,8 @@ function AdminChat() {
   };
 
   const filteredConversations = conversations.filter(c => 
-    c.customer_email.toLowerCase().includes(searchQuery.toLowerCase())
+    c.customer_email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (c.display_name && c.display_name.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
   return (
@@ -263,7 +341,7 @@ function AdminChat() {
               <Input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="חיפוש לקוח..."
+                placeholder="חיפוש לקוח לפי שם או אימייל..."
                 className="pr-10 rounded-2xl border-muted-foreground/15 h-11 text-right bg-background"
               />
               <Search className="absolute right-3 top-3 size-5 text-muted-foreground" />
@@ -278,7 +356,7 @@ function AdminChat() {
             ) : filteredConversations.length === 0 ? (
               <div className="py-10 text-center text-muted-foreground">
                 <MessageSquareText className="size-10 mx-auto mb-3 opacity-20" />
-                <p>אין שיחות פעילות</p>
+                <p>אין שיחות או לקוחות תואמים</p>
               </div>
             ) : (
               <ul className="divide-y divide-border/50">
@@ -291,13 +369,13 @@ function AdminChat() {
                       }`}
                     >
                       <div className="size-12 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-lg flex-shrink-0">
-                        {conv.customer_email[0].toUpperCase()}
+                        {(conv.display_name || conv.customer_email)[0].toUpperCase()}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex justify-between items-center mb-1">
-                          <span className="font-bold text-sm truncate">{conv.customer_email.split('@')[0]}</span>
+                          <span className="font-bold text-sm truncate">{conv.display_name}</span>
                           <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                            {formatTime(conv.updated_at)}
+                            {!conv.is_placeholder && formatTime(conv.updated_at)}
                           </span>
                         </div>
                         <p className={`text-xs truncate ${conv.unread_count > 0 ? 'text-foreground font-semibold' : 'text-muted-foreground'}`}>
@@ -334,17 +412,31 @@ function AdminChat() {
                 >
                   <ArrowRight className="size-5" />
                 </button>
-                <div className="size-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-lg">
-                  {conversations.find(c => c.id === activeConvId)?.customer_email[0].toUpperCase()}
-                </div>
-                <div>
-                  <h2 className="font-bold text-sm">
-                    {conversations.find(c => c.id === activeConvId)?.customer_email}
-                  </h2>
-                  <span className="text-[10px] text-green-600 font-bold bg-green-50 px-2 py-0.5 rounded-full">
-                    לקוח
-                  </span>
-                </div>
+                {(() => {
+                  const activeConv = conversations.find(c => c.id === activeConvId);
+                  const name = activeConv?.display_name || activeConv?.customer_email || "";
+                  const avatarLetter = name[0]?.toUpperCase() || "";
+                  return (
+                    <>
+                      <div className="size-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-lg">
+                        {avatarLetter}
+                      </div>
+                      <div className="flex-1 min-w-0 text-right">
+                        <h2 className="font-bold text-sm truncate">
+                          {name}
+                        </h2>
+                        {activeConv?.display_name && activeConv.display_name !== activeConv.customer_email && (
+                          <p className="text-[10px] text-muted-foreground truncate leading-none mt-0.5" dir="ltr">
+                            {activeConv.customer_email}
+                          </p>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-green-600 font-bold bg-green-50 px-2 py-0.5 rounded-full shrink-0">
+                        לקוח
+                      </span>
+                    </>
+                  );
+                })()}
               </header>
 
               {/* Messages */}
