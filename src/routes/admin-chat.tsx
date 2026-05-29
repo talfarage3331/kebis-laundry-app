@@ -68,11 +68,14 @@ function AdminChat() {
 
       if (convError) throw convError;
 
-      // Fetch customer profiles to show their real names and fill the list with other registered users
-      const { data: customerProfiles, error: profilesError } = await supabase
+      // Fetch all profiles to show their real names and fill the list with other registered users (excluding laundry staff)
+      const { data: allProfiles, error: profilesError } = await supabase
         .from("profiles")
-        .select("*")
-        .eq("role", "customer");
+        .select("*");
+
+      const customerProfiles = (allProfiles || []).filter(
+        (p) => p.role !== "laundry" && p.email.toLowerCase() !== user?.email.toLowerCase()
+      );
 
       const profileMap = new Map<string, string>();
       if (!profilesError && customerProfiles) {
