@@ -110,6 +110,7 @@ function Dashboard() {
           await createOrder(combinedNotes, images, requiresIroning, requiresDryCleaning);
           setIsModalOpen(false);
           toast.success("הזמנת האיסוף נוצרה בהצלחה!");
+          navigate({ to: "/tracking" });
         }}
       />
 

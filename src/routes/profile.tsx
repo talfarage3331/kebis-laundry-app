@@ -58,7 +58,7 @@ function Profile() {
         const { data: dbOrders, error } = await supabase
           .from("orders")
           .select("*")
-          .eq("user_email", user.email)
+          .ilike("user_email", user.email)
           .order("created_at", { ascending: false });
 
         if (error) throw error;

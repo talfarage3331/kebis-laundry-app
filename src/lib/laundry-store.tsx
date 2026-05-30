@@ -108,7 +108,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         const { data: syncOrders } = await supabase
           .from("orders")
           .select("*")
-          .eq("user_email", sessionUser.email);
+          .ilike("user_email", sessionUser.email);
 
         const syncOrder = (syncOrders || []).find(o => 
           o.delivery_method === "placeholder" || 
@@ -144,7 +144,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
               })
               .eq("id", syncOrder.id);
           }
-        } else {
+        } else if ((syncOrders || []).length === 0) {
           // If no placeholder order exists yet for this customer, let's insert one as a standard pending order!
           await supabase.from("orders").insert([{
             user_email: sessionUser.email,
@@ -271,7 +271,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       const { data: syncOrders } = await supabase
         .from("orders")
         .select("*")
-        .eq("user_email", user.email);
+        .ilike("user_email", user.email);
 
       const syncOrder = (syncOrders || []).find(o => 
         o.delivery_method === "placeholder" || 
@@ -325,7 +325,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
             window.dispatchEvent(new Event("storage"));
           }
         }
-      } else {
+      } else if ((syncOrders || []).length === 0) {
         // If no placeholder order exists yet for this customer, let's insert one as a standard pending order!
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
@@ -345,7 +345,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       const { data: allOrders, error } = await supabase
         .from('orders')
         .select('*')
-        .eq('user_email', user?.email)
+        .ilike('user_email', user?.email)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -507,6 +507,16 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     const newState: OrderState = "pending";
     const amount = 0; // Dynamic pricing starts at 0
     
+    // Delete any existing placeholder orders for this user before creating a real one
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+      await supabase
+        .from("orders")
+        .delete()
+        .eq("user_id", session.user.id)
+        .eq("delivery_method", "placeholder");
+    }
+
     setOrderState(newState);
     setDeliveryMethod("none");
     setPaymentState("unpaid");
@@ -539,8 +549,6 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem(`laundry_images_${user?.email}`);
     }
 
-    // Get authenticated session to satisfy RLS (user_id = auth.uid() is REQUIRED)
-    const { data: { session } } = await supabase.auth.getSession();
     const userId = session?.user?.id;
 
     // Insert into Supabase with user_id to satisfy RLS policies
@@ -574,7 +582,51 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     
     // Dispatch standard storage event to trigger real-time UI reaction
     window.dispatchEvent(new Event("storage"));
-  }, [user]);
+
+    // Sync active order locally
+    await refreshActiveOrder();
+  }, [user, refreshActiveOrder]);
+
+  // Realtime listener for current user's orders and invoices to update state
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel("store-orders-realtime-sync")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "orders" },
+        (payload) => {
+          const newOrder = payload.new as any;
+          const oldOrder = payload.old as any;
+          const newEmail = (newOrder?.user_email || "").toLowerCase();
+          const oldEmail = (oldOrder?.user_email || "").toLowerCase();
+          const userEmail = (user.email || "").toLowerCase();
+          if (newEmail === userEmail || oldEmail === userEmail) {
+            refreshActiveOrder();
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "invoices" },
+        (payload) => {
+          const newInvoice = payload.new as any;
+          const oldInvoice = payload.old as any;
+          const newEmail = (newInvoice?.user_email || "").toLowerCase();
+          const oldEmail = (oldInvoice?.user_email || "").toLowerCase();
+          const userEmail = (user.email || "").toLowerCase();
+          if (newEmail === userEmail || oldEmail === userEmail) {
+            refreshActiveOrder();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, refreshActiveOrder]);
 
   const advanceOrder = useCallback(async () => {
     let finalState: OrderState = orderState;

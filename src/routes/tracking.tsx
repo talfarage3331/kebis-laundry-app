@@ -20,12 +20,11 @@ function Tracking() {
     if (!user) return;
     if (showLoader) setLoading(true);
     try {
-      // 1. Fetch active orders from Supabase (excluding completed)
+      // 1. Fetch all orders from Supabase (including completed)
       const { data: dbOrders, error: ordersError } = await supabase
         .from("orders")
         .select("*")
-        .eq("user_email", user.email)
-        .neq("status", "completed")
+        .ilike("user_email", user.email)
         .order("created_at", { ascending: false });
 
       if (ordersError) throw ordersError;
@@ -34,7 +33,7 @@ function Tracking() {
       const { data: dbInvoices, error: invoicesError } = await supabase
         .from("invoices")
         .select("*")
-        .eq("user_email", user.email);
+        .ilike("user_email", user.email);
 
       if (invoicesError) throw invoicesError;
 
@@ -94,7 +93,9 @@ function Tracking() {
         { event: '*', schema: 'public', table: 'orders' },
         (payload) => {
           const newOrder = payload.new as any;
-          if (newOrder?.user_email === user?.email) {
+          const newEmail = (newOrder?.user_email || "").toLowerCase();
+          const userEmail = (user?.email || "").toLowerCase();
+          if (newEmail === userEmail) {
             fetchOrders(false);
           }
         }
@@ -116,7 +117,7 @@ function Tracking() {
       orderSub.unsubscribe();
       window.removeEventListener("storage", handleStorage);
     };
-  }, [user, orderState]);
+  }, [user]);
 
   return (
     <AppLayout>
@@ -197,7 +198,11 @@ function OrderCard({ order, isExpanded, onToggle }: { order: any, isExpanded: bo
   if (isExpanded) {
     return (
       <div className="space-y-4 animate-fade-in">
-        <div className="rounded-3xl bg-lime text-lime-foreground p-5 shadow-[0_15px_40px_-15px_oklch(0.92_0.18_125/0.6)] relative cursor-pointer" onClick={onToggle}>
+        <div className={`rounded-3xl p-5 relative cursor-pointer ${
+          order.status === "completed" 
+            ? "bg-slate-100 text-slate-700 border border-slate-200" 
+            : "bg-lime text-lime-foreground shadow-[0_15px_40px_-15px_oklch(0.92_0.18_125/0.6)]"
+        }`} onClick={onToggle}>
           <div className="flex justify-between items-center text-xs opacity-80 mb-3 font-bold border-b border-current/20 pb-2">
             <span className="text-sm">הזמנה #{order.id.split('-')[0]}</span>
             <span>{new Date(order.created_at).toLocaleDateString("he-IL")}</span>
@@ -214,7 +219,11 @@ function OrderCard({ order, isExpanded, onToggle }: { order: any, isExpanded: bo
                 <li key={s.key} className="flex items-center gap-3 text-sm font-semibold">
                   <span
                     className={`size-6 rounded-full grid place-items-center text-[11px] ${
-                      done ? "bg-primary text-primary-foreground" : "bg-background/60 text-muted-foreground"
+                      done 
+                        ? order.status === "completed"
+                          ? "bg-slate-700 text-slate-100"
+                          : "bg-primary text-primary-foreground" 
+                        : "bg-background/60 text-muted-foreground"
                     }`}
                   >
                     {done ? <Check className="size-3.5" strokeWidth={3} /> : i + 1}

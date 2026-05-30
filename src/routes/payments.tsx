@@ -29,7 +29,7 @@ function Payments() {
       const { data, error } = await supabase
         .from("orders")
         .select("*")
-        .eq("user_email", user.email)
+        .ilike("user_email", user.email)
         .order("created_at", { ascending: false });
 
       let activeOrders = [];
