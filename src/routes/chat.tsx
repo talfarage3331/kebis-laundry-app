@@ -2,7 +2,18 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { useLaundry } from "@/lib/laundry-store";
-import { supabase } from "@/lib/supabase";
+import { db } from "@/lib/firebase";
+import {
+  collection,
+  doc,
+  getDoc,
+  setDoc,
+  addDoc,
+  updateDoc,
+  query,
+  orderBy,
+  onSnapshot,
+} from "firebase/firestore";
 import { ArrowRight, Send, Loader2, MessageSquareText } from "lucide-react";
 import { toast } from "sonner";
 
@@ -10,7 +21,6 @@ export const Route = createFileRoute("/chat")({ component: Chat });
 
 interface ChatMessage {
   id: string;
-  conversation_id: string;
   sender_email: string;
   content: string;
   is_read: boolean;
@@ -23,7 +33,7 @@ function Chat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [loading, setLoading] = useState(true);
-  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [chatReady, setChatReady] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Scroll to bottom
@@ -38,111 +48,69 @@ function Chat() {
   useEffect(() => {
     if (!user) return;
 
+    let unsubscribe: (() => void) | undefined;
+
     const fetchOrCreateConversation = async () => {
       try {
-        // Find existing conversation
-        let { data: convData, error: convError } = await supabase
-          .from("chat_conversations")
-          .select("*")
-          .eq("customer_email", user.email)
-          .maybeSingle();
-
-        if (convError) {
-          console.error("Error fetching conversation:", convError);
-          toast.error("שגיאה בטעינת השיחה");
-          setLoading(false);
-          return;
-        }
-
-        let currentConvId = convData?.id;
+        const chatDocRef = doc(db, "chats", user.email);
+        const chatDocSnap = await getDoc(chatDocRef);
 
         // Create if not exists
-        if (!currentConvId) {
-          const { data: newConvData, error: newConvError } = await supabase
-            .from("chat_conversations")
-            .insert([{ customer_email: user.email }])
-            .select()
-            .single();
+        if (!chatDocSnap.exists()) {
+          await setDoc(chatDocRef, {
+            customer_email: user.email,
+            updated_at: new Date().toISOString(),
+          });
+        }
 
-          if (newConvError) {
-            console.error("Error creating conversation:", newConvError);
-            toast.error("שגיאה ביצירת שיחה");
+        setChatReady(true);
+
+        // Subscribe to real-time messages
+        const messagesRef = collection(db, "chats", user.email, "messages");
+        const messagesQuery = query(messagesRef, orderBy("created_at", "asc"));
+
+        unsubscribe = onSnapshot(
+          messagesQuery,
+          (snapshot) => {
+            const msgs: ChatMessage[] = snapshot.docs.map((d) => ({
+              id: d.id,
+              ...d.data(),
+            })) as ChatMessage[];
+
+            setMessages(msgs);
             setLoading(false);
-            return;
-          }
-          currentConvId = newConvData.id;
-        }
 
-        setConversationId(currentConvId);
-
-        // Fetch messages
-        const { data: msgData, error: msgError } = await supabase
-          .from("chat_messages")
-          .select("*")
-          .eq("conversation_id", currentConvId)
-          .order("created_at", { ascending: true });
-
-        if (msgError) {
-          console.error("Error fetching messages:", msgError);
-        } else {
-          setMessages(msgData || []);
-          
-          // Mark unread messages from admin as read
-          const unreadIds = (msgData || [])
-            .filter((m) => m.sender_email !== user.email && !m.is_read)
-            .map((m) => m.id);
-            
-          if (unreadIds.length > 0) {
-            await supabase
-              .from("chat_messages")
-              .update({ is_read: true })
-              .in("id", unreadIds);
-          }
-        }
-
-        // Subscribe to real-time changes
-        const channel = supabase
-          .channel(`chat_${currentConvId}`)
-          .on(
-            "postgres_changes",
-            {
-              event: "INSERT",
-              schema: "public",
-              table: "chat_messages",
-              filter: `conversation_id=eq.${currentConvId}`,
-            },
-            (payload) => {
-              const newMsg = payload.new as ChatMessage;
-              setMessages((prev) => [...prev, newMsg]);
-              
-              // Mark as read if from admin and we are currently on the page
-              if (newMsg.sender_email !== user.email) {
-                supabase
-                  .from("chat_messages")
-                  .update({ is_read: true })
-                  .eq("id", newMsg.id)
-                  .then();
+            // Mark unread messages from admin as read
+            snapshot.docs.forEach((d) => {
+              const data = d.data();
+              if (data.sender_email !== user.email && !data.is_read) {
+                updateDoc(d.ref, { is_read: true });
               }
-            }
-          )
-          .subscribe();
-
-        return () => {
-          supabase.removeChannel(channel);
-        };
+            });
+          },
+          (error) => {
+            console.error("Error listening to messages:", error);
+            toast.error("שגיאה בטעינת השיחה");
+            setLoading(false);
+          }
+        );
       } catch (err) {
         console.error(err);
-      } finally {
+        toast.error("שגיאה בטעינת השיחה");
         setLoading(false);
       }
     };
 
     fetchOrCreateConversation();
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, [user]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !user || !conversationId) return;
+    if (!newMessage.trim() || !user || !chatReady) return;
 
     const content = newMessage.trim();
     setNewMessage("");
@@ -151,7 +119,6 @@ function Chat() {
     const tempId = `temp-${Date.now()}`;
     const optimisticMsg: ChatMessage = {
       id: tempId,
-      conversation_id: conversationId,
       sender_email: user.email,
       content,
       is_read: false,
@@ -161,27 +128,26 @@ function Chat() {
     setMessages((prev) => [...prev, optimisticMsg]);
 
     try {
-      const { data, error } = await supabase
-        .from("chat_messages")
-        .insert([{
-          conversation_id: conversationId,
-          sender_email: user.email,
-          content: content,
-        }])
-        .select()
-        .single();
+      const messagesRef = collection(db, "chats", user.email, "messages");
+      await addDoc(messagesRef, {
+        sender_email: user.email,
+        content: content,
+        is_read: false,
+        created_at: new Date().toISOString(),
+      });
 
-      if (error) {
-        console.error("Error sending message:", error);
-        toast.error("שגיאה בשליחת ההודעה");
-        // Remove optimistic message on error
-        setMessages((prev) => prev.filter((m) => m.id !== tempId));
-      } else {
-        // Replace temp id with real id
-        setMessages((prev) => prev.map((m) => m.id === tempId ? data : m));
-      }
+      // Update parent chat document timestamp
+      const chatDocRef = doc(db, "chats", user.email);
+      await updateDoc(chatDocRef, {
+        updated_at: new Date().toISOString(),
+      });
+
+      // The onSnapshot listener will replace the optimistic message
+      // with the real one, so we remove the temp message
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
     } catch (err) {
       console.error(err);
+      toast.error("שגיאה בשליחת ההודעה");
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
     }
   };

@@ -5,7 +5,8 @@ import { AppHeader } from "@/components/AppHeader";
 import { useLaundry, stateLabel } from "@/lib/laundry-store";
 import { LogOut, User as UserIcon, Mail, Loader2, ShoppingBasket, ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/lib/supabase";
+import { db } from "@/lib/firebase";
+import { collection, query, where, getDocs } from "firebase/firestore";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 export const Route = createFileRoute("/profile")({ component: Profile });
@@ -54,67 +55,30 @@ function Profile() {
     const fetchOrders = async () => {
       setFetchingOrders(true);
       try {
-        // 1. Fetch from standard orders table
-        const { data: dbOrders, error } = await supabase
-          .from("orders")
-          .select("*")
-          .ilike("user_email", user.email)
-          .order("created_at", { ascending: false });
-
-        if (error) throw error;
-
-        // 2. Fetch from profiles snapshot as fallback/merge
-        const { data: { session } } = await supabase.auth.getSession();
-        let snapshotOrders: any[] = [];
-        let activeSnapshot: any = null;
-        
-        if (session?.user) {
-          const { data: myProf } = await supabase
-            .from("profiles")
-            .select("avatar_url")
-            .eq("id", session.user.id)
-            .maybeSingle();
-
-          if (myProf?.avatar_url) {
-            try {
-              const signals = JSON.parse(myProf.avatar_url);
-              if (signals.orders) {
-                snapshotOrders = signals.orders;
-              }
-              if (signals.active_order) {
-                activeSnapshot = signals.active_order;
-              }
-            } catch (e) {
-              console.error("Error parsing snapshot orders:", e);
-            }
-          }
-        }
-
-        // Combine and de-duplicate by ID
-        const combined = [...(dbOrders || [])];
-        
-        // Add snapshot orders if they aren't in dbOrders
-        snapshotOrders.forEach(so => {
-          if (so && so.id && !combined.some(o => o.id === so.id)) {
-            if (so.delivery_method !== "placeholder" && !(so.delivery_method || "").startsWith("PROFILE_SYNC:")) {
-              combined.push(so);
-            }
-          }
-        });
-
-        // Add active snapshot if it isn't already there
-        if (activeSnapshot && activeSnapshot.id && !combined.some(o => o.id === activeSnapshot.id)) {
-          if (activeSnapshot.delivery_method !== "placeholder" && !(activeSnapshot.delivery_method || "").startsWith("PROFILE_SYNC:")) {
-            combined.push(activeSnapshot);
-          }
-        }
-
-        // Clean up: Filter out placeholders or sync signals
-        const filtered = combined.filter(o => 
-          o && 
-          o.delivery_method !== "placeholder" && 
-          !(o.delivery_method || "").startsWith("PROFILE_SYNC:")
+        const q = query(
+          collection(db, "orders"),
+          where("user_email", "==", user.email)
         );
+        const snapshot = await getDocs(q);
+        const filtered = snapshot.docs
+          .map(doc => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              created_at: data.created_at || data.createdAt || new Date().toISOString(),
+              status: data.status,
+              delivery_method: data.delivery_method || data.deliveryMethod || "none",
+              payment_state: data.payment_state || data.paymentState || "unpaid",
+              amount_due: data.amount_due !== undefined ? data.amount_due : (data.amountDue !== undefined ? data.amountDue : 0),
+              user_email: data.user_email || data.userEmail || user.email,
+              notes: data.notes || "",
+              images: data.images || []
+            };
+          })
+          .filter(o => 
+            o.delivery_method !== "placeholder" && 
+            !o.id.startsWith("placeholder")
+          );
 
         // Sort by created_at descending
         filtered.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());

@@ -1,133 +1,115 @@
-import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { AppHeader } from "@/components/AppHeader";
 import { useLaundry, stateLabel, ORDER_STEPS } from "@/lib/laundry-store";
 import { PackageOpen, Check, Loader2, MessageSquare, ChevronDown, ChevronUp, FileText, Download } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/lib/supabase";
+import { db } from "@/lib/firebase";
+import { collection, query, where, onSnapshot } from "firebase/firestore";
 
-export const Route = createFileRoute("/tracking")({ component: Tracking });
+// ── Route with typed search params ──────────────────────────────────────────
+export const Route = createFileRoute("/tracking")({
+  component: Tracking,
+  validateSearch: (search: Record<string, unknown>) => ({
+    orderId: typeof search.orderId === "string" ? search.orderId : undefined,
+  }),
+});
 
 function Tracking() {
-  const { user, orderState } = useLaundry();
+  const { user } = useLaundry();
   const navigate = useNavigate();
+  const { orderId } = Route.useSearch();
+
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const fetchOrders = async (showLoader = true) => {
-    if (!user) return;
-    if (showLoader) setLoading(true);
-    try {
-      // 1. Fetch all orders from Supabase (including completed)
-      const { data: dbOrders, error: ordersError } = await supabase
-        .from("orders")
-        .select("*")
-        .ilike("user_email", user.email)
-        .order("created_at", { ascending: false });
+  // ── Initial fetch + real-time subscriptions ──────────────────────────────
+  useEffect(() => {
+    if (!user) {
+      setLoading(true);
+      return;
+    }
 
-      if (ordersError) throw ordersError;
+    const q = query(
+      collection(db, "orders"),
+      where("user_email", "==", user.email)
+    );
 
-      // 2. Fetch invoices for this user from SQL table
-      const { data: dbInvoices, error: invoicesError } = await supabase
-        .from("invoices")
-        .select("*")
-        .ilike("user_email", user.email);
-
-      if (invoicesError) throw invoicesError;
-
-      const orderInvoicesMap: Record<string, any> = {};
-      (dbInvoices || []).forEach(inv => {
-        if (inv.order_id) {
-          orderInvoicesMap[inv.order_id] = {
-            id: inv.id,
-            order_id: inv.order_id,
-            date: inv.created_at,
-            name: inv.name,
-            data: inv.data
-          };
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetchedOrders = snapshot.docs.map(doc => {
+        const data = doc.data();
+        let parsedImages: string[] = [];
+        if (data.images) {
+          parsedImages = Array.isArray(data.images) ? data.images : [];
         }
+        return {
+          id: doc.id,
+          created_at: data.created_at || data.createdAt || new Date().toISOString(),
+          status: data.status,
+          delivery_method: data.delivery_method || data.deliveryMethod || "none",
+          payment_state: data.payment_state || data.paymentState || "unpaid",
+          amount_due: data.amount_due !== undefined ? data.amount_due : (data.amountDue !== undefined ? data.amountDue : 0),
+          user_email: data.user_email || data.userEmail || user.email,
+          notes: data.notes || "",
+          images: parsedImages,
+          requires_ironing: !!(data.requires_ironing || data.requiresIroning),
+          requires_dry_cleaning: !!(data.requires_dry_cleaning || data.requiresDryCleaning),
+          invoice: data.invoiceUrl ? {
+            id: `inv-${doc.id}`,
+            date: data.created_at || data.createdAt || new Date().toISOString(),
+            name: data.invoiceName || "invoice.pdf",
+            data: data.invoiceUrl
+          } : null
+        };
       });
 
-      const fetchedOrders = (dbOrders || [])
-        .filter((o: any) => 
-          o.delivery_method !== "placeholder" && 
-          !(o.delivery_method || "").startsWith("PROFILE_SYNC:")
-        ).map((o: any) => {
-          return {
-            id: o.id,
-            created_at: o.created_at || new Date().toISOString(),
-            status: o.status,
-            delivery_method: o.delivery_method,
-            payment_state: o.payment_state,
-            amount_due: o.amount_due,
-            user_email: o.user_email,
-            notes: o.notes || "",
-            images: o.images || [],
-            requires_ironing: !!o.requires_ironing,
-            requires_dry_cleaning: !!o.requires_dry_cleaning,
-            invoice: orderInvoicesMap[o.id] || null
-          };
-        });
+      // Client-side sort desc
+      fetchedOrders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-      setOrders(fetchedOrders);
-      if (fetchedOrders.length > 0 && !expandedId) {
-        setExpandedId(fetchedOrders[0].id);
+      // Filter out placeholders
+      const filtered = fetchedOrders.filter(o => 
+        o.delivery_method !== "placeholder" && 
+        !o.id.startsWith("placeholder")
+      );
+
+      setOrders(filtered);
+
+      // Determine which order to auto-expand
+      if (orderId) {
+        const found = filtered.find((o: any) => o.id === orderId);
+        setExpandedId(found ? found.id : filtered[0]?.id ?? null);
+      } else {
+        setExpandedId(prev => prev ?? filtered[0]?.id ?? null);
       }
-    } catch (err) {
-      console.error("Error fetching orders:", err);
-    } finally {
+
       setLoading(false);
-    }
-  };
+    }, (err) => {
+      console.error("Firestore onSnapshot error:", err);
+      setLoading(false);
+    });
 
-  useEffect(() => {
-    fetchOrders();
-
-    // Listen for realtime order updates (price, status, message, invoice) for the current user's orders
-    const orderSub = supabase
-      .channel('tracking-orders-sync')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'orders' },
-        (payload) => {
-          const newOrder = payload.new as any;
-          const newEmail = (newOrder?.user_email || "").toLowerCase();
-          const userEmail = (user?.email || "").toLowerCase();
-          if (newEmail === userEmail) {
-            fetchOrders(false);
-          }
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'invoices' },
-        () => {
-          fetchOrders(false);
-        }
-      )
-      .subscribe();
-
-    // Listen for local tab changes (if admin is on same machine/browser)
-    const handleStorage = () => fetchOrders(false);
+    const handleStorage = () => {}; // Muted but kept for ref
     window.addEventListener("storage", handleStorage);
+    window.addEventListener("laundry-order-updated", handleStorage);
 
     return () => {
-      orderSub.unsubscribe();
+      unsubscribe();
       window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("laundry-order-updated", handleStorage);
     };
-  }, [user]);
+  }, [user, orderId]);
 
   return (
     <AppLayout>
       <AppHeader subtitle="מעקב" />
       <main className="px-5 mt-6 space-y-4 pb-20 text-right dir-rtl" dir="rtl">
         {loading ? (
-           <div className="py-20 flex justify-center items-center gap-2">
-             <Loader2 className="size-6 animate-spin text-primary" />
-             <span className="text-sm text-muted-foreground">טוען הזמנות...</span>
-           </div>
+          <div className="py-20 flex justify-center items-center gap-2">
+            <Loader2 className="size-6 animate-spin text-primary" />
+            <span className="text-sm text-muted-foreground">טוען הזמנות...</span>
+          </div>
         ) : orders.length === 0 ? (
           <div className="rounded-3xl bg-lavender/40 text-lavender-foreground p-8 text-center border border-lavender-foreground/5 shadow-sm">
             <PackageOpen className="size-12 mx-auto mb-3 opacity-60" strokeWidth={1.5} />
@@ -143,16 +125,13 @@ function Tracking() {
         ) : (
           <div className="space-y-4">
             {orders.map((order) => (
-              <OrderCard 
-                key={order.id} 
-                order={order} 
-                isExpanded={expandedId === order.id} 
-                onToggle={() => setExpandedId(expandedId === order.id ? null : order.id)} 
+              <OrderCard
+                key={order.id}
+                order={order}
+                isExpanded={expandedId === order.id}
+                onToggle={() => setExpandedId(expandedId === order.id ? null : order.id)}
               />
             ))}
-            <div className="text-[10px] text-muted-foreground opacity-30 mt-8 text-center" dir="ltr">
-              Debug IDs: {orders.length} - {JSON.stringify(orders.map(o => o.id))}
-            </div>
           </div>
         )}
       </main>
@@ -162,7 +141,7 @@ function Tracking() {
 
 function OrderCard({ order, isExpanded, onToggle }: { order: any, isExpanded: boolean, onToggle: () => void }) {
   const currentIdx = ORDER_STEPS.findIndex((s) => s.key === order.status);
-  
+
   const getStatusLabel = (status: string) => {
     switch (status) {
       case "pending": return "ממתין לאיסוף";
@@ -187,10 +166,10 @@ function OrderCard({ order, isExpanded, onToggle }: { order: any, isExpanded: bo
 
   const [custNotes, laundryMsg] = (order.notes || "").split(" ||LAUNDRY_MSG|| ");
   const hasNotes = custNotes && custNotes.trim().length > 0;
-  
+
   let parsedImages: string[] = [];
   if (order.images) {
-    try { parsedImages = typeof order.images === 'string' ? JSON.parse(order.images) : order.images; } catch(e){}
+    try { parsedImages = typeof order.images === "string" ? JSON.parse(order.images) : order.images; } catch (e) { }
   }
   const hasImages = parsedImages && parsedImages.length > 0;
   const hasLaundryMsg = laundryMsg && laundryMsg.trim().length > 0;
@@ -199,12 +178,12 @@ function OrderCard({ order, isExpanded, onToggle }: { order: any, isExpanded: bo
     return (
       <div className="space-y-4 animate-fade-in">
         <div className={`rounded-3xl p-5 relative cursor-pointer ${
-          order.status === "completed" 
-            ? "bg-slate-100 text-slate-700 border border-slate-200" 
+          order.status === "completed"
+            ? "bg-slate-100 text-slate-700 border border-slate-200"
             : "bg-lime text-lime-foreground shadow-[0_15px_40px_-15px_oklch(0.92_0.18_125/0.6)]"
         }`} onClick={onToggle}>
           <div className="flex justify-between items-center text-xs opacity-80 mb-3 font-bold border-b border-current/20 pb-2">
-            <span className="text-sm">הזמנה #{order.id.split('-')[0]}</span>
+            <span className="text-sm">הזמנה #{order.id.split("-")[0]}</span>
             <span>{new Date(order.created_at).toLocaleDateString("he-IL")}</span>
           </div>
           <div className="absolute left-5 top-5 bg-black/10 rounded-full p-1 transition-transform hover:bg-black/20">
@@ -219,10 +198,10 @@ function OrderCard({ order, isExpanded, onToggle }: { order: any, isExpanded: bo
                 <li key={s.key} className="flex items-center gap-3 text-sm font-semibold">
                   <span
                     className={`size-6 rounded-full grid place-items-center text-[11px] ${
-                      done 
+                      done
                         ? order.status === "completed"
                           ? "bg-slate-700 text-slate-100"
-                          : "bg-primary text-primary-foreground" 
+                          : "bg-primary text-primary-foreground"
                         : "bg-background/60 text-muted-foreground"
                     }`}
                   >
@@ -275,7 +254,7 @@ function OrderCard({ order, isExpanded, onToggle }: { order: any, isExpanded: bo
                 </p>
               </div>
             )}
-            
+
             {order.invoice && (
               <div className="rounded-3xl bg-primary/10 border-2 border-primary/20 text-foreground p-5 space-y-3 shadow-md shadow-primary/5 relative">
                 <div className="flex items-center gap-2">
@@ -287,7 +266,7 @@ function OrderCard({ order, isExpanded, onToggle }: { order: any, isExpanded: bo
                     <span className="text-[9px] font-bold text-muted-foreground">{order.invoice.name}</span>
                   </div>
                 </div>
-                <button 
+                <button
                   onClick={(e) => {
                     e.stopPropagation();
                     const link = document.createElement("a");
@@ -331,14 +310,14 @@ function OrderCard({ order, isExpanded, onToggle }: { order: any, isExpanded: bo
   }
 
   return (
-    <div 
+    <div
       onClick={onToggle}
-      className="bg-card border border-muted-foreground/10 rounded-2xl p-4 shadow-sm space-y-3 cursor-pointer hover:bg-muted/30 transition active:scale-[0.99]"
+      className="bg-card/80 backdrop-blur-xl border border-muted-foreground/20 rounded-2xl p-4 shadow-md space-y-3 cursor-pointer hover:bg-muted/20 transition active:scale-[0.98]"
     >
       <div className="flex items-center justify-between">
         <div>
           <span className="text-[10px] text-muted-foreground font-semibold block">מזהה הזמנה:</span>
-          <span className="text-xs font-bold text-foreground">#{order.id.split('-')[0]}</span>
+          <span className="text-xs font-bold text-foreground">#{order.id.split("-")[0]}</span>
         </div>
         <div className="flex items-center gap-2">
           <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getStatusBadgeClass(order.status)}`}>

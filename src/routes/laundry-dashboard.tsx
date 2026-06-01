@@ -2,7 +2,8 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { useLaundry, ORDER_STEPS, stateLabel } from "@/lib/laundry-store";
-import { supabase } from "@/lib/supabase";
+import { db } from "@/lib/firebase";
+import { collection, query, onSnapshot, doc, updateDoc, getDoc } from "firebase/firestore";
 import { 
   ShoppingBasket, Truck, Sparkles, CheckCircle2, AlertCircle, 
   ArrowLeft, LogOut, RefreshCw, MessageSquare, Image as ImageIcon, ChevronDown, Save, Trash2, X, MessageSquareText, ArrowRight
@@ -42,200 +43,100 @@ function LaundryDashboard() {
   const [savingOrder, setSavingOrder] = useState<Record<string, boolean>>({});
   const [unreadChatCount, setUnreadChatCount] = useState(0);
 
-  // Fetch unread chat messages count for laundry staff
+  // Fetch unread chat messages count for laundry staff in real-time
   useEffect(() => {
     if (!user?.email) return;
 
-    const fetchUnreadChat = async () => {
-      try {
-        const { count } = await supabase
-          .from("chat_messages")
-          .select("*", { count: "exact", head: true })
-          .eq("is_read", false)
-          .neq("sender_email", user.email);
+    const q = query(collection(db, "chats"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      let count = 0;
+      snapshot.docs.forEach(doc => {
+        const d = doc.data();
+        if (d.unreadCount) count += d.unreadCount;
+      });
+      setUnreadChatCount(count);
+    });
 
-        setUnreadChatCount(count || 0);
-      } catch (err) {
-        console.error("Error fetching unread chat count:", err);
-      }
-    };
-
-    fetchUnreadChat();
-
-    const channel = supabase
-      .channel("laundry_unread_badge")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "chat_messages" },
-        () => { fetchUnreadChat(); }
-      )
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+    return () => unsubscribe();
   }, [user?.email]);
 
-  const fetchOrders = async (showLoader = true) => {
-    if (showLoader) setIsLoading(true);
-    try {
-      // 1. Fetch all orders from Supabase (including completed)
-      const { data: dbOrders, error: ordersError } = await supabase
-        .from("orders")
-        .select("*")
-        .order("created_at", { ascending: false });
+  // Real-time: listen for ANY changes in orders
+  useEffect(() => {
+    setIsLoading(true);
+    const q = query(collection(db, "orders"));
 
-      if (ordersError) throw ordersError;
-
-      // 2. Fetch all invoices from the SQL table
-      const { data: dbInvoices, error: invoicesError } = await supabase
-        .from("invoices")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (invoicesError) throw invoicesError;
-
-      // Build a map of orderId -> array of invoices
-      const orderInvoicesMap: Record<string, any[]> = {};
-      (dbInvoices || []).forEach(inv => {
-        if (inv.order_id) {
-          if (!orderInvoicesMap[inv.order_id]) {
-            orderInvoicesMap[inv.order_id] = [];
-          }
-          orderInvoicesMap[inv.order_id].push({
-            id: inv.id,
-            order_id: inv.order_id,
-            date: inv.created_at,
-            name: inv.name,
-            data: inv.data
-          });
-        }
-      });
-
-      const realOrders = (dbOrders || [])
-        .filter((o: any) => 
-          o.delivery_method !== "placeholder" && 
-          !(o.delivery_method || "").startsWith("PROFILE_SYNC:")
-        ).map((o: any) => {
-          let parsedImages = o.images;
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const realOrders = snapshot.docs
+        .map((doc) => {
+          const o = doc.data();
+          let parsedImages = o.images || [];
           if (typeof parsedImages === 'string') {
             try { parsedImages = JSON.parse(parsedImages); } catch(e) {}
           }
           const finalImages = parsedImages || [];
           return {
-            id: o.id,
-            created_at: o.created_at || new Date().toISOString(),
+            id: doc.id,
+            created_at: o.created_at || o.createdAt || new Date().toISOString(),
             status: o.status,
-            delivery_method: o.delivery_method,
-            payment_state: o.payment_state,
-            amount_due: o.amount_due,
-            user_email: o.user_email,
+            delivery_method: o.delivery_method || o.deliveryMethod || "none",
+            payment_state: o.payment_state || o.paymentState || "unpaid",
+            amount_due: o.amount_due !== undefined ? o.amount_due : (o.amountDue !== undefined ? o.amountDue : 0),
+            user_email: o.user_email || o.userEmail || "",
             notes: o.notes || "",
             images: finalImages,
-            requires_ironing: !!o.requires_ironing,
-            requires_dry_cleaning: !!o.requires_dry_cleaning,
-            invoices: orderInvoicesMap[o.id] || []
+            requires_ironing: !!(o.requires_ironing || o.requiresIroning),
+            requires_dry_cleaning: !!(o.requires_dry_cleaning || o.requiresDryCleaning),
+            invoices: o.invoiceUrl ? [{
+              id: `inv-${doc.id}`,
+              date: o.created_at || o.createdAt || new Date().toISOString(),
+              name: o.invoiceName || "invoice.pdf",
+              data: o.invoiceUrl
+            }] : []
           };
-        });
+        })
+        .filter((o: any) => 
+          o.delivery_method !== "placeholder" && 
+          !o.id.startsWith("placeholder")
+        );
 
-      setOrders(realOrders);
-    } catch (err: any) {
-      toast.error("שגיאה בטעינת הזמנות: " + err.message);
-    } finally {
+      // Client side sort desc
+      realOrders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      setOrders(realOrders as any);
       setIsLoading(false);
-    }
-  };
+    }, (err) => {
+      console.error("Firestore orders listen error:", err);
+      setIsLoading(false);
+    });
 
-  useEffect(() => {
-    fetchOrders();
-
+    // Mock notification listener kept for visual toast feedback
     const handleStorageChange = () => {
       const notifications = JSON.parse(localStorage.getItem("laundry_notifications") || "[]");
       if (notifications.length > 0) {
         const latest = notifications[0];
-        
-        // Prevent duplicate toast sounds for the same notification ID
         const seenId = sessionStorage.getItem("last_notified_id");
         if (seenId !== latest.id) {
           sessionStorage.setItem("last_notified_id", latest.id);
-          
           toast.info(`🔔 הזמנה חדשה התקבלה מ-${latest.user_email}!`, {
             description: latest.notes,
-            action: {
-              label: "הצג הזמנה",
-              onClick: () => fetchOrders()
-            }
           });
-
-          // Play soft synthesized dual-tone notification chime (D5 -> A5 chord)
-          try {
-            const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-            const osc1 = audioCtx.createOscillator();
-            const gain1 = audioCtx.createGain();
-            osc1.connect(gain1);
-            gain1.connect(audioCtx.destination);
-            osc1.type = "sine";
-            osc1.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5
-            gain1.gain.setValueAtTime(0.08, audioCtx.currentTime);
-            gain1.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.35);
-            osc1.start();
-            osc1.stop(audioCtx.currentTime + 0.35);
-
-            setTimeout(() => {
-              const osc2 = audioCtx.createOscillator();
-              const gain2 = audioCtx.createGain();
-              osc2.connect(gain2);
-              gain2.connect(audioCtx.destination);
-              osc2.type = "sine";
-              osc2.frequency.setValueAtTime(880, audioCtx.currentTime); // A5
-              gain2.gain.setValueAtTime(0.08, audioCtx.currentTime);
-              gain2.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.45);
-              osc2.start();
-              osc2.stop(audioCtx.currentTime + 0.45);
-            }, 120);
-          } catch (e) {
-            console.log("Audio auto-play blocked by browser sandbox");
-          }
-
-          fetchOrders(false);
         }
       }
     };
-
     window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener("storage", handleStorageChange);
+    };
   }, []);
 
-  // Real-time: listen for ANY changes in orders and invoices table directly
-  useEffect(() => {
-    const sub = supabase
-      .channel('laundry-db-sync')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'orders' },
-        () => {
-          fetchOrders(false);
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'invoices' },
-        () => {
-          fetchOrders(false);
-        }
-      )
-      .subscribe();
-
-    return () => { sub.unsubscribe(); };
-  }, []);
-
-  const updateOrderStatus = async (orderId: string, newStatus: "pending" | "picked_up" | "in_progress" | "ready" | "completed") => {
+  const updateOrderStatus = async (orderId: string, newStatus: string) => {
     try {
-      const { error } = await supabase.from("orders").update({ status: newStatus }).eq("id", orderId);
-      if (error) throw error;
-
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
+      await updateDoc(doc(db, "orders", orderId), { 
+        status: newStatus 
+      });
       toast.success("סטטוס ההזמנה עודכן בהצלחה!");
-      localStorage.setItem("laundry_sync_trigger", Date.now().toString());
-      window.dispatchEvent(new Event("storage"));
     } catch (err: any) {
       toast.error("שגיאה בעדכון הסטטוס: " + err.message);
     }
@@ -243,21 +144,12 @@ function LaundryDashboard() {
 
   const updateOrderPrice = async (orderId: string, newPrice: number) => {
     try {
-      const { error } = await supabase.from("orders").update({ amount_due: newPrice, total_price: newPrice }).eq("id", orderId);
-      if (error) throw error;
-
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, amount_due: newPrice } : o));
+      await updateDoc(doc(db, "orders", orderId), { 
+        amount_due: newPrice,
+        amountDue: newPrice,
+        total_price: newPrice 
+      });
       toast.success("מחיר ההזמנה עודכן בהצלחה!");
-      
-      const newNotification = {
-        id: "price-update-" + orderId + "-" + Date.now(),
-        user_email: "system-update",
-        notes: `מחיר עודכן ל-₪${newPrice}`,
-        timestamp: new Date().toLocaleTimeString("he-IL")
-      };
-      const existing = JSON.parse(localStorage.getItem("laundry_notifications") || "[]");
-      localStorage.setItem("laundry_notifications", JSON.stringify([newNotification, ...existing]));
-      window.dispatchEvent(new Event("storage"));
     } catch (err: any) {
       toast.error("שגיאה בעדכון המחיר: " + err.message);
     }
@@ -270,13 +162,10 @@ function LaundryDashboard() {
       const [custNotes] = currentNotes.split(" ||LAUNDRY_MSG|| ");
       const combined = custNotes.trim() + " ||LAUNDRY_MSG|| " + newMessage.trim();
 
-      const { error } = await supabase.from("orders").update({ notes: combined }).eq("id", orderId);
-      if (error) throw error;
-
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, notes: combined } : o));
+      await updateDoc(doc(db, "orders", orderId), { 
+        notes: combined 
+      });
       toast.success("הודעת המכבסה עודכנה בהצלחה!");
-      localStorage.setItem("laundry_sync_trigger", Date.now().toString());
-      window.dispatchEvent(new Event("storage"));
     } catch (err: any) {
       toast.error("שגיאה בעדכון ההודעה: " + err.message);
     }
@@ -286,26 +175,12 @@ function LaundryDashboard() {
     try {
       const reader = new FileReader();
       reader.onloadend = async () => {
-        const base64data = reader.result;
-        const targetOrder = orders.find(o => o.id === orderId);
-        
-        if (targetOrder) {
-          const { error } = await supabase
-            .from("invoices")
-            .insert([{
-              order_id: orderId,
-              user_email: targetOrder.user_email,
-              name: file.name,
-              data: base64data
-            }]);
-
-          if (error) throw error;
-
-          toast.success("החשבונית צורפה ונשלחה ללקוח!");
-          fetchOrders(false);
-          localStorage.setItem("laundry_sync_trigger", Date.now().toString());
-          window.dispatchEvent(new Event("storage"));
-        }
+        const base64data = reader.result as string;
+        await updateDoc(doc(db, "orders", orderId), {
+          invoiceUrl: base64data,
+          invoiceName: file.name
+        });
+        toast.success("החשבונית צורפה ונשלחה ללקוח!");
       };
       reader.readAsDataURL(file);
     } catch (err: any) {
@@ -326,7 +201,7 @@ function LaundryDashboard() {
       const newStatus = pendingStatuses[orderId];
       const currentOrder = orders.find(o => o.id === orderId);
       if (newStatus && newStatus !== currentOrder?.status) {
-        await updateOrderStatus(orderId, newStatus as any);
+        await updateOrderStatus(orderId, newStatus);
       }
 
       // 3. Save message if changed
@@ -350,25 +225,16 @@ function LaundryDashboard() {
     }
   };
 
-  const deleteUploadedInvoice = async (orderId: string, userEmail: string, invoiceDate: string, invoiceName: string) => {
+  const deleteUploadedInvoice = async (orderId: string, _userEmail: string, _invoiceDate: string, _invoiceName: string) => {
     if (!confirm("האם אתה בטוח שברצונך למחוק חשבונית זו?")) {
       return;
     }
-    
     try {
-      const { error } = await supabase
-        .from("invoices")
-        .delete()
-        .eq("order_id", orderId)
-        .eq("name", invoiceName);
-
-      if (error) throw error;
-
+      await updateDoc(doc(db, "orders", orderId), {
+        invoiceUrl: "",
+        invoiceName: ""
+      });
       toast.success("החשבונית נמחקה בהצלחה!");
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, invoices: (o.invoices || []).filter(i => i.name !== invoiceName) } : o));
-      fetchOrders(false);
-      localStorage.setItem("laundry_sync_trigger", Date.now().toString());
-      window.dispatchEvent(new Event("storage"));
     } catch (err: any) {
       toast.error("שגיאה במחיקת החשבונית: " + err.message);
     }
@@ -378,33 +244,19 @@ function LaundryDashboard() {
     if (!confirm("האם אתה בטוח שברצונך למחוק תמונה זו מההזמנה?")) {
       return;
     }
-    
     try {
       const targetOrder = orders.find(o => o.id === orderId);
       if (!targetOrder) {
         toast.error("ההזמנה לא נמצאה");
         return;
       }
-
       const currentImages = targetOrder.images || [];
       const updatedImages = currentImages.filter(img => img !== imageUrl);
 
-      // Update in the DB (Supabase orders table)
-      const { error } = await supabase
-        .from("orders")
-        .update({ images: updatedImages })
-        .eq("id", orderId);
-
-      if (error) throw error;
-
-      // Sync to local storage
-      localStorage.setItem(`laundry_images_${targetOrder.user_email}`, JSON.stringify(updatedImages));
-
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, images: updatedImages } : o));
+      await updateDoc(doc(db, "orders", orderId), { 
+        images: updatedImages 
+      });
       toast.success("התמונה נמחקה בהצלחה מההזמנה!");
-      
-      localStorage.setItem("laundry_sync_trigger", Date.now().toString());
-      window.dispatchEvent(new Event("storage"));
     } catch (err: any) {
       toast.error("שגיאה במחיקת התמונה: " + err.message);
     }
@@ -532,7 +384,7 @@ function LaundryDashboard() {
                 {activeTab === "active" ? "הזמנות לטיפול" : "הזמנות שהושלמו"}
               </h2>
               <button 
-                onClick={() => fetchOrders(true)}
+                onClick={() => toast.success("הנתונים מסונכרנים בזמן אמת! ✨")}
                 className="size-8 rounded-full hover:bg-muted flex items-center justify-center text-primary transition active:rotate-180 duration-500"
                 title="רענן"
               >

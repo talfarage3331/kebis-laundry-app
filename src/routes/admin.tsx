@@ -2,7 +2,19 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { useLaundry } from "@/lib/laundry-store";
-import { supabase } from "@/lib/supabase";
+import { db } from "@/lib/firebase";
+import {
+  collection,
+  collectionGroup,
+  doc,
+  getDocs,
+  updateDoc,
+  deleteDoc,
+  onSnapshot,
+  query,
+  where,
+  orderBy,
+} from "firebase/firestore";
 import { 
   Users, UserCheck, Shield, Trash2, Edit2, Search, 
   LogOut, Plus, X, Check, ArrowRight, UserPlus, Filter, MessageSquareText
@@ -17,7 +29,7 @@ export const Route = createFileRoute("/admin")({
 
 interface Profile {
   id: string;
-  full_name: string;
+  fullName: string;
   email: string;
   role: "admin" | "laundry" | "customer";
 }
@@ -39,50 +51,41 @@ function AdminDashboard() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
 
-  // Fetch unread chat messages count for admin
+  // Fetch unread chat messages count for admin (real-time via onSnapshot)
   useEffect(() => {
     if (!user?.email) return;
 
-    const fetchUnreadChat = async () => {
+    const messagesGroup = collectionGroup(db, "messages");
+    const unsubscribe = onSnapshot(messagesGroup, (snapshot) => {
       try {
-        const { count } = await supabase
-          .from("chat_messages")
-          .select("*", { count: "exact", head: true })
-          .eq("is_read", false)
-          .neq("sender_email", user.email);
-
-        setUnreadChatCount(count || 0);
+        const count = snapshot.docs.filter(
+          (d) => d.data().is_read === false && d.data().sender_email !== user.email
+        ).length;
+        setUnreadChatCount(count);
       } catch (err) {
         console.error("Error fetching unread chat count:", err);
       }
-    };
+    });
 
-    fetchUnreadChat();
-
-    const channel = supabase
-      .channel("admin_unread_badge")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "chat_messages" },
-        () => { fetchUnreadChat(); }
-      )
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+    return () => unsubscribe();
   }, [user?.email]);
 
   // Fetch Profiles
   const fetchProfiles = async () => {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .order("email", { ascending: true });
-        
-      if (error) throw error;
+      const usersRef = collection(db, "users");
+      const q = query(usersRef, orderBy("email", "asc"));
+      const snapshot = await getDocs(q);
 
-      setProfiles(data || []);
+      const data: Profile[] = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        fullName: docSnap.data().fullName || "",
+        email: docSnap.data().email || "",
+        role: docSnap.data().role || "customer",
+      }));
+
+      setProfiles(data);
     } catch (err: any) {
       toast.error("שגיאה בטעינת משתמשים: " + err.message);
     } finally {
@@ -104,16 +107,11 @@ function AdminDashboard() {
 
     setIsUpdating(true);
     try {
-      // 1. Direct database update of profiles table (permitted by RLS migration 04)
-      const { error: dbErr } = await supabase
-        .from("profiles")
-        .update({
-          full_name: editName,
-          role: editRole
-        })
-        .eq("id", editingProfile.id);
-
-      if (dbErr) throw dbErr;
+      const userDocRef = doc(db, "users", editingProfile.id);
+      await updateDoc(userDocRef, {
+        fullName: editName,
+        role: editRole,
+      });
 
       toast.success("פרופיל המשתמש עודכן בהצלחה!");
       setEditingProfile(null);
@@ -137,12 +135,7 @@ function AdminDashboard() {
     }
 
     try {
-      const { error } = await supabase
-        .from("profiles")
-        .delete()
-        .eq("id", id);
-
-      if (error) throw error;
+      await deleteDoc(doc(db, "users", id));
 
       toast.success("המשתמש נמחק בהצלחה");
       fetchProfiles();
@@ -153,7 +146,7 @@ function AdminDashboard() {
 
   const openEditModal = (profile: Profile) => {
     setEditingProfile(profile);
-    setEditName(profile.full_name || "");
+    setEditName(profile.fullName || "");
     setEditEmail(profile.email || "");
     setEditRole(profile.role || "customer");
   };
@@ -161,7 +154,7 @@ function AdminDashboard() {
   // Filtered profiles
   const filteredProfiles = profiles.filter((p) => {
     const matchesSearch = 
-      (p.full_name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (p.fullName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
       (p.email || "").toLowerCase().includes(searchQuery.toLowerCase());
       
     const matchesRole = roleFilter === "all" || p.role === roleFilter;
@@ -312,10 +305,10 @@ function AdminDashboard() {
                   >
                     <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
                       <div className="size-10 sm:size-12 shrink-0 rounded-2xl bg-lavender text-primary font-black text-base sm:text-lg flex items-center justify-center">
-                        {(profile.full_name || "?")[0]}
+                        {(profile.fullName || "?")[0]}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <h3 className="font-extrabold text-foreground text-xs sm:text-sm truncate">{profile.full_name || "משתמש ללא שם"}</h3>
+                        <h3 className="font-extrabold text-foreground text-xs sm:text-sm truncate">{profile.fullName || "משתמש ללא שם"}</h3>
                         <p className="text-[10px] sm:text-xs text-muted-foreground leading-normal mt-0.5 truncate" style={{ overflowWrap: 'anywhere' }}>{profile.email}</p>
                         <span className={`inline-block mt-1.5 sm:mt-2 px-2 sm:px-2.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold ${getRoleBadge(profile.role)}`}>
                           {getRoleLabel(profile.role)}

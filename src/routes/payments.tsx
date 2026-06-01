@@ -4,13 +4,14 @@ import { AppLayout } from "@/components/AppLayout";
 import { useLaundry } from "@/lib/laundry-store";
 import { ArrowRight, FileText, Download, CreditCard, Smartphone, Apple, Wallet, Sparkles, Loader2, PackageOpen } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/lib/supabase";
+import { db } from "@/lib/firebase";
+import { collection, query, where, onSnapshot, doc, updateDoc } from "firebase/firestore";
 
 export const Route = createFileRoute("/payments")({ component: Payments });
 
 const methods = [
-  { id: "credit", label: "כרטיס אשראי", Icon: CreditCard },
   { id: "bit", label: "Bit", Icon: Smartphone },
+  { id: "credit", label: "כרטיס אשראי", Icon: CreditCard },
   { id: "apple", label: "Apple Pay", Icon: Apple },
   { id: "google", label: "Google Pay", Icon: Wallet },
 ] as const;
@@ -18,69 +19,56 @@ const methods = [
 function Payments() {
   const { user, invoices } = useLaundry();
   const navigate = useNavigate();
-  const [method, setMethod] = useState<string>("credit");
+  const [method, setMethod] = useState<string>("bit");
   
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchOrders = async () => {
-    if (!user) return;
-    try {
-      const { data, error } = await supabase
-        .from("orders")
-        .select("*")
-        .ilike("user_email", user.email)
-        .order("created_at", { ascending: false });
+  useEffect(() => {
+    if (!user) {
+      setLoading(true);
+      return;
+    }
 
-      let activeOrders = [];
-      if (data && !error) {
-        activeOrders = data.filter((o: any) => 
-          o.status !== "profile_sync" && 
-          o.delivery_method !== "placeholder" && 
-          !(o.delivery_method || "").startsWith("PROFILE_SYNC:") &&
+    const q = query(
+      collection(db, "orders"),
+      where("user_email", "==", user.email)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const activeOrders = snapshot.docs
+        .map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            created_at: data.created_at || data.createdAt || new Date().toISOString(),
+            status: data.status,
+            delivery_method: data.delivery_method || data.deliveryMethod || "none",
+            payment_state: data.payment_state || data.paymentState || "unpaid",
+            amount_due: data.amount_due !== undefined ? data.amount_due : (data.amountDue !== undefined ? data.amountDue : 0),
+            user_email: data.user_email || data.userEmail || user.email,
+            notes: data.notes || "",
+            images: data.images || []
+          };
+        })
+        .filter(o => 
+          o.delivery_method !== "placeholder" &&
+          !o.id.startsWith("placeholder") &&
           o.status !== "completed" &&
           o.payment_state !== "paid"
         );
-      }
 
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        const { data: myProf } = await supabase.from("profiles").select("avatar_url").eq("id", session.user.id).maybeSingle();
-        if (myProf?.avatar_url) {
-          try {
-            const signals = JSON.parse(myProf.avatar_url);
-            
-            const isUnpaidActive = (o: any) => o && o.status !== "completed" && o.payment_state !== "paid";
-
-            if (isUnpaidActive(signals.active_order) && !activeOrders.find((o: any) => o.id === signals.active_order.id)) {
-              activeOrders.push(signals.active_order);
-            }
-            if (signals.orders && Array.isArray(signals.orders)) {
-              signals.orders.forEach((o: any) => {
-                if (isUnpaidActive(o) && !activeOrders.find((existing: any) => existing.id === o.id)) {
-                  activeOrders.push(o);
-                }
-              });
-            }
-          } catch(e) {}
-        }
-      }
-
-      // Sort
+      // Sort desc client-side
       activeOrders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
       setOrders(activeOrders);
-    } catch (err) {
-      console.error("Error fetching orders:", err);
-    } finally {
       setLoading(false);
-    }
-  };
+    }, (err) => {
+      console.error("Firestore payments listener error:", err);
+      setLoading(false);
+    });
 
-  useEffect(() => {
-    fetchOrders();
-    const interval = setInterval(fetchOrders, 4000);
-    return () => clearInterval(interval);
+    return () => unsubscribe();
   }, [user]);
 
   const handlePay = async (orderId: string, amountDue: number) => {
@@ -91,9 +79,13 @@ function Payments() {
     
     const toastId = toast.loading("מעבד תשלום...");
     try {
-      await supabase.from("orders").update({ payment_state: "paid" }).eq("id", orderId);
+      await updateDoc(doc(db, "orders", orderId), {
+        payment_state: "paid",
+        paymentState: "paid",
+        amount_due: 0,
+        amountDue: 0
+      });
       toast.success("התשלום בוצע בהצלחה!", { id: toastId });
-      fetchOrders();
     } catch (e) {
       toast.error("שגיאה בביצוע התשלום", { id: toastId });
     }

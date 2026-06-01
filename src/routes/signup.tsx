@@ -3,7 +3,9 @@ import { useState, useEffect } from "react";
 import { useLaundry } from "@/lib/laundry-store";
 import { Flower2 } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/lib/supabase";
+import { auth, db } from "@/lib/firebase";
+import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 
 export const Route = createFileRoute("/signup")({ component: Signup });
 
@@ -13,12 +15,17 @@ function Signup() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (user && !authLoading) {
-      navigate({ to: "/" });
+      if (user.role === "admin") {
+        navigate({ to: "/admin" });
+      } else if (user.role === "laundry") {
+        navigate({ to: "/laundry-dashboard" });
+      } else {
+        navigate({ to: "/" });
+      }
     }
   }, [user, authLoading, navigate]);
 
@@ -27,46 +34,34 @@ function Signup() {
     if (!name || !email || !password) return toast.error("יש למלא את כל השדות");
     
     setLoading(true);
-    const { data: signUpData, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { 
-          name,
-          full_name: name, // Lovable default triggers often expect full_name
-          email: email,
-          role: "customer"
-        }
+    try {
+      const result = await createUserWithEmailAndPassword(auth, email, password);
+      const fbUser = result.user;
+      
+      // Update Auth display name
+      await updateProfile(fbUser, { displayName: name });
+      
+      // Save profile in Firestore users collection
+      const role = email === "talfarage3331@gmail.com" ? "admin" : "customer";
+      await setDoc(doc(db, "users", fbUser.uid), {
+        fullName: name,
+        email: email,
+        role: role,
+        createdAt: serverTimestamp()
+      });
+      
+      setLoading(false);
+      toast.success("נרשמת בהצלחה");
+      
+      if (role === "admin") {
+        navigate({ to: "/admin" });
+      } else {
+        navigate({ to: "/" });
       }
-    });
-
-    if (error) {
+    } catch (error: any) {
       setLoading(false);
       return toast.error(error.message);
     }
-
-    // Explicitly create user profile row to ensure it shows up for the manager instantly
-    if (signUpData?.user) {
-      try {
-        const role = email === "talfarage3331@gmail.com" ? "admin" : "customer";
-        const { error: profileError } = await supabase.from("profiles").upsert({
-          id: signUpData.user.id,
-          full_name: name,
-          email: email,
-          role: role
-        }, { onConflict: 'id' });
-        
-        if (profileError) {
-          console.error("Profile insertion error:", profileError);
-        }
-      } catch (err) {
-        console.error("Direct profile upsert caught error:", err);
-      }
-    }
-
-    setLoading(false);
-    toast.success("נרשמת בהצלחה");
-    navigate({ to: "/" });
   };
 
   return (
@@ -115,9 +110,10 @@ function Signup() {
         </div>
         <button
           type="submit"
-          className="w-full rounded-3xl bg-lime text-lime-foreground py-3.5 sm:py-4 text-base sm:text-lg font-extrabold min-h-[48px] shadow-[0_15px_40px_-15px_oklch(0.92_0.18_125/0.6)] active:scale-[0.98] transition"
+          disabled={loading}
+          className="w-full rounded-3xl bg-lime text-lime-foreground py-3.5 sm:py-4 text-base sm:text-lg font-extrabold min-h-[48px] shadow-[0_15px_40px_-15px_oklch(0.92_0.18_125/0.6)] active:scale-[0.98] transition disabled:opacity-50"
         >
-          הרשמה
+          {loading ? "נרשם..." : "הרשמה"}
         </button>
         <p className="text-center text-sm text-muted-foreground">
           כבר רשום?{" "}

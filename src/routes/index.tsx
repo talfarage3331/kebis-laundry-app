@@ -3,7 +3,8 @@ import { useState, useRef, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { AppHeader } from "@/components/AppHeader";
 import { useLaundry, ORDER_STEPS, stateLabel } from "@/lib/laundry-store";
-import { supabase } from "@/lib/supabase";
+import { db } from "@/lib/firebase";
+import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { ShoppingBasket, ChevronLeft, Check, Camera, Trash2, Sparkles, Loader2, Shirt, MapPin, MessageCircle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -19,48 +20,34 @@ function Dashboard() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
+  // Redirect users with special roles immediately
+  useEffect(() => {
+    if (user) {
+      if (user.role === "admin") {
+        navigate({ to: "/admin" });
+      } else if (user.role === "laundry") {
+        navigate({ to: "/laundry-dashboard" });
+      }
+    }
+  }, [user, navigate]);
+
   // Fetch unread message count for the customer
   useEffect(() => {
     if (!user?.email) return;
 
-    const fetchUnread = async () => {
-      try {
-        // Find customer's conversation
-        const { data: conv } = await supabase
-          .from("chat_conversations")
-          .select("id")
-          .eq("customer_email", user.email)
-          .maybeSingle();
+    const q = query(
+      collection(db, `chats/${user.email}/messages`),
+      where("isRead", "==", false)
+    );
 
-        if (!conv) { setUnreadCount(0); return; }
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const unread = snapshot.docs.filter(
+        (doc) => doc.data().senderEmail !== user.email
+      ).length;
+      setUnreadCount(unread);
+    });
 
-        // Count unread messages NOT sent by the customer
-        const { count } = await supabase
-          .from("chat_messages")
-          .select("*", { count: "exact", head: true })
-          .eq("conversation_id", conv.id)
-          .eq("is_read", false)
-          .neq("sender_email", user.email);
-
-        setUnreadCount(count || 0);
-      } catch (err) {
-        console.error("Error fetching unread count:", err);
-      }
-    };
-
-    fetchUnread();
-
-    // Subscribe to realtime changes to keep badge updated
-    const channel = supabase
-      .channel("customer_unread_badge")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "chat_messages" },
-        () => { fetchUnread(); }
-      )
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+    return () => unsubscribe();
   }, [user?.email]);
 
   return (
@@ -106,11 +93,16 @@ function Dashboard() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSubmit={async (address, notes, images, requiresIroning, requiresDryCleaning) => {
-          const combinedNotes = `🏠 כתובת איסוף: ${address}` + (notes.trim() ? `\n📝 דגשים: ${notes}` : "");
-          await createOrder(combinedNotes, images, requiresIroning, requiresDryCleaning);
+          // Combine address + optional user notes into a single notes string stored in the DB
+          const combinedNotes = [address, notes].filter(Boolean).join('\n\n');
+          const orderId = await createOrder(combinedNotes, images, requiresIroning, requiresDryCleaning);
           setIsModalOpen(false);
-          toast.success("הזמנת האיסוף נוצרה בהצלחה!");
-          navigate({ to: "/tracking" });
+          if (orderId) {
+            toast.success("הזמנת האיסוף נוצרה בהצלחה!");
+            navigate({ to: "/tracking", search: { orderId } });
+          } else {
+            toast.error("שגיאה ביצירת ההזמנה. אנא נסה שוב.");
+          }
         }}
       />
 

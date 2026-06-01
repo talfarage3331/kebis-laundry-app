@@ -1,11 +1,13 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { useLaundry } from "@/lib/laundry-store";
-import { Flower2, ShoppingBasket, Truck, Sparkles, CheckCircle2, AlertCircle, ArrowLeft, LogOut, RefreshCw, MessageSquare, Image as ImageIcon, ChevronDown, Save, Trash2, X } from "lucide-react";
+import { Flower2 } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/lib/supabase";
+import { auth, db, googleProvider } from "@/lib/firebase";
+import { signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 
-// Custom Google brand icon (inline SVG) – avoids missing export from lucide-react
+// Custom Google brand icon (inline SVG)
 const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg
     viewBox="0 0 533.5 544.3"
@@ -20,7 +22,6 @@ const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-
 export const Route = createFileRoute("/login")({ component: Login });
 
 function Login() {
@@ -28,21 +29,39 @@ function Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (user && !authLoading) {
-      navigate({ to: "/" });
+      if (user.role === "admin") {
+        navigate({ to: "/admin" });
+      } else if (user.role === "laundry") {
+        navigate({ to: "/laundry-dashboard" });
+      } else {
+        navigate({ to: "/" });
+      }
     }
   }, [user, authLoading, navigate]);
 
   const signInWithGoogle = async () => {
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: window.location.origin },
-    });
-    if (error) {
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const fbUser = result.user;
+      if (fbUser) {
+        const userDoc = await getDoc(doc(db, "users", fbUser.uid));
+        const role = userDoc.exists() ? userDoc.data().role : "customer";
+        
+        toast.success("התחברת בהצלחה");
+        
+        if (role === "admin") {
+          navigate({ to: "/admin" });
+        } else if (role === "laundry") {
+          navigate({ to: "/laundry-dashboard" });
+        } else {
+          navigate({ to: "/" });
+        }
+      }
+    } catch (error: any) {
       console.error("Error logging in with Google:", error.message);
       toast.error("התחברות עם גוגל נכשלה: " + error.message);
     }
@@ -53,18 +72,31 @@ function Login() {
     if (!email || !password) return toast.error("יש למלא את כל השדות");
     
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    setLoading(false);
-
-    if (error) {
-      return toast.error(error.message === "Invalid login credentials" ? "פרטי התחברות לא נכונים" : error.message);
+    try {
+      const result = await signInWithEmailAndPassword(auth, email, password);
+      const fbUser = result.user;
+      
+      const userDoc = await getDoc(doc(db, "users", fbUser.uid));
+      const role = userDoc.exists() ? userDoc.data().role : "customer";
+      
+      setLoading(false);
+      toast.success("התחברת בהצלחה");
+      
+      if (role === "admin") {
+        navigate({ to: "/admin" });
+      } else if (role === "laundry") {
+        navigate({ to: "/laundry-dashboard" });
+      } else {
+        navigate({ to: "/" });
+      }
+    } catch (error: any) {
+      setLoading(false);
+      return toast.error(
+        error.code === "auth/invalid-credential" || error.code === "auth/user-not-found" || error.code === "auth/wrong-password"
+          ? "פרטי התחברות לא נכונים" 
+          : error.message
+      );
     }
-
-    toast.success("התחברת בהצלחה");
-    navigate({ to: "/" });
   };
 
   return (
@@ -104,9 +136,10 @@ function Login() {
         </div>
         <button
           type="submit"
-          className="w-full rounded-3xl bg-lime text-lime-foreground py-3.5 sm:py-4 text-base sm:text-lg font-extrabold min-h-[48px] shadow-[0_15px_40px_-15px_oklch(0.92_0.18_125/0.6)] active:scale-[0.98] transition"
+          disabled={loading}
+          className="w-full rounded-3xl bg-lime text-lime-foreground py-3.5 sm:py-4 text-base sm:text-lg font-extrabold min-h-[48px] shadow-[0_15px_40px_-15px_oklch(0.92_0.18_125/0.6)] active:scale-[0.98] transition disabled:opacity-50"
         >
-          התחברות
+          {loading ? "מתחבר..." : "התחברות"}
         </button>
         <button
           type="button"

@@ -2,7 +2,20 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { useLaundry } from "@/lib/laundry-store";
-import { supabase } from "@/lib/supabase";
+import { db } from "@/lib/firebase";
+import {
+  collection,
+  doc,
+  getDocs,
+  setDoc,
+  addDoc,
+  updateDoc,
+  query,
+  where,
+  orderBy,
+  onSnapshot,
+  writeBatch,
+} from "firebase/firestore";
 import { ArrowRight, Send, Loader2, MessageSquareText, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -21,7 +34,6 @@ interface Conversation {
 
 interface ChatMessage {
   id: string;
-  conversation_id: string;
   sender_email: string;
   content: string;
   is_read: boolean;
@@ -61,70 +73,73 @@ function AdminChat() {
   // Fetch Conversations List
   const fetchConversations = async () => {
     try {
-      const { data: convData, error: convError } = await supabase
-        .from("chat_conversations")
-        .select("*")
-        .order("updated_at", { ascending: false });
-
-      if (convError) throw convError;
-
-      // Fetch all profiles to show their real names and fill the list with other registered users (excluding laundry staff)
-      const { data: allProfiles, error: profilesError } = await supabase
-        .from("profiles")
-        .select("*");
-
-      const customerProfiles = (allProfiles || []).filter(
-        (p) => p.role !== "laundry" && p.email.toLowerCase() !== user?.email.toLowerCase()
-      );
-
-      const profileMap = new Map<string, string>();
-      if (!profilesError && customerProfiles) {
-        customerProfiles.forEach(p => {
-          profileMap.set(p.email.toLowerCase(), p.full_name);
-        });
-      }
-
-      // For each conversation, get unread count and last message
-      const enriched = await Promise.all((convData || []).map(async (conv) => {
-        // Get unread count (messages sent by customer that are not read)
-        const { count: unreadCount } = await supabase
-          .from("chat_messages")
-          .select("*", { count: "exact", head: true })
-          .eq("conversation_id", conv.id)
-          .eq("is_read", false)
-          .neq("sender_email", user?.email || "");
-
-        // Get last message
-        const { data: lastMsgData } = await supabase
-          .from("chat_messages")
-          .select("content")
-          .eq("conversation_id", conv.id)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        const name = profileMap.get(conv.customer_email.toLowerCase()) || conv.customer_email.split('@')[0];
-
-        return {
-          ...conv,
-          unread_count: unreadCount || 0,
-          last_message: lastMsgData?.content || "אין הודעות",
-          display_name: name,
-        };
+      // 1. Fetch all chat docs
+      const chatsSnap = await getDocs(collection(db, "chats"));
+      const chatDocs = chatsSnap.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as { customer_email: string; updated_at: string }),
       }));
 
-      // Find profiles without conversations and add placeholders
-      const existingEmails = new Set((convData || []).map(c => c.customer_email.toLowerCase()));
-      const placeholders = (customerProfiles || [])
-        .filter(p => !existingEmails.has(p.email.toLowerCase()))
-        .map(p => ({
+      // 2. Fetch all user profiles to get display names
+      const usersSnap = await getDocs(collection(db, "users"));
+      const customerProfiles = usersSnap.docs
+        .map((d) => ({ id: d.id, ...(d.data() as { fullName: string; email: string; role: string }) }))
+        .filter(
+          (p) => p.role !== "laundry" && p.email.toLowerCase() !== user?.email.toLowerCase()
+        );
+
+      const profileMap = new Map<string, string>();
+      customerProfiles.forEach((p) => {
+        profileMap.set(p.email.toLowerCase(), p.fullName);
+      });
+
+      // 3. For each chat doc, get unread count and last message from its messages subcollection
+      const enriched = await Promise.all(
+        chatDocs.map(async (conv) => {
+          const messagesRef = collection(db, "chats", conv.id, "messages");
+
+          // Get all messages to compute unread count and last message
+          const allMsgsSnap = await getDocs(query(messagesRef, orderBy("created_at", "desc")));
+          const allMsgs = allMsgsSnap.docs.map((d) => d.data());
+
+          // Unread count: messages not from admin that are unread
+          const unreadCount = allMsgs.filter(
+            (m) => !m.is_read && m.sender_email !== user?.email
+          ).length;
+
+          // Last message
+          const lastMessage = allMsgs.length > 0 ? allMsgs[0].content : "אין הודעות";
+
+          const customerEmail = conv.customer_email || conv.id;
+          const name =
+            profileMap.get(customerEmail.toLowerCase()) ||
+            customerEmail.split("@")[0];
+
+          return {
+            id: conv.id,
+            customer_email: customerEmail,
+            updated_at: conv.updated_at || new Date(0).toISOString(),
+            unread_count: unreadCount,
+            last_message: lastMessage,
+            display_name: name,
+          } as Conversation;
+        })
+      );
+
+      // 4. Find profiles without conversations and add placeholders
+      const existingEmails = new Set(
+        chatDocs.map((c) => (c.customer_email || c.id).toLowerCase())
+      );
+      const placeholders: Conversation[] = customerProfiles
+        .filter((p) => !existingEmails.has(p.email.toLowerCase()))
+        .map((p) => ({
           id: `new-${p.email}`,
           customer_email: p.email,
-          updated_at: new Date(0).toISOString(), // Sort placeholders to the bottom
+          updated_at: new Date(0).toISOString(),
           last_message: "לחץ להתחלת שיחה חדשה 💬",
           unread_count: 0,
           is_placeholder: true,
-          display_name: p.full_name || p.email.split('@')[0],
+          display_name: p.fullName || p.email.split("@")[0],
         }));
 
       const allConvs = [...enriched, ...placeholders];
@@ -149,20 +164,13 @@ function AdminChat() {
     
     fetchConversations();
 
-    // Subscribe to any new messages globally to update the sidebar
-    const channel = supabase
-      .channel('admin_global_chat')
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "chat_messages" },
-        () => {
-          fetchConversations();
-        }
-      )
-      .subscribe();
+    // Subscribe to any changes in the chats collection to update the sidebar
+    const unsubscribe = onSnapshot(collection(db, "chats"), () => {
+      fetchConversations();
+    });
 
     return () => {
-      supabase.removeChannel(channel);
+      unsubscribe();
     };
   }, [user]);
 
@@ -177,74 +185,41 @@ function AdminChat() {
       return;
     }
 
-    let isMounted = true;
-    const fetchMessages = async () => {
-      setLoadingChat(true);
-      try {
-        const { data, error } = await supabase
-          .from("chat_messages")
-          .select("*")
-          .eq("conversation_id", activeConvId)
-          .order("created_at", { ascending: true });
+    // activeConvId is the customer_email (the chat doc ID)
+    const customerEmail = activeConvId;
+    const messagesRef = collection(db, "chats", customerEmail, "messages");
+    const messagesQuery = query(messagesRef, orderBy("created_at", "asc"));
 
-        if (error) throw error;
+    setLoadingChat(true);
 
-        if (isMounted) {
-          setMessages(data || []);
-          
-          // Mark unread from customer as read
-          const unreadIds = (data || [])
-            .filter((m) => m.sender_email !== user?.email && !m.is_read)
-            .map((m) => m.id);
-            
-          if (unreadIds.length > 0) {
-            await supabase
-              .from("chat_messages")
-              .update({ is_read: true })
-              .in("id", unreadIds);
-              
-            // Refresh conversation list to clear badge
-            fetchConversations();
-          }
+    const unsubscribe = onSnapshot(messagesQuery, async (snapshot) => {
+      const msgs: ChatMessage[] = snapshot.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as Omit<ChatMessage, "id">),
+      }));
+
+      setMessages(msgs);
+      setLoadingChat(false);
+
+      // Mark unread messages from customer as read
+      const unreadDocs = snapshot.docs.filter(
+        (d) => {
+          const data = d.data();
+          return data.sender_email !== user?.email && !data.is_read;
         }
-      } catch (err) {
-        console.error("Error fetching messages:", err);
-      } finally {
-        if (isMounted) setLoadingChat(false);
+      );
+
+      if (unreadDocs.length > 0) {
+        const batch = writeBatch(db);
+        unreadDocs.forEach((d) => {
+          batch.update(d.ref, { is_read: true });
+        });
+        await batch.commit();
       }
-    };
-
-    fetchMessages();
-
-    // Subscribe to current chat
-    const channel = supabase
-      .channel(`admin_chat_${activeConvId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "chat_messages",
-          filter: `conversation_id=eq.${activeConvId}`,
-        },
-        (payload) => {
-          const newMsg = payload.new as ChatMessage;
-          setMessages((prev) => [...prev, newMsg]);
-          
-          if (newMsg.sender_email !== user?.email) {
-            supabase
-              .from("chat_messages")
-              .update({ is_read: true })
-              .eq("id", newMsg.id)
-              .then();
-          }
-        }
-      )
-      .subscribe();
+    });
 
     return () => {
-      isMounted = false;
-      supabase.removeChannel(channel);
+      unsubscribe();
     };
   }, [activeConvId, user]);
 
@@ -259,7 +234,6 @@ function AdminChat() {
     const tempId = `temp-${Date.now()}`;
     const optimisticMsg: ChatMessage = {
       id: tempId,
-      conversation_id: activeConvId,
       sender_email: user.email,
       content,
       is_read: false,
@@ -268,48 +242,41 @@ function AdminChat() {
     
     setMessages((prev) => [...prev, optimisticMsg]);
 
-    let currentConvId = activeConvId;
+    let targetEmail = activeConvId;
     let isNewConv = false;
-    let realNewId = "";
 
     try {
       if (activeConvId.startsWith("new-")) {
         isNewConv = true;
-        const targetEmail = activeConvId.replace("new-", "");
+        targetEmail = activeConvId.replace("new-", "");
         
-        // 1. Create a real conversation in the DB first
-        const { data: newConv, error: convErr } = await supabase
-          .from("chat_conversations")
-          .insert([{ customer_email: targetEmail }])
-          .select()
-          .single();
-
-        if (convErr) throw convErr;
-        currentConvId = newConv.id;
-        realNewId = newConv.id;
+        // 1. Create the chat doc (keyed by customer email)
+        await setDoc(doc(db, "chats", targetEmail), {
+          customer_email: targetEmail,
+          updated_at: new Date().toISOString(),
+        });
       }
 
-      // 2. Insert the message under the (now active/real) conversation ID
-      const { data, error } = await supabase
-        .from("chat_messages")
-        .insert([{
-          conversation_id: currentConvId,
-          sender_email: user.email,
-          content: content,
-        }])
-        .select()
-        .single();
+      // 2. Add the message to the subcollection
+      await addDoc(collection(db, "chats", targetEmail, "messages"), {
+        sender_email: user.email,
+        content: content,
+        is_read: false,
+        created_at: new Date().toISOString(),
+      });
 
-      if (error) throw error;
+      // 3. Update the parent chat doc's updated_at
+      await updateDoc(doc(db, "chats", targetEmail), {
+        updated_at: new Date().toISOString(),
+      });
 
       if (isNewConv) {
-        // Swap active ID to the newly created real ID to trigger live subscription
-        setActiveConvId(realNewId);
-        // Refresh conversations list to update sidebar and display the conversation as real
+        // Swap active ID to the real customer_email to trigger live subscription
+        setActiveConvId(targetEmail);
+        // Refresh conversations list to update sidebar
         await fetchConversations();
-      } else {
-        setMessages((prev) => prev.map((m) => m.id === tempId ? data : m));
       }
+      // No need to replace optimistic msg — onSnapshot will provide the real data
     } catch (err) {
       console.error(err);
       toast.error("שגיאה בשליחת ההודעה");
