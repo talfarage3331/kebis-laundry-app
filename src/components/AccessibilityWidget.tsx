@@ -253,7 +253,7 @@ export function AccessibilityWidget() {
         className="a11y-fab"
         type="button"
       >
-        {/* Universal accessibility icon */}
+        {/* Brand-stylized accessibility icon */}
         <svg
           className="a11y-fab__icon"
           viewBox="0 0 24 24"
@@ -264,11 +264,16 @@ export function AccessibilityWidget() {
           strokeLinejoin="round"
           aria-hidden="true"
         >
-          <circle cx="12" cy="4.5" r="2.5" />
-          <path d="M12 7v5" />
-          <path d="M8 11l4 1 4-1" />
-          <path d="M10 21l2-9 2 9" />
-          <path d="M8 21h8" />
+          {/* Stylized human head */}
+          <circle cx="12" cy="5.5" r="2" fill="currentColor" />
+          {/* Elegant open arms resembling water waves */}
+          <path d="M5 10c3.5-2 10.5-2 14 0" />
+          {/* Water droplet/human body and legs */}
+          <path d="M12 8c-2.5 1-3.5 3.5-3.5 6s2.5 4.5 3.5 6 3.5-3.5 3.5-6-1-5-3.5-6z" />
+          {/* Cleanliness / Sparkle 1 (top right) */}
+          <path d="M18.5 2.5L19 4l1.5.5-1.5.5-.5 1.5-.5-1.5-1.5-.5 1.5-.5.5-1.5z" fill="currentColor" stroke="none" />
+          {/* Cleanliness / Sparkle 2 (bottom left) */}
+          <path d="M5.5 14.5l.3 1 .9.3-.9.3-.3 1-.3-1-.9-.3.9-.3.3-1z" fill="currentColor" stroke="none" />
         </svg>
         {/* Subtle pulsing ring */}
         <span className="a11y-fab__ring" aria-hidden="true" />
@@ -297,11 +302,16 @@ export function AccessibilityWidget() {
           <div className="a11y-panel__header">
             <div className="a11y-panel__header-text">
               <svg className="a11y-panel__header-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <circle cx="12" cy="4.5" r="2.5" />
-                <path d="M12 7v5" />
-                <path d="M8 11l4 1 4-1" />
-                <path d="M10 21l2-9 2 9" />
-                <path d="M8 21h8" />
+                {/* Stylized human head */}
+                <circle cx="12" cy="5.5" r="2" fill="currentColor" />
+                {/* Elegant open arms resembling water waves */}
+                <path d="M5 10c3.5-2 10.5-2 14 0" />
+                {/* Water droplet/human body and legs */}
+                <path d="M12 8c-2.5 1-3.5 3.5-3.5 6s2.5 4.5 3.5 6 3.5-3.5 3.5-6-1-5-3.5-6z" />
+                {/* Cleanliness / Sparkle 1 (top right) */}
+                <path d="M18.5 2.5L19 4l1.5.5-1.5.5-.5 1.5-.5-1.5-1.5-.5 1.5-.5.5-1.5z" fill="currentColor" stroke="none" />
+                {/* Cleanliness / Sparkle 2 (bottom left) */}
+                <path d="M5.5 14.5l.3 1 .9.3-.9.3-.3 1-.3-1-.9-.3.9-.3.3-1z" fill="currentColor" stroke="none" />
               </svg>
               <h2 id="a11y-title">הגדרות נגישות</h2>
             </div>
