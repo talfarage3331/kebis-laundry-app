@@ -11,6 +11,7 @@ import {
 import appCss from "../styles.css?url";
 import { LaundryProvider } from "@/lib/laundry-store";
 import { Toaster } from "@/components/ui/sonner";
+import { AccessibilityWidget } from "@/components/AccessibilityWidget";
 
 function NotFoundComponent() {
   return (
@@ -80,6 +81,7 @@ function RootComponent() {
       <LaundryProvider>
         <Outlet />
         <Toaster position="top-center" richColors />
+        <AccessibilityWidget />
       </LaundryProvider>
     </QueryClientProvider>
   );

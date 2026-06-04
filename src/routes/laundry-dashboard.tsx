@@ -21,8 +21,10 @@ interface LaundryOrder {
   delivery_method: string;
   payment_state: string;
   amount_due: number;
+  price?: number;
   user_email: string;
   notes?: string;
+  deliveryNotes?: string;
   images?: string[];
   requires_ironing?: boolean;
   requires_dry_cleaning?: boolean;
@@ -38,6 +40,7 @@ function LaundryDashboard() {
   const [activeTab, setActiveTab] = useState<string>("active");
   const [typedPrices, setTypedPrices] = useState<Record<string, string>>({});
   const [typedMessages, setTypedMessages] = useState<Record<string, string>>({});
+  const [typedDeliveryNotes, setTypedDeliveryNotes] = useState<Record<string, string>>({});
   const [pendingStatuses, setPendingStatuses] = useState<Record<string, string>>({});
   const [pendingInvoices, setPendingInvoices] = useState<Record<string, File | null>>({});
   const [savingOrder, setSavingOrder] = useState<Record<string, boolean>>({});
@@ -80,9 +83,11 @@ function LaundryDashboard() {
             status: o.status,
             delivery_method: o.delivery_method || o.deliveryMethod || "none",
             payment_state: o.payment_state || o.paymentState || "unpaid",
-            amount_due: o.amount_due !== undefined ? o.amount_due : (o.amountDue !== undefined ? o.amountDue : 0),
+            amount_due: o.price !== undefined ? o.price : (o.amount_due !== undefined ? o.amount_due : (o.amountDue !== undefined ? o.amountDue : 0)),
+            price: o.price !== undefined ? o.price : (o.amount_due !== undefined ? o.amount_due : (o.amountDue !== undefined ? o.amountDue : 0)),
             user_email: o.user_email || o.userEmail || "",
             notes: o.notes || "",
+            deliveryNotes: o.deliveryNotes || o.delivery_notes || "",
             images: finalImages,
             requires_ironing: !!(o.requires_ironing || o.requiresIroning),
             requires_dry_cleaning: !!(o.requires_dry_cleaning || o.requiresDryCleaning),
@@ -145,6 +150,7 @@ function LaundryDashboard() {
   const updateOrderPrice = async (orderId: string, newPrice: number) => {
     try {
       await updateDoc(doc(db, "orders", orderId), { 
+        price: newPrice,
         amount_due: newPrice,
         amountDue: newPrice,
         total_price: newPrice 
@@ -152,6 +158,17 @@ function LaundryDashboard() {
       toast.success("מחיר ההזמנה עודכן בהצלחה!");
     } catch (err: any) {
       toast.error("שגיאה בעדכון המחיר: " + err.message);
+    }
+  };
+
+  const updateOrderDeliveryNotes = async (orderId: string, notes: string) => {
+    try {
+      await updateDoc(doc(db, "orders", orderId), { 
+        deliveryNotes: notes,
+        delivery_notes: notes
+      });
+    } catch (err: any) {
+      toast.error("שגיאה בעדכון הערות משלוח: " + err.message);
     }
   };
 
@@ -173,18 +190,35 @@ function LaundryDashboard() {
 
   const uploadInvoice = async (orderId: string, file: File) => {
     try {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64data = reader.result as string;
-        await updateDoc(doc(db, "orders", orderId), {
-          invoiceUrl: base64data,
-          invoiceName: file.name
-        });
-        toast.success("החשבונית צורפה ונשלחה ללקוח!");
-      };
-      reader.readAsDataURL(file);
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch("https://tmpfiles.org/api/v1/upload", {
+        method: "POST",
+        body: formData
+      });
+
+      if (!response.ok) {
+        throw new Error(`Upload server responded with status: ${response.status}`);
+      }
+
+      const resJson = await response.json();
+      if (resJson.status !== "success" || !resJson.data?.url) {
+        throw new Error(resJson.message || "Failed to parse file upload response.");
+      }
+
+      const previewUrl = resJson.data.url;
+      // Convert standard preview URL to direct download URL
+      const directDownloadUrl = previewUrl.replace("https://tmpfiles.org/", "https://tmpfiles.org/dl/");
+
+      await updateDoc(doc(db, "orders", orderId), {
+        invoiceUrl: directDownloadUrl,
+        invoiceName: file.name
+      });
+      toast.success("החשבונית הועלתה בהצלחה ונשלחה ללקוח!");
     } catch (err: any) {
       toast.error("שגיאה בהעלאת חשבונית: " + err.message);
+      console.error("Invoice upload error:", err);
     }
   };
 
@@ -210,7 +244,13 @@ function LaundryDashboard() {
         await updateOrderMessage(orderId, newMessage);
       }
 
-      // 4. Upload invoice if selected
+      // 4. Save delivery notes if changed
+      const delNotes = typedDeliveryNotes[orderId];
+      if (delNotes !== undefined) {
+        await updateOrderDeliveryNotes(orderId, delNotes);
+      }
+
+      // 5. Upload invoice if selected
       const invoiceFile = pendingInvoices[orderId];
       if (invoiceFile) {
         await uploadInvoice(orderId, invoiceFile);
@@ -264,11 +304,11 @@ function LaundryDashboard() {
 
   const getStatusLabel = (status: string) => {
     switch (status) {
-      case "pending": return "ממתין לאיסוף";
-      case "picked_up": return "נאסף";
-      case "in_progress": return "בטיפול";
-      case "ready": return "מוכן";
-      case "completed": return "הושלם";
+      case "pending": return "התקבלה במכבסה";
+      case "picked_up": return "התקבלה במכבסה";
+      case "in_progress": return "בתהליך כביסה";
+      case "ready": return "מוכן למשלוח";
+      case "completed": return "נמסר";
       default: return status;
     }
   };
@@ -533,20 +573,31 @@ function LaundryDashboard() {
                         <div className="flex gap-2">
                           <input
                             type="number"
-                            value={typedPrices[order.id] !== undefined ? typedPrices[order.id] : String(order.amount_due || "")}
+                            value={typedPrices[order.id] !== undefined ? typedPrices[order.id] : String(order.price !== undefined ? order.price : (order.amount_due || ""))}
                             onChange={(e) => setTypedPrices(prev => ({ ...prev, [order.id]: e.target.value }))}
                             placeholder="הזן סכום לתשלום"
                             className="bg-background border border-muted-foreground/20 rounded-xl px-3 py-2.5 sm:py-2 text-xs font-bold w-full focus:outline-none focus:ring-2 focus:ring-primary min-h-[44px]"
                           />
-
                         </div>
                       </div>
                       <div className="text-left sm:min-w-[70px] flex sm:block items-center gap-2">
                         <span className="text-[10px] font-bold text-muted-foreground block">מחיר נוכחי</span>
                         <span className="text-sm font-black text-foreground">
-                          {order.amount_due ? `₪${order.amount_due}` : "טרם נקבע"}
+                          {order.price !== undefined ? `₪${order.price}` : (order.amount_due ? `₪${order.amount_due}` : "טרם נקבע")}
                         </span>
                       </div>
+                    </div>
+
+                    {/* Delivery Notes (הערות משלוח) */}
+                    <div className="space-y-2 pt-2 border-t border-muted-foreground/5">
+                      <label className="text-[11px] font-extrabold text-muted-foreground block mb-1">הערות משלוח (טקסט חופשי):</label>
+                      <textarea
+                        rows={2}
+                        value={typedDeliveryNotes[order.id] !== undefined ? typedDeliveryNotes[order.id] : (order.deliveryNotes || "")}
+                        onChange={(e) => setTypedDeliveryNotes(prev => ({ ...prev, [order.id]: e.target.value }))}
+                        placeholder="הקלד הערות משלוח, כתובת מפורטת, קוד כניסה או הנחיות מיוחדות לשליח..."
+                        className="bg-background border border-muted-foreground/20 rounded-xl px-3 py-2.5 sm:py-2 text-[11px] font-semibold w-full focus:outline-none focus:ring-2 focus:ring-primary leading-normal resize-none min-h-[44px]"
+                      />
                     </div>
 
                     {/* Write Message to Customer Area */}
@@ -563,37 +614,23 @@ function LaundryDashboard() {
                           placeholder="הקלד הודעה ללקוח (למשל: הכביסה נשקלה, המחיר עודכן והיא בטיפול)..."
                           className="bg-background border border-muted-foreground/20 rounded-xl px-3 py-2.5 sm:py-2 text-[11px] font-semibold w-full focus:outline-none focus:ring-2 focus:ring-primary leading-normal resize-none min-h-[44px]"
                         />
-
                       </div>
                     </div>
 
                     {/* Action Select Box to transition state */}
                     <div className="space-y-2 pt-2 border-t border-muted-foreground/5">
-                      <label className="text-[11px] font-extrabold text-muted-foreground block">עדכן סטטוס טיפול בכביסה:</label>
-                      <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 sm:gap-1">
-                        {[
-                          { key: "pending", label: "ממתין" },
-                          { key: "picked_up", label: "נאסף" },
-                          { key: "in_progress", label: "בטיפול" },
-                          { key: "ready", label: "מוכן" },
-                          { key: "completed", label: "הושלם" }
-                        ].map((step) => {
-                          const isCurrent = (pendingStatuses[order.id] || order.status) === step.key;
-                          return (
-                            <button
-                              key={step.key}
-                              onClick={() => setPendingStatuses(prev => ({ ...prev, [order.id]: step.key }))}
-                              className={`py-2.5 sm:py-2 rounded-xl text-[10px] sm:text-[11px] font-bold transition active:scale-95 border min-h-[44px] ${
-                                isCurrent 
-                                  ? "bg-primary text-primary-foreground border-primary" 
-                                  : "bg-background text-muted-foreground border-muted-foreground/10 hover:bg-muted/50"
-                              }`}
-                            >
-                              {step.label}
-                            </button>
-                          );
-                        })}
-                      </div>
+                      <label className="text-[11px] font-extrabold text-muted-foreground block mb-1">עדכן סטטוס טיפול בכביסה (Dropdown):</label>
+                      <select
+                        value={pendingStatuses[order.id] || order.status}
+                        onChange={(e) => setPendingStatuses(prev => ({ ...prev, [order.id]: e.target.value }))}
+                        className="bg-background border border-muted-foreground/20 rounded-xl px-3 py-2.5 sm:py-2 text-xs font-bold w-full focus:outline-none focus:ring-2 focus:ring-primary min-h-[44px] text-right"
+                      >
+                        <option value="pending">התקבלה במכבסה (ממתין)</option>
+                        <option value="picked_up">התקבלה במכבסה (נאסף)</option>
+                        <option value="in_progress">בתהליך כביסה</option>
+                        <option value="ready">מוכן למשלוח</option>
+                        <option value="completed">נמסר (הושלם)</option>
+                      </select>
                     </div>
 
                     {/* Already Uploaded Invoices */}
