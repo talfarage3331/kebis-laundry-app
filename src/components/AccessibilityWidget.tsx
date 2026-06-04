@@ -66,8 +66,9 @@ function saveSettings(s: A11ySettings) {
 function applyToDOM(s: A11ySettings) {
   const root = document.documentElement;
 
-  // 1. Font scale → CSS custom property consumed by the body
-  root.style.setProperty("--a11y-font-scale", String(s.fontScale));
+  // 1. Font scale → set direct percent font-size on the root element
+  const textSize = Math.round(s.fontScale * 100);
+  root.style.fontSize = `${textSize}%`;
 
   // 2. Contrast mode classes
   root.classList.toggle("a11y-high-contrast", s.contrastMode === "high-contrast");
@@ -107,6 +108,12 @@ export function AccessibilityWidget() {
     setSettings(s);
     applyToDOM(s);
   }, []);
+
+  // ── Apply text size state globally to the root HTML element ──
+  useEffect(() => {
+    const textSize = Math.round(settings.fontScale * 100);
+    document.documentElement.style.fontSize = `${textSize}%`;
+  }, [settings.fontScale]);
 
   // ── Update helper — persists + applies to DOM ──
   const update = useCallback((patch: Partial<A11ySettings>) => {
@@ -433,10 +440,7 @@ const a11yCSS = `
 
 /* ── Global overrides applied via <html> classes ────────── */
 
-/* Font scaling — applied to the body for global cascade */
-html[style*="--a11y-font-scale"] body {
-  font-size: calc(1rem * var(--a11y-font-scale, 1));
-}
+/* Font scaling — now handled directly on document.documentElement style */
 
 /* High-contrast mode */
 html.a11y-high-contrast {
