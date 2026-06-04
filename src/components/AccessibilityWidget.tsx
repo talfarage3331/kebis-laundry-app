@@ -225,6 +225,24 @@ export function AccessibilityWidget() {
       {/* ── Inline styles — injected once, scoped via unique class prefixes ── */}
       <style>{a11yCSS}</style>
 
+      {/* ── Dynamic scale overrides ── */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        /* Dynamic scaling for root and form elements */
+        html {
+          font-size: ${scalePercent}% !important;
+        }
+        
+        /* Force inputs, selects, and textareas to scale from their base 16px (overriding styles.css fixed px) */
+        input, select, textarea {
+          font-size: calc(16px * ${settings.fontScale}) !important;
+        }
+        
+        /* Ensure buttons inherit scaled font sizes if they don't have explicit utility overrides */
+        button {
+          font-size: inherit;
+        }
+      ` }} />
+
       {/* ── FAB Trigger Button ── */}
       <button
         ref={fabRef}
