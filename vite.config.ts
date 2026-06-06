@@ -1,15 +1,17 @@
-// @lovable.dev/vite-tanstack-config already includes the following — do NOT add them manually
-// or the app will break with duplicate plugins:
-//   - tanstackStart, viteReact, tailwindcss, tsConfigPaths, cloudflare (build-only),
-//     componentTagger (dev-only), VITE_* env injection, @ path alias, React/TanStack dedupe,
-//     error logger plugins, and sandbox detection (port/host/strictPort).
-// You can pass additional config via defineConfig({ vite: { ... } }) if needed.
+// Explicitly inject VAPID public key into the client bundle
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
+import { loadEnv } from "vite";
 
-// The @cloudflare/vite-plugin reads wrangler.jsonc (which has pages_build_output_dir)
-// and generates the correct Pages-compatible output automatically.
+// Load environment variables from .env files
+const env = loadEnv(process.env.NODE_ENV ?? "development", process.cwd());
+
 export default defineConfig({
+  // Ensure the public key is available as import.meta.env.VITE_VAPID_PUBLIC_KEY
+  define: {
+    "import.meta.env.VITE_VAPID_PUBLIC_KEY": JSON.stringify(env.VITE_VAPID_PUBLIC_KEY),
+  },
   tanstackStart: {
     server: { entry: "server" },
   },
 });
+

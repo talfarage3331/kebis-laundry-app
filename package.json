@@ -3,16 +3,17 @@
   "private": true,
   "sideEffects": false,
   "type": "module",
-  "scripts": {
-    "dev": "vite dev",
-    "build": "vite build",
-    "postbuild": "node scripts/postbuild.cjs",
-    "build:dev": "vite build --mode development",
-    "preview": "vite preview",
-    "lint": "eslint .",
-    "format": "prettier --write .",
-    "deploy": "npm run build && wrangler pages deploy dist/client"
-  },
+"scripts": {
+  "clean": "rimraf dist",
+  "dev": "vite dev",
+  "build": "npm run clean && vite build",
+  "postbuild": "node scripts/postbuild.cjs",
+  "build:dev": "vite build --mode development",
+  "preview": "vite preview",
+  "lint": "eslint .",
+  "format": "prettier --write .",
+  "deploy": "npm run clean && npm run build && wrangler pages deploy dist/client"
+},
   "dependencies": {
     "@cloudflare/vite-plugin": "^1.25.5",
     "@hookform/resolvers": "^5.2.2",
@@ -86,6 +87,8 @@
     "puppeteer": "^25.0.2",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.56.1",
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "rimraf": "^5.0.0"
+  }
   }
 }
