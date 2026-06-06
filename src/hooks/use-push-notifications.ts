@@ -57,12 +57,19 @@ export interface UsePushNotificationsOptions {
 // ─── Helper: Convert VAPID public key ─────────────────────────────────────────
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding)
-    .replace(/-/g, "+")
-    .replace(/_/g, "/");
-  const rawData = atob(base64);
-  return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+  try {
+    const cleanString = base64String.trim().replace(/\s/g, "");
+    const padding = "=".repeat((4 - (cleanString.length % 4)) % 4);
+    const base64 = (cleanString + padding)
+      .replace(/-/g, "+")
+      .replace(/_/g, "/");
+    const rawData = atob(base64);
+    return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+  } catch (err) {
+    const errorMsg = "VAPID key parsing failed: " + (err instanceof Error ? err.message : String(err));
+    alert(errorMsg);
+    throw new Error(errorMsg);
+  }
 }
 
 // ─── Helper: Register service worker ──────────────────────────────────────────
@@ -147,33 +154,36 @@ export function usePushNotifications(
 
   // ── requestPermission ────────────────────────────────────────────────────────
   const requestPermission = useCallback(async () => {
-    if (!supported) {
-      setError("Push notifications are not supported in this browser.");
-      setStatus("unsupported");
-      return;
-    }
-    if (status === "subscribed") return; // already done
-
-    setError(null);
-
     try {
-      // 1. Register SW if not already done
-      let reg = swRegRef.current;
-      if (!reg) {
-        setStatus("registering");
-        reg = await registerServiceWorker();
-        swRegRef.current = reg;
+      if (!supported) {
+        throw new Error("Push notifications are not supported in this browser.");
       }
 
-      // 2. Request notification permission
+      if (typeof Notification === "undefined") {
+        throw new Error("Notification API is undefined in this browser/environment.");
+      }
+
+      if (status === "subscribed") return; // already done
+
+      setError(null);
+
+      // 1. Request notification permission IMMEDIATELY to preserve the user gesture.
+      // This is crucial for Safari / iOS 16.4+ standalone PWAs!
       setStatus("requesting-permission");
       const perm = await Notification.requestPermission();
       setPermission(perm);
 
       if (perm !== "granted") {
         setStatus("denied");
-        setError("הרשאת ההתראות נדחתה. אפשר להפעיל בהגדרות הדפדפן.");
-        return;
+        throw new Error("הרשאת ההתראות נדחתה. אפשר להפעיל בהגדרות הדפדפן.");
+      }
+
+      // 2. Register SW if not already done
+      setStatus("registering");
+      let reg = swRegRef.current;
+      if (!reg) {
+        reg = await registerServiceWorker();
+        swRegRef.current = reg;
       }
 
       // 3. Subscribe to Push API
@@ -186,9 +196,11 @@ export function usePushNotifications(
         );
       }
 
+      const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey);
+
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey) as any,
+        applicationServerKey: applicationServerKey as any,
       });
 
       setSubscription(sub);
@@ -197,12 +209,16 @@ export function usePushNotifications(
       // 4. Send subscription to backend so it can trigger pushes
       await sendSubscriptionToServer(sub, userEmail);
     } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error("[usePushNotifications] Error enabling push:", err);
+      
+      // Temporary mobile alert for easy debugging as requested by the user
+      alert("Push Error: " + errMsg);
+      
       setStatus("error");
-      setError(
-        err instanceof Error ? err.message : "Failed to subscribe to push notifications."
-      );
+      setError(errMsg);
     }
-  }, [supported, status]);
+  }, [supported, status, userEmail]);
 
   // ── unsubscribe ──────────────────────────────────────────────────────────────
   const unsubscribe = useCallback(async () => {
@@ -213,11 +229,12 @@ export function usePushNotifications(
       setSubscription(null);
       setStatus("idle");
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to unsubscribe."
-      );
+      const errMsg = err instanceof Error ? err.message : String(err);
+      alert("Unsubscribe Error: " + errMsg);
+      setError(errMsg);
     }
   }, [subscription]);
+
 
   return { supported, permission, subscription, status, error, requestPermission, unsubscribe };
 }
