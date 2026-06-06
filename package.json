@@ -4,7 +4,7 @@
   "sideEffects": false,
   "type": "module",
 "scripts": {
-  "clean": "rimraf dist",
+  "clean": "npx rimraf dist",
   "dev": "vite dev",
   "build": "npm run clean && vite build",
   "postbuild": "node scripts/postbuild.cjs",
@@ -91,4 +91,4 @@
     "rimraf": "^5.0.0"
   }
   }
-}
+
