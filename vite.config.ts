@@ -7,7 +7,7 @@ const env = loadEnv(process.env.NODE_ENV ?? "development", process.cwd());
 
 export default defineConfig({
   define: {
-    "import.meta.env.VITE_VAPID_PUBLIC_KEY": "BE-wjIBXEOGXMLdrgLD78KcaStjqCSjuYRvSgZFcCCjvYcLe5EFr6-zMismBm7MRfYDbaH6BK44-vBIqYkLWMWg"
+    "import.meta.env.VITE_VAPID_PUBLIC_KEY": JSON.stringify("BE-wjIBXEOGXMLdrgLD78KcaStjqCSjuYRvSgZFcCCjvYcLe5EFr6-zMismBm7MRfYDbaH6BK44-vBIqYkLWMWg"),
   },
   tanstackStart: {
     server: { entry: "server" },
