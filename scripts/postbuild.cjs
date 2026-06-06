@@ -44,4 +44,16 @@ const routesConfig = {
 fs.writeFileSync('dist/client/_routes.json', JSON.stringify(routesConfig, null, 2));
 console.log('Created dist/client/_routes.json for static asset routing');
 
+// 4. Generate _headers for custom static asset headers on Cloudflare Pages
+const headersConfig = [
+  "/sw.js",
+  "  Content-Type: application/javascript",
+  "  Cache-Control: no-store, no-cache, must-revalidate, max-age=0",
+  "  Service-Worker-Allowed: /",
+  ""
+].join("\n");
+fs.writeFileSync('dist/client/_headers', headersConfig);
+console.log('Created dist/client/_headers for static headers');
+
+
 
