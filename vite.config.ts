@@ -6,9 +6,8 @@ import { loadEnv } from "vite";
 const env = loadEnv(process.env.NODE_ENV ?? "development", process.cwd());
 
 export default defineConfig({
-  // Ensure the public key is available as import.meta.env.VITE_VAPID_PUBLIC_KEY
   define: {
-    "import.meta.env.VITE_VAPID_PUBLIC_KEY": JSON.stringify(env.VITE_VAPID_PUBLIC_KEY),
+    "import.meta.env.VITE_VAPID_PUBLIC_KEY": "BE-wjIBXEOGXMLdrgLD78KcaStjqCSjuYRvSgZFcCCjvYcLe5EFr6-zMismBm7MRfYDbaH6BK44-vBIqYkLWMWg"
   },
   tanstackStart: {
     server: { entry: "server" },
