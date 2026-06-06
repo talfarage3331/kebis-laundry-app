@@ -32,8 +32,16 @@ const cleanConfig = {
 const routesConfig = {
   version: 1,
   include: ["/*"],
-  exclude: ["/assets/*", "/favicon.ico"]
+  exclude: [
+    "/assets/*",
+    "/favicon.ico",
+    "/sw.js",
+    "/manifest.json",
+    "/icon-192.png",
+    "/icon-512.png",
+  ]
 };
 fs.writeFileSync('dist/client/_routes.json', JSON.stringify(routesConfig, null, 2));
 console.log('Created dist/client/_routes.json for static asset routing');
+
 
