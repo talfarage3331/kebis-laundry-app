@@ -222,6 +222,21 @@ function LaundryDashboard() {
     }
   };
 
+  // ─── Push Notification Trigger ───────────────────────────────────
+  // Calls the server-side /api/push/notify route which reads VAPID
+  // secrets from the Cloudflare environment and sends the push.
+  const sendPushEvent = async (customerEmail: string, event: string) => {
+    try {
+      await fetch("/api/push/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userEmail: customerEmail, event }),
+      });
+    } catch {
+      // Never block the UI if push fails
+    }
+  };
+
   const saveAllChanges = async (orderId: string) => {
     setSavingOrder(prev => ({ ...prev, [orderId]: true }));
     try {
@@ -236,6 +251,15 @@ function LaundryDashboard() {
       const currentOrder = orders.find(o => o.id === orderId);
       if (newStatus && newStatus !== currentOrder?.status) {
         await updateOrderStatus(orderId, newStatus);
+        // Fire the matching push notification to the customer
+        const STATUS_PUSH_MAP: Record<string, string> = {
+          picked_up: "laundry-picked-up",
+          ready: "laundry-ready",
+          completed: "laundry-delivered",
+        };
+        if (currentOrder?.user_email && STATUS_PUSH_MAP[newStatus]) {
+          await sendPushEvent(currentOrder.user_email, STATUS_PUSH_MAP[newStatus]);
+        }
       }
 
       // 3. Save message if changed
@@ -255,6 +279,20 @@ function LaundryDashboard() {
       if (invoiceFile) {
         await uploadInvoice(orderId, invoiceFile);
         setPendingInvoices(prev => { const n = { ...prev }; delete n[orderId]; return n; });
+        // Notify customer their invoice is ready
+        const invoiceOrder = orders.find(o => o.id === orderId);
+        if (invoiceOrder?.user_email) {
+          await sendPushEvent(invoiceOrder.user_email, "invoice-ready");
+        }
+      }
+
+      // Notify customer of price update (fired after price & invoice are saved)
+      const priceChanged = priceVal !== undefined && priceVal !== "";
+      if (priceChanged) {
+        const priceOrder = orders.find(o => o.id === orderId);
+        if (priceOrder?.user_email) {
+          await sendPushEvent(priceOrder.user_email, "price-updated");
+        }
       }
 
       toast.success("✅ כל השינויים נשמרו ועודכנו אצל הלקוח!");

@@ -11,7 +11,7 @@ import { collection, query, where, onSnapshot } from "firebase/firestore";
 // ── Route with typed search params ──────────────────────────────────────────
 export const Route = createFileRoute("/tracking")({
   component: Tracking,
-  validateSearch: (search: Record<string, unknown>) => ({
+  validateSearch: (search: Record<string, unknown>): { orderId?: string } => ({
     orderId: typeof search.orderId === "string" ? search.orderId : undefined,
   }),
 });

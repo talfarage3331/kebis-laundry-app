@@ -3,6 +3,8 @@ import "./lib/error-capture";
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 
+import { setServerEnv } from "./lib/server-env";
+
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
 };
@@ -93,6 +95,9 @@ function isRateLimited(ip: string): boolean {
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      if (env) {
+        setServerEnv(env);
+      }
       const ip = request.headers.get("CF-Connecting-IP") || "127.0.0.1";
       const url = new URL(request.url);
 

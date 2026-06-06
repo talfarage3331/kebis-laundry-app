@@ -15,10 +15,16 @@ dist-ssr
 .tanstack/**
 .nitro
 *.local
+scratch/
 
 # Wrangler / Cloudflare
 .wrangler/
 .dev.vars
+
+# Environment secrets — never commit!
+.env
+.env.local
+.env.*.local
 
 # Editor directories and files
 .vscode/*

@@ -12,6 +12,7 @@ import appCss from "../styles.css?url";
 import { LaundryProvider } from "@/lib/laundry-store";
 import { Toaster } from "@/components/ui/sonner";
 import { AccessibilityWidget } from "@/components/AccessibilityWidget";
+import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
 
 function NotFoundComponent() {
   return (
@@ -51,12 +52,22 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
       { title: "כביסה — שירות כביסה פרימיום" },
       { name: "description", content: "אפליקציית כביסה פרטית פרימיום — איסוף, מעקב ותשלום בלחיצה" },
+      // PWA + iOS meta
+      { name: "theme-color", content: "#6B1D5C" },
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
+      { name: "apple-mobile-web-app-title", content: "כביסה" },
+      { name: "mobile-web-app-capable", content: "yes" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "" },
       { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap" },
+      // PWA manifest
+      { rel: "manifest", href: "/manifest.json" },
+      // iOS splash / touch icons
+      { rel: "apple-touch-icon", href: "/icon-192.png" },
     ],
   }),
   shellComponent: RootShell,
@@ -82,6 +93,7 @@ function RootComponent() {
         <Outlet />
         <Toaster position="top-center" richColors />
         <AccessibilityWidget />
+        <PushNotificationPrompt />
       </LaundryProvider>
     </QueryClientProvider>
   );
