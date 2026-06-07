@@ -113,9 +113,20 @@ self.addEventListener("push", (event) => {
     ],
   };
 
-  event.waitUntil(
-    self.registration.showNotification(data.title, notificationOptions)
-  );
+  const promises = [];
+  promises.push(self.registration.showNotification(data.title, notificationOptions));
+
+  // Set the app badge count if supported (App Badging API)
+  if (navigator.setAppBadge) {
+    const badgeCount = data.badgeCount !== undefined ? parseInt(data.badgeCount, 10) : 1;
+    promises.push(
+      navigator.setAppBadge(badgeCount).catch((err) => {
+        console.error("Failed to set app badge:", err);
+      })
+    );
+  }
+
+  event.waitUntil(Promise.all(promises));
 });
 
 // ─── Notification Click ─────────────────────────────────────

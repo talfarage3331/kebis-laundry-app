@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Outlet,
@@ -87,6 +88,36 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+
+  // Clear app icon notification badge on launch/focus
+  useEffect(() => {
+    const clearBadge = () => {
+      if ("clearAppBadge" in navigator) {
+        navigator.clearAppBadge().catch((err) => {
+          console.error("Failed to clear app badge:", err);
+        });
+      }
+    };
+
+    // Clear badge immediately when app loads
+    clearBadge();
+
+    // Clear badge when user returns to/opens the application tab
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        clearBadge();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", clearBadge);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", clearBadge);
+    };
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <LaundryProvider>

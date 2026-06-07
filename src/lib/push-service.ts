@@ -46,6 +46,7 @@ export interface PushPayload {
   url: string;
   icon: string;
   badge: string;
+  badgeCount?: number;
 }
 
 // ─── Notification Templates ───────────────────────────────────────────────────
@@ -435,7 +436,10 @@ export async function notifyUser(
     return { sent: false, reason: "no_subscription" };
   }
 
-  const payload = NOTIFICATION_TEMPLATES[event];
+  const payload = {
+    ...NOTIFICATION_TEMPLATES[event],
+    badgeCount: 1,
+  };
   try {
     await sendPushNotification(sub, payload, env);
     return { sent: true };
