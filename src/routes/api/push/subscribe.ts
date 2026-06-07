@@ -10,7 +10,7 @@
  * {
  *   "endpoint": "https://fcm.googleapis.com/...",
  *   "keys": { "p256dh": "...", "auth": "..." },
- *   "userEmail": "user@example.com"   ← sent by the client hook
+ *   "userEmail": "user@example.com"   ← optional; falls back to endpoint-keyed storage
  * }
  *
  * The route is already rate-limited in server.ts (100 req/min/IP).
@@ -30,20 +30,24 @@ export const Route = createFileRoute("/api/push/subscribe")({
             userEmail?: string;
           };
 
-          // Validate required fields
+          // Validate only the fields required for push delivery
           if (
             !body?.endpoint ||
             !body?.keys?.p256dh ||
-            !body?.keys?.auth ||
-            !body?.userEmail
+            !body?.keys?.auth
           ) {
             return new Response(
-              JSON.stringify({ error: "Missing required fields: endpoint, keys.p256dh, keys.auth, userEmail" }),
+              JSON.stringify({ error: "Missing required fields: endpoint, keys.p256dh, keys.auth" }),
               { status: 400, headers: { "Content-Type": "application/json" } }
             );
           }
 
-          await saveSubscription(body.userEmail, {
+          // Use email if provided, otherwise derive a stable key from the endpoint URL
+          const storageKey = body.userEmail?.trim()
+            ? body.userEmail.trim()
+            : `anon_${btoa(body.endpoint).replace(/[^a-zA-Z0-9]/g, "").slice(0, 40)}`;
+
+          await saveSubscription(storageKey, {
             endpoint: body.endpoint,
             keys: {
               p256dh: body.keys.p256dh,
