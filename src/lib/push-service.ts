@@ -21,6 +21,7 @@ import {
   query,
   where,
   getDocs,
+  collectionGroup,
 } from "firebase/firestore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -54,15 +55,26 @@ export interface PushPayload {
 
 export type NotificationEvent =
   | "laundry-picked-up"
+  | "laundry-in-progress"
   | "laundry-ready"
   | "laundry-delivered"
   | "price-updated"
-  | "invoice-ready";
+  | "invoice-ready"
+  | "chat-to-customer"
+  | "chat-to-staff";
 
 export const NOTIFICATION_TEMPLATES: Record<NotificationEvent, PushPayload> = {
   "laundry-picked-up": {
     title: "הכביסה נלקחה 🧺",
     body: "הכביסה שלך נאספה ובדרכה לניקוי",
+    tag: "order-status",
+    url: "/tracking",
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+  },
+  "laundry-in-progress": {
+    title: "הכביסה בטיפול 🧼",
+    body: "הכביסה שלך בתהליך ניקוי וכביסה עכשיו",
     tag: "order-status",
     url: "/tracking",
     icon: "/icon-192.png",
@@ -100,11 +112,28 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationEvent, PushPayload> = {
     icon: "/icon-192.png",
     badge: "/icon-192.png",
   },
+  "chat-to-customer": {
+    title: "הודעה חדשה מצוות המכבסה 💬",
+    body: "יש לך הודעה חדשה לגבי ההזמנה שלך",
+    tag: "chat",
+    url: "/chat",
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+  },
+  "chat-to-staff": {
+    title: "הודעה חדשה מלקוח 💬",
+    body: "התקבלה הודעה חדשה בשיחה עם לקוח",
+    tag: "chat",
+    url: "/admin-chat",
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+  },
 };
 
 // Map order status strings → notification event keys
 export const STATUS_TO_EVENT: Partial<Record<string, NotificationEvent>> = {
   picked_up: "laundry-picked-up",
+  in_progress: "laundry-in-progress",
   ready: "laundry-ready",
   completed: "laundry-delivered",
 };
@@ -423,41 +452,109 @@ async function hkdf(
 // ─── High-level helpers for route handlers ────────────────────────────────────
 
 /**
- * Trigger a push notification for a specific user by email.
+ * Trigger a push notification for a specific user by email (or a group like "laundry-staff").
  * The env object is injected from the Cloudflare Worker context.
  */
 export async function notifyUser(
   userEmail: string,
   event: NotificationEvent,
-  env: { VAPID_PRIVATE_KEY: string; VAPID_PUBLIC_KEY: string; VAPID_SUBJECT: string }
+  env: { VAPID_PRIVATE_KEY: string; VAPID_PUBLIC_KEY: string; VAPID_SUBJECT: string },
+  options?: { customBody?: string; customTitle?: string }
+): Promise<{ sent: boolean; reason?: string }> {
+  if (userEmail === "laundry-staff") {
+    try {
+      const usersRef = collection(db, "users");
+      const q = query(usersRef, where("role", "in", ["admin", "laundry"]));
+      const staffSnap = await getDocs(q);
+      const staffEmails = staffSnap.docs.map(doc => doc.data().email).filter(Boolean);
+
+      const results = await Promise.all(
+        staffEmails.map(email =>
+          notifyUserSingle(email, event, env, options).catch(err => {
+            console.error(`[push-service] Failed to notify staff member ${email}:`, err);
+            return { sent: false, reason: String(err) };
+          })
+        )
+      );
+      const sent = results.some(r => r.sent);
+      return { sent, reason: `sent_to_${results.filter(r => r.sent).length}_staff_members` };
+    } catch (err) {
+      console.error("[push-service] Failed to notify laundry staff group:", err);
+      return { sent: false, reason: "staff_lookup_failed" };
+    }
+  }
+
+  return notifyUserSingle(userEmail, event, env, options);
+}
+
+/**
+ * Send push to a single email with custom badge count calculation.
+ */
+async function notifyUserSingle(
+  userEmail: string,
+  event: NotificationEvent,
+  env: { VAPID_PRIVATE_KEY: string; VAPID_PUBLIC_KEY: string; VAPID_SUBJECT: string },
+  options?: { customBody?: string; customTitle?: string }
 ): Promise<{ sent: boolean; reason?: string }> {
   const sub = await getSubscriptionByEmail(userEmail);
   if (!sub) {
     return { sent: false, reason: "no_subscription" };
   }
 
-  // Count active/pending orders for this user to display as the badge number
-  let activeCount = 1;
+  // Count metrics dynamically to set the iOS app badge
+  let activeCount = 0;
+  let unreadMessages = 0;
   try {
-    const q = query(
-      collection(db, "orders"),
-      where("user_email", "==", userEmail)
-    );
-    const snap = await getDocs(q);
-    const activeOrders = snap.docs.filter((d) => {
-      const data = d.data();
-      return data.status && data.status !== "completed";
-    });
-    activeCount = activeOrders.length || 1;
-  } catch (err) {
-    console.error("[push-service] Failed to query active orders for badging:", err);
-  }
+    // Determine if the target user is staff
+    let isStaff = false;
+    const userSnap = await getDocs(query(collection(db, "users"), where("email", "==", userEmail)));
+    if (!userSnap.empty) {
+      const role = userSnap.docs[0].data().role;
+      isStaff = role === "laundry" || role === "admin";
+    }
 
+    if (isStaff) {
+      // Staff / Admin:
+      // 1. Total active orders in the entire system
+      const snapOrders = await getDocs(collection(db, "orders"));
+      activeCount = snapOrders.docs.filter((d) => {
+        const data = d.data();
+        return data.status && data.status !== "completed" && data.delivery_method !== "placeholder" && !d.id.startsWith("placeholder");
+      }).length;
+
+      // 2. Total unread messages across all chats (sent by customers, i.e., sender_email !== userEmail)
+      const messagesGroup = collectionGroup(db, "messages");
+      const snapMessages = await getDocs(query(messagesGroup, where("is_read", "==", false)));
+      unreadMessages = snapMessages.docs.filter((d) => d.data().sender_email !== userEmail).length;
+    } else {
+      // Customer:
+      // 1. Active orders for this customer
+      const qOrders = query(collection(db, "orders"), where("user_email", "==", userEmail));
+      const snapOrders = await getDocs(qOrders);
+      activeCount = snapOrders.docs.filter((d) => {
+        const data = d.data();
+        return data.status && data.status !== "completed" && data.delivery_method !== "placeholder" && !d.id.startsWith("placeholder");
+      }).length;
+
+      // 2. Unread messages for this customer (sent by staff, i.e., sender_email !== userEmail)
+      const messagesRef = collection(db, "chats", userEmail, "messages");
+      const snapMessages = await getDocs(query(messagesRef, where("is_read", "==", false)));
+      unreadMessages = snapMessages.docs.filter((d) => d.data().sender_email !== userEmail).length;
+    }
+  } catch (err) {
+    console.error("[push-service] Failed to query user metrics for badging:", err);
+  }
+  const badgeCount = (activeCount + unreadMessages) || 1;
+
+  const baseTemplate = NOTIFICATION_TEMPLATES[event];
   const payload = {
-    ...NOTIFICATION_TEMPLATES[event],
-    badge: activeCount, // Explicitly include 'badge' field with the current counter number
-    badgeCount: activeCount,
+    ...baseTemplate,
+    title: options?.customTitle || baseTemplate.title,
+    body: options?.customBody || baseTemplate.body,
+    badge: badgeCount,
+    badgeCount: badgeCount,
   };
+
   try {
     await sendPushNotification(sub, payload, env);
     return { sent: true };

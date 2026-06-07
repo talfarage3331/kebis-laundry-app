@@ -142,6 +142,17 @@ function Chat() {
         updated_at: new Date().toISOString(),
       });
 
+      // Trigger push notification to laundry staff group
+      fetch("/api/push/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userEmail: "laundry-staff",
+          event: "chat-to-staff",
+          customBody: `${user?.name || user?.email.split("@")[0]}: ${content.substring(0, 60)}${content.length > 60 ? '...' : ''}`
+        }),
+      }).catch((err) => console.error("Failed to send push notification:", err));
+
       // The onSnapshot listener will replace the optimistic message
       // with the real one, so we remove the temp message
       setMessages((prev) => prev.filter((m) => m.id !== tempId));

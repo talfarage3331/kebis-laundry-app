@@ -37,12 +37,12 @@ function Dashboard() {
 
     const q = query(
       collection(db, `chats/${user.email}/messages`),
-      where("isRead", "==", false)
+      where("is_read", "==", false)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const unread = snapshot.docs.filter(
-        (doc) => doc.data().senderEmail !== user.email
+        (doc) => doc.data().sender_email !== user.email
       ).length;
       setUnreadCount(unread);
     });

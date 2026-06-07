@@ -254,6 +254,7 @@ function LaundryDashboard() {
         // Fire the matching push notification to the customer
         const STATUS_PUSH_MAP: Record<string, string> = {
           picked_up: "laundry-picked-up",
+          in_progress: "laundry-in-progress",
           ready: "laundry-ready",
           completed: "laundry-delivered",
         };

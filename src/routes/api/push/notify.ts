@@ -33,6 +33,8 @@ export const Route = createFileRoute("/api/push/notify")({
           const body = await request.json() as {
             userEmail?: string;
             event?: string;
+            customBody?: string;
+            customTitle?: string;
           };
 
           if (!body?.userEmail || !body?.event) {
@@ -71,7 +73,8 @@ export const Route = createFileRoute("/api/push/notify")({
           const result = await notifyUser(
             body.userEmail,
             body.event as NotificationEvent,
-            vapidEnv
+            vapidEnv,
+            { customBody: body.customBody, customTitle: body.customTitle }
           );
 
           return new Response(JSON.stringify(result), {

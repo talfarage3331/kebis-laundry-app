@@ -270,6 +270,17 @@ function AdminChat() {
         updated_at: new Date().toISOString(),
       });
 
+      // Trigger push notification to customer
+      fetch("/api/push/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userEmail: targetEmail,
+          event: "chat-to-customer",
+          customBody: `צוות המכבסה: ${content.substring(0, 60)}${content.length > 60 ? '...' : ''}`
+        }),
+      }).catch((err) => console.error("Failed to send push notification:", err));
+
       if (isNewConv) {
         // Swap active ID to the real customer_email to trigger live subscription
         setActiveConvId(targetEmail);
