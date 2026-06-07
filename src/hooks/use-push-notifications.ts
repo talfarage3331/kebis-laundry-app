@@ -78,13 +78,25 @@ async function registerServiceWorker(): Promise<ServiceWorkerRegistration> {
   if (!("serviceWorker" in navigator)) {
     throw new Error("Service workers are not supported in this browser.");
   }
-  // Use a relative path so it works under any base URL
+  console.log("[usePushNotifications] Registering service worker /sw.js...");
   const registration = await navigator.serviceWorker.register("/sw.js", {
     scope: "/",
     updateViaCache: "none", // always check for SW updates
   });
+  console.log("[usePushNotifications] Service worker registered. Scope:", registration.scope);
+  
   // Wait until the SW is active (handles first load and updates)
-  await navigator.serviceWorker.ready;
+  console.log("[usePushNotifications] Waiting for service worker to become active...");
+  if (!registration.active) {
+    console.log("[usePushNotifications] Active worker not found. Waiting on ready promise...");
+    await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Service Worker activation timed out after 10s")), 10000)
+      ),
+    ]);
+  }
+  console.log("[usePushNotifications] Service worker is active and ready.");
   return registration;
 }
 
@@ -120,14 +132,17 @@ export function usePushNotifications(
 
     (async () => {
       try {
+        console.log("[usePushNotifications] Initializing Service Worker on mount...");
         setStatus("registering");
         const reg = await registerServiceWorker();
         if (cancelled) return;
         swRegRef.current = reg;
 
         // Check whether there's already an active subscription
+        console.log("[usePushNotifications] Checking for active subscription on mount...");
         const existing = await reg.pushManager.getSubscription();
         if (cancelled) return;
+        console.log("[usePushNotifications] Active subscription checked. Found:", !!existing);
 
         if (existing) {
           setSubscription(existing);
@@ -141,8 +156,10 @@ export function usePushNotifications(
         }
       } catch (err) {
         if (cancelled) return;
+        const errMsg = err instanceof Error ? err.message : "Failed to register service worker.";
+        console.error("[usePushNotifications] Error on mount:", err);
         setStatus("error");
-        setError(err instanceof Error ? err.message : "Failed to register service worker.");
+        setError(errMsg);
       }
     })();
 
@@ -155,22 +172,35 @@ export function usePushNotifications(
   // ── requestPermission ────────────────────────────────────────────────────────
   const requestPermission = useCallback(async () => {
     try {
+      console.log("[usePushNotifications] requestPermission triggered. status =", status, "supported =", supported);
       if (!supported) {
-        throw new Error("Push notifications are not supported in this browser.");
+        throw new Error(
+          "Push notifications are not supported in this browser. Diagnostics: serviceWorker=" +
+            ("serviceWorker" in navigator) +
+            ", PushManager=" +
+            ("PushManager" in window) +
+            ", Notification=" +
+            ("Notification" in window)
+        );
       }
 
       if (typeof Notification === "undefined") {
         throw new Error("Notification API is undefined in this browser/environment.");
       }
 
-      if (status === "subscribed") return; // already done
+      if (status === "subscribed") {
+        console.log("[usePushNotifications] Already subscribed. Skipping.");
+        return;
+      }
 
       setError(null);
 
       // 1. Request notification permission IMMEDIATELY to preserve the user gesture.
       // This is crucial for Safari / iOS 16.4+ standalone PWAs!
+      console.log("[usePushNotifications] Requesting push permission...");
       setStatus("requesting-permission");
       const perm = await Notification.requestPermission();
+      console.log("[usePushNotifications] Permission prompt result:", perm);
       setPermission(perm);
 
       if (perm !== "granted") {
@@ -179,17 +209,22 @@ export function usePushNotifications(
       }
 
       // 2. Register SW if not already done
+      console.log("[usePushNotifications] Checking active registration...");
       setStatus("registering");
       let reg = swRegRef.current;
       if (!reg) {
+        console.log("[usePushNotifications] Registering new service worker instance...");
         reg = await registerServiceWorker();
         swRegRef.current = reg;
       }
+      console.log("[usePushNotifications] Service worker registration ready.");
 
       // 3. Subscribe to Push API
+      console.log("[usePushNotifications] Subscribing to PushManager...");
       setStatus("subscribing");
 
       const vapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined;
+      console.log("[usePushNotifications] VAPID Key status: present =", !!vapidPublicKey);
       if (!vapidPublicKey) {
         throw new Error(
           "VITE_VAPID_PUBLIC_KEY is not set. Add it to your .env file."
@@ -197,17 +232,21 @@ export function usePushNotifications(
       }
 
       const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey);
+      console.log("[usePushNotifications] Subscribing with key: length =", applicationServerKey.length);
 
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: applicationServerKey as any,
       });
 
+      console.log("[usePushNotifications] Subscription succeeded. Endpoint:", sub.endpoint);
       setSubscription(sub);
       setStatus("subscribed");
 
       // 4. Send subscription to backend so it can trigger pushes
+      console.log("[usePushNotifications] Sending subscription to server...");
       await sendSubscriptionToServer(sub, userEmail);
+      console.log("[usePushNotifications] Subscription synced successfully.");
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("[usePushNotifications] Error enabling push:", err);
@@ -223,6 +262,7 @@ export function usePushNotifications(
   // Automatically sync / link subscription to user's email if it becomes available or changes
   useEffect(() => {
     if (supported && subscription && userEmail && userEmail.trim() !== "") {
+      console.log("[usePushNotifications] Auto-syncing subscription for email:", userEmail);
       sendSubscriptionToServer(subscription, userEmail).catch((err) => {
         console.error("[usePushNotifications] Auto-sync subscription failed:", err);
       });
@@ -233,10 +273,12 @@ export function usePushNotifications(
   const unsubscribe = useCallback(async () => {
     if (!subscription) return;
     try {
+      console.log("[usePushNotifications] Unsubscribing...");
       await subscription.unsubscribe();
       await removeSubscriptionFromServer(subscription);
       setSubscription(null);
       setStatus("idle");
+      console.log("[usePushNotifications] Unsubscribed successfully.");
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       alert("Unsubscribe Error: " + errMsg);
@@ -256,6 +298,7 @@ async function sendSubscriptionToServer(
   userEmail?: string
 ): Promise<void> {
   const subJson = sub.toJSON();
+  console.log("[usePushNotifications] Fetching /api/push/subscribe...");
   const res = await fetch("/api/push/subscribe", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -266,8 +309,11 @@ async function sendSubscriptionToServer(
     }),
   });
   if (!res.ok) {
-    throw new Error(`Backend rejected subscription: ${res.status}`);
+    const errorText = await res.text().catch(() => "Could not read error payload");
+    console.error("[usePushNotifications] Server subscription response failed:", res.status, errorText);
+    throw new Error(`Backend rejected subscription (Status ${res.status}): ${errorText}`);
   }
+  console.log("[usePushNotifications] Server subscription response OK.");
 }
 
 async function removeSubscriptionFromServer(sub: PushSubscription): Promise<void> {

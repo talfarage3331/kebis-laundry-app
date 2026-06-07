@@ -13,16 +13,25 @@ const OFFLINE_URL = "/";
 
 // ─── Install ────────────────────────────────────────────────
 self.addEventListener("install", (event) => {
+  console.log("[Service Worker] Install event triggered");
   event.waitUntil(
     caches
       .open(APP_CACHE)
-      .then((cache) => cache.addAll([OFFLINE_URL]))
-      .then(() => self.skipWaiting())
+      .then((cache) => {
+        return cache.addAll([OFFLINE_URL]).catch((err) => {
+          console.warn("[Service Worker] Offline cache addAll failed, continuing anyway:", err);
+        });
+      })
+      .then(() => {
+        console.log("[Service Worker] skipWaiting() called");
+        return self.skipWaiting();
+      })
   );
 });
 
 // ─── Activate ───────────────────────────────────────────────
 self.addEventListener("activate", (event) => {
+  console.log("[Service Worker] Activate event triggered");
   event.waitUntil(
     caches
       .keys()
@@ -33,7 +42,10 @@ self.addEventListener("activate", (event) => {
             .map((k) => caches.delete(k))
         )
       )
-      .then(() => self.clients.claim())
+      .then(() => {
+        console.log("[Service Worker] clients.claim() called");
+        return self.clients.claim();
+      })
   );
 });
 
