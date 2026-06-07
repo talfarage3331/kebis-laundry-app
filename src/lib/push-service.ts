@@ -436,9 +436,27 @@ export async function notifyUser(
     return { sent: false, reason: "no_subscription" };
   }
 
+  // Count active/pending orders for this user to display as the badge number
+  let activeCount = 1;
+  try {
+    const q = query(
+      collection(db, "orders"),
+      where("user_email", "==", userEmail)
+    );
+    const snap = await getDocs(q);
+    const activeOrders = snap.docs.filter((d) => {
+      const data = d.data();
+      return data.status && data.status !== "completed";
+    });
+    activeCount = activeOrders.length || 1;
+  } catch (err) {
+    console.error("[push-service] Failed to query active orders for badging:", err);
+  }
+
   const payload = {
     ...NOTIFICATION_TEMPLATES[event],
-    badgeCount: 1,
+    badge: activeCount, // Explicitly include 'badge' field with the current counter number
+    badgeCount: activeCount,
   };
   try {
     await sendPushNotification(sub, payload, env);

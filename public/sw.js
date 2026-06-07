@@ -88,10 +88,15 @@ self.addEventListener("push", (event) => {
     }
   }
 
+  // For showNotification, 'badge' needs to be an image URL.
+  // If the server sends a numeric counter in the 'badge' field, we use a fallback image.
+  const isNumericBadge = data.badge !== undefined && !isNaN(data.badge);
+  const badgeImage = isNumericBadge ? "/icon-192.png" : (data.badge || "/icon-192.png");
+
   const notificationOptions = {
     body: data.body,
     icon: data.icon,
-    badge: data.badge,
+    badge: badgeImage,
     tag: data.tag,
     dir: "rtl",
     lang: "he",
@@ -118,7 +123,12 @@ self.addEventListener("push", (event) => {
 
   // Set the app badge count if supported (App Badging API)
   if (navigator.setAppBadge) {
-    const badgeCount = data.badgeCount !== undefined ? parseInt(data.badgeCount, 10) : 1;
+    let badgeCount = 1;
+    if (data.badge !== undefined && !isNaN(data.badge)) {
+      badgeCount = parseInt(data.badge, 10);
+    } else if (data.badgeCount !== undefined && !isNaN(data.badgeCount)) {
+      badgeCount = parseInt(data.badgeCount, 10);
+    }
     promises.push(
       navigator.setAppBadge(badgeCount).catch((err) => {
         console.error("Failed to set app badge:", err);

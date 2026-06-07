@@ -220,6 +220,15 @@ export function usePushNotifications(
     }
   }, [supported, status, userEmail]);
 
+  // Automatically sync / link subscription to user's email if it becomes available or changes
+  useEffect(() => {
+    if (supported && subscription && userEmail && userEmail.trim() !== "") {
+      sendSubscriptionToServer(subscription, userEmail).catch((err) => {
+        console.error("[usePushNotifications] Auto-sync subscription failed:", err);
+      });
+    }
+  }, [subscription, userEmail, supported]);
+
   // ── unsubscribe ──────────────────────────────────────────────────────────────
   const unsubscribe = useCallback(async () => {
     if (!subscription) return;
@@ -234,7 +243,6 @@ export function usePushNotifications(
       setError(errMsg);
     }
   }, [subscription]);
-
 
   return { supported, permission, subscription, status, error, requestPermission, unsubscribe };
 }
