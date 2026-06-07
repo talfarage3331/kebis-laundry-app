@@ -185,7 +185,7 @@ function AdminDashboard() {
     <AppLayout>
       <div className="min-h-screen bg-background pb-12 dir-rtl text-right overflow-x-hidden" dir="rtl">
         {/* Header banner */}
-        <header className="bg-lavender px-4 py-4 sm:p-6 rounded-b-[2rem] shadow-sm flex items-center justify-between gap-3">
+        <header className="bg-lavender px-4 pb-4 sm:px-6 sm:pb-6 pt-safe-lavender rounded-b-[2rem] shadow-sm flex items-center justify-between gap-3">
           <div className="min-w-0 flex-1">
             <span className="text-[10px] sm:text-xs font-bold text-primary bg-primary/10 px-2.5 sm:px-3 py-1 rounded-full">לוח בקרה מנהל</span>
             <h1 className="text-lg sm:text-2xl font-black mt-2 text-lavender-foreground truncate">ניהול פרופילי משתמשים</h1>

@@ -93,7 +93,7 @@ function Payments() {
 
   return (
     <AppLayout>
-      <header className="bg-primary text-primary-foreground rounded-b-[2rem] px-5 pt-6 pb-10 relative">
+      <header className="bg-primary text-primary-foreground rounded-b-[2rem] px-5 pt-safe-payments pb-10 relative">
         <button onClick={() => navigate({ to: "/" })} className="absolute top-6 left-5 size-10 grid place-items-center rounded-full bg-primary-foreground/15">
           <ArrowRight className="size-5" strokeWidth={2} />
         </button>

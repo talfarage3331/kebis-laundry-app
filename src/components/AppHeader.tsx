@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 
 export function AppHeader({ subtitle }: { subtitle?: string }) {
   return (
-    <header className="bg-primary text-primary-foreground rounded-b-[2.5rem] px-6 pt-10 pb-8 shadow-xl relative overflow-hidden">
+    <header className="bg-primary text-primary-foreground rounded-b-[2.5rem] px-6 pt-safe-primary pb-8 shadow-xl relative overflow-hidden">
       {/* Decorative background element */}
       <div className="absolute top-0 left-0 w-32 h-32 bg-primary-foreground/5 rounded-full -translate-x-1/2 -translate-y-1/2" />
       

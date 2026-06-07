@@ -93,7 +93,6 @@
     overflow-wrap: anywhere;
     word-break: break-word;
     -webkit-tap-highlight-color: transparent;
-    padding-env: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
 
   /* Prevent iOS zoom on input focus */
@@ -112,3 +111,27 @@
     touch-action: manipulation;
   }
 }
+
+/* Safe Area Inset Utility Classes */
+.pt-safe-primary {
+  padding-top: calc(2.5rem + env(safe-area-inset-top));
+}
+
+.pt-safe-lavender {
+  padding-top: calc(1rem + env(safe-area-inset-top));
+}
+
+.pt-safe-chat {
+  padding-top: calc(1rem + env(safe-area-inset-top));
+}
+
+.pt-safe-payments {
+  padding-top: calc(1.5rem + env(safe-area-inset-top));
+}
+
+@media (min-width: 640px) {
+  .pt-safe-lavender {
+    padding-top: calc(1.5rem + env(safe-area-inset-top));
+  }
+}
+

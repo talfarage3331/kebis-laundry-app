@@ -299,7 +299,7 @@ function AdminChat() {
       <div className="fixed inset-0 h-[100dvh] max-h-[100dvh] flex bg-background text-right overflow-hidden" dir="rtl">
         {/* Sidebar */}
         <aside className={`w-full md:w-[350px] flex-shrink-0 flex flex-col border-l border-border bg-slate-50/50 ${activeConvId ? 'hidden md:flex' : 'flex'}`}>
-          <header className="bg-lavender p-5 shadow-sm flex-shrink-0 relative">
+          <header className="bg-lavender px-5 pb-5 pt-safe-lavender shadow-sm flex-shrink-0 relative">
             <button 
               onClick={() => navigate({ to: user?.role === "admin" ? "/admin" : "/laundry-dashboard" })} 
               className="absolute top-5 left-5 size-10 grid place-items-center rounded-full bg-background/50 text-foreground shadow-sm hover:bg-background"
@@ -375,7 +375,7 @@ function AdminChat() {
           ) : (
             <>
               {/* Chat Header */}
-              <header className="bg-white border-b border-border p-4 flex items-center gap-3 shadow-sm flex-shrink-0">
+              <header className="bg-white border-b border-border px-4 pb-4 pt-safe-chat flex items-center gap-3 shadow-sm flex-shrink-0">
                 <button 
                   onClick={() => setActiveConvId(null)} 
                   className="md:hidden size-10 grid place-items-center rounded-full bg-muted text-foreground"
@@ -449,7 +449,10 @@ function AdminChat() {
               </div>
 
               {/* Input */}
-              <footer className="bg-white border-t border-border p-3 flex-shrink-0">
+              <footer 
+                className="bg-white border-t border-border px-3 pt-3 flex-shrink-0"
+                style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+              >
                 <form onSubmit={handleSendMessage} className="flex items-center gap-2">
                   <input
                     type="text"

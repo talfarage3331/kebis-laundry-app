@@ -161,7 +161,7 @@ function Chat() {
     <AppLayout>
       <div className="flex flex-col h-[100dvh] max-h-[100dvh] bg-slate-50 dir-rtl text-right" dir="rtl">
         {/* Header */}
-        <header className="bg-primary text-primary-foreground px-5 py-4 flex items-center shadow-md sticky top-0 z-10 shrink-0 rounded-b-3xl">
+        <header className="bg-primary text-primary-foreground px-5 pb-4 pt-safe-chat flex items-center shadow-md sticky top-0 z-10 shrink-0 rounded-b-3xl">
           <button 
             onClick={() => navigate({ to: "/" })} 
             className="size-10 grid place-items-center rounded-full bg-primary-foreground/15 ml-3"
@@ -230,7 +230,10 @@ function Chat() {
         </main>
 
         {/* Input Footer */}
-        <footer className="bg-white border-t border-border p-4 pb-8 shrink-0">
+        <footer 
+          className="bg-white border-t border-border px-4 pt-4 shrink-0"
+          style={{ paddingBottom: "calc(2rem + env(safe-area-inset-bottom))" }}
+        >
           <form onSubmit={handleSendMessage} className="flex items-center gap-2 relative">
             <input
               type="text"

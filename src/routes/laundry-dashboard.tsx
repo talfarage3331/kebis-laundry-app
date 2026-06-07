@@ -375,7 +375,7 @@ function LaundryDashboard() {
     <AppLayout>
       <div className="min-h-screen bg-background pb-12 dir-rtl text-right overflow-x-hidden" dir="rtl">
         {/* Top Header */}
-        <header className="bg-lavender p-4 sm:p-6 rounded-b-[2rem] shadow-sm flex items-center justify-between gap-3">
+        <header className="bg-lavender px-4 pb-4 sm:px-6 sm:pb-6 pt-safe-lavender rounded-b-[2rem] shadow-sm flex items-center justify-between gap-3">
           <div>
             <span className="text-xs font-bold text-primary bg-primary/10 px-3 py-1 rounded-full">מכונת כביסה וטיפול</span>
             <h1 className="text-xl sm:text-2xl font-black mt-2 text-lavender-foreground">לוח עבודה צוות מכבסה</h1>

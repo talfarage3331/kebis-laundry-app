@@ -10,7 +10,10 @@ const items = [
 export function BottomNav() {
   const { pathname } = useLocation();
   return (
-    <nav className="fixed bottom-6 inset-x-5 z-40">
+    <nav 
+      className="fixed inset-x-5 z-40"
+      style={{ bottom: "calc(1.5rem + env(safe-area-inset-bottom))" }}
+    >
       <div className="mx-auto max-w-md bg-background/80 backdrop-blur-xl border border-white/20 shadow-[0_20px_50px_-20px_rgba(0,0,0,0.3)] rounded-[2.5rem] px-2 py-2">
         <ul className="grid grid-cols-3 items-end">
           {items.map(({ to, label, Icon }, idx) => {
