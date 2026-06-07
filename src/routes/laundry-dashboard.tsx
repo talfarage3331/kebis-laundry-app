@@ -225,15 +225,23 @@ function LaundryDashboard() {
   // ─── Push Notification Trigger ───────────────────────────────────
   // Calls the server-side /api/push/notify route which reads VAPID
   // secrets from the Cloudflare environment and sends the push.
-  const sendPushEvent = async (customerEmail: string, event: string) => {
+  const sendPushEvent = async (
+    customerEmail: string,
+    event: string,
+    options?: { customBody?: string; customTitle?: string }
+  ) => {
     try {
-      await fetch("/api/push/notify", {
+      const res = await fetch("/api/push/notify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userEmail: customerEmail, event }),
+        body: JSON.stringify({ userEmail: customerEmail, event, ...options }),
       });
-    } catch {
-      // Never block the UI if push fails
+      if (!res.ok) {
+        console.warn(`[push] /api/push/notify returned ${res.status} for ${customerEmail} / ${event}`);
+      }
+    } catch (err) {
+      // Never block the UI if push fails — but do log for debugging
+      console.error("[push] Failed to reach /api/push/notify:", err);
     }
   };
 
@@ -263,10 +271,17 @@ function LaundryDashboard() {
         }
       }
 
-      // 3. Save message if changed
+      // 3. Save message if changed — and notify the customer
       const newMessage = typedMessages[orderId];
       if (newMessage !== undefined && newMessage.trim() !== "") {
         await updateOrderMessage(orderId, newMessage);
+        // Push the message text to the customer so they see it immediately
+        const msgOrder = orders.find(o => o.id === orderId);
+        if (msgOrder?.user_email) {
+          await sendPushEvent(msgOrder.user_email, "chat-to-customer", {
+            customBody: `צוות המכבסה: ${newMessage.trim().substring(0, 60)}${newMessage.trim().length > 60 ? "..." : ""}`,
+          });
+        }
       }
 
       // 4. Save delivery notes if changed
