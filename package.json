@@ -12,7 +12,7 @@
   "preview": "vite preview",
   "lint": "eslint .",
   "format": "prettier --write .",
-  "deploy": "npm run clean && npm run build && wrangler pages deploy dist/client"
+  "deploy": "rimraf dist && npm run build && wrangler pages deploy dist/client --project-name=kebis-laundry-app"
 },
   "dependencies": {
     "@cloudflare/vite-plugin": "^1.25.5",
