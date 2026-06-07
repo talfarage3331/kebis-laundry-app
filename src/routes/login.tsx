@@ -101,7 +101,7 @@ function Login() {
 
   return (
     <div className="min-h-[100dvh] bg-background flex flex-col overflow-x-hidden">
-      <div className="bg-primary text-primary-foreground rounded-b-[2rem] sm:rounded-b-[2.5rem] px-4 sm:px-6 pt-10 sm:pt-14 pb-8 sm:pb-12">
+      <div className="bg-primary text-primary-foreground rounded-b-[2rem] sm:rounded-b-[2.5rem] px-4 sm:px-6 pt-safe-auth pb-8 sm:pb-12">
         <div className="mx-auto max-w-md flex items-center gap-3">
           <div className="size-10 sm:size-12 rounded-full bg-primary-foreground/15 grid place-items-center shrink-0">
             <Flower2 className="size-5 sm:size-6" strokeWidth={1.75} />
