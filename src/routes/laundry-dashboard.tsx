@@ -259,15 +259,20 @@ function LaundryDashboard() {
       const currentOrder = orders.find(o => o.id === orderId);
       if (newStatus && newStatus !== currentOrder?.status) {
         await updateOrderStatus(orderId, newStatus);
-        // Fire the matching push notification to the customer
-        const STATUS_PUSH_MAP: Record<string, string> = {
-          picked_up: "laundry-picked-up",
-          in_progress: "laundry-in-progress",
-          ready: "laundry-ready",
-          completed: "laundry-delivered",
+        // Fire the matching push notification to the customer with a
+        // per-step Hebrew title + body so the notification is descriptive.
+        const STATUS_PUSH_MAP: Record<string, { event: string; title: string; body: string }> = {
+          picked_up:   { event: "laundry-picked-up",   title: "הכביסה נלקחה 🧺",     body: "הכביסה שלך נאספה בהצלחה ובדרכה למכבסה לניקוי" },
+          in_progress: { event: "laundry-in-progress", title: "הכביסה בטיפול 🧼",     body: "הכביסה שלך בתהליך כביסה וניקוי כרגע — נעדכן אותך כשתהיה מוכנה" },
+          ready:       { event: "laundry-ready",       title: "הכביסה מוכנה למשלוח ✨", body: "הכביסה שלך מוכנה ותגיע אליך בקרוב! ניתן לעקוב אחר הסטטוס" },
+          completed:   { event: "laundry-delivered",   title: "הכביסה נמסרה בהצלחה 🎉", body: "הכביסה שלך נמסרה. תהנה! נשמח לשמוע את חוות דעתך" },
         };
-        if (currentOrder?.user_email && STATUS_PUSH_MAP[newStatus]) {
-          await sendPushEvent(currentOrder.user_email, STATUS_PUSH_MAP[newStatus]);
+        const pushSpec = STATUS_PUSH_MAP[newStatus];
+        if (currentOrder?.user_email && pushSpec) {
+          await sendPushEvent(currentOrder.user_email, pushSpec.event, {
+            customTitle: pushSpec.title,
+            customBody: pushSpec.body,
+          });
         }
       }
 
@@ -295,10 +300,13 @@ function LaundryDashboard() {
       if (invoiceFile) {
         await uploadInvoice(orderId, invoiceFile);
         setPendingInvoices(prev => { const n = { ...prev }; delete n[orderId]; return n; });
-        // Notify customer their invoice is ready
+        // Notify customer their invoice is ready with explicit Hebrew copy
         const invoiceOrder = orders.find(o => o.id === orderId);
         if (invoiceOrder?.user_email) {
-          await sendPushEvent(invoiceOrder.user_email, "invoice-ready");
+          await sendPushEvent(invoiceOrder.user_email, "invoice-ready", {
+            customTitle: "החשבונית שלך מוכנה 🧾",
+            customBody: "החשבונית שלך הועלתה ומוכנה לצפייה ולהורדה בעמוד התשלומים",
+          });
         }
       }
 
@@ -307,7 +315,10 @@ function LaundryDashboard() {
       if (priceChanged) {
         const priceOrder = orders.find(o => o.id === orderId);
         if (priceOrder?.user_email) {
-          await sendPushEvent(priceOrder.user_email, "price-updated");
+          await sendPushEvent(priceOrder.user_email, "price-updated", {
+            customTitle: "נקבע מחיר להזמנה שלך 💳",
+            customBody: `נקבע מחיר להזמנה שלך: ₪${Number(priceVal).toLocaleString("he-IL")} — ניתן לראות פרטים בעמוד התשלומים`,
+          });
         }
       }
 
