@@ -301,7 +301,25 @@ export async function sendPushNotification(
   }
 }
 
-// ─── AES-128-GCM Payload Encryption (RFC 8291) ────────────────────────────────
+// ─── AES-128-GCM Payload Encryption (RFC 8291 / RFC 8188) ────────────────────
+//
+// Implements the Web Push message encryption standard exactly as specified in:
+//   RFC 8291 §3  — Message Encryption for Web Push
+//   RFC 8188 §2  — Encrypted Content-Encoding (aes128gcm)
+//
+// Key derivation summary (RFC 8291 §3.4):
+//   ecdhSecret = ECDH(as_private, ua_public)           -- 32 bytes
+//   ikm        = HKDF(salt=authSecret, ikm=ecdhSecret,
+//                     info="WebPush: info\0"||ua_pub||as_pub, L=32)
+//   cek        = HKDF(salt=salt, ikm=ikm,
+//                     info="Content-Encoding: aes128gcm\0", L=16)
+//   nonce      = HKDF(salt=salt, ikm=ikm,
+//                     info="Content-Encoding: nonce\0",    L=12)
+//
+// Padding (RFC 8291 §3.2): plaintext || 0x02  (single delimiter byte only)
+//
+// Content-encoding header (RFC 8188 §2.1):
+//   salt(16) | rs(4 BE) | idlen(1) | as_public_key(65) | ciphertext
 
 async function encryptPayload(
   plaintext: string,
@@ -309,142 +327,130 @@ async function encryptPayload(
   authBase64: string
 ): Promise<ArrayBuffer> {
   const plaintextBytes = new TextEncoder().encode(plaintext);
-  const authSecret = base64urlDecode(authBase64);
-  const receiverPublicKeyBytes = base64urlDecode(p256dhBase64);
+  // ua = user-agent (receiver) keys from the PushSubscription
+  const authSecret      = base64urlDecode(authBase64);
+  const uaPublicKeyBytes = base64urlDecode(p256dhBase64);
 
-  // Generate an ephemeral sender key pair
-  const senderKeyPair = await crypto.subtle.generateKey(
+  // ── 1. Ephemeral application-server (sender) key pair ────────────────────
+  const asKeyPair = await crypto.subtle.generateKey(
     { name: "ECDH", namedCurve: "P-256" },
     true,
     ["deriveBits"]
   );
 
-  const receiverPublicKey = await crypto.subtle.importKey(
+  const uaPublicKey = await crypto.subtle.importKey(
     "raw",
-    receiverPublicKeyBytes as any,
+    uaPublicKeyBytes,
     { name: "ECDH", namedCurve: "P-256" },
     false,
     []
   );
 
-  // ECDH shared secret
-  const sharedSecret = await crypto.subtle.deriveBits(
-    { name: "ECDH", public: receiverPublicKey },
-    senderKeyPair.privateKey,
+  // ── 2. ECDH shared secret (32 bytes) ─────────────────────────────────────
+  const ecdhSecret = new Uint8Array(await crypto.subtle.deriveBits(
+    { name: "ECDH", public: uaPublicKey },
+    asKeyPair.privateKey,
     256
+  ));
+
+  // Application-server public key (uncompressed, 65 bytes) — sent in header
+  const asPublicKeyBytes = new Uint8Array(
+    await crypto.subtle.exportKey("raw", asKeyPair.publicKey)
   );
 
-  // Export sender public key
-  const senderPublicKeyBytes = new Uint8Array(
-    await crypto.subtle.exportKey("raw", senderKeyPair.publicKey)
-  );
-
-  // Generate random salt (16 bytes)
+  // ── 3. Random 16-byte salt (sent in content-encoding header) ─────────────
   const salt = crypto.getRandomValues(new Uint8Array(16));
 
-  // HKDF to derive content encryption key and nonce
-  const prk = await hkdf(
-    authSecret,
-    new Uint8Array(sharedSecret),
-    buildInfo("auth", new Uint8Array(0), new Uint8Array(0)),
-    32
+  // ── 4. IKM — RFC 8291 §3.3 ───────────────────────────────────────────────
+  // ikm_info = "WebPush: info\0" || ua_public (65 B) || as_public (65 B)
+  // ikm      = HKDF-Extract(salt=authSecret, IKM=ecdhSecret)
+  //           then HKDF-Expand(PRK, ikm_info, L=32)
+  const webPushInfoPrefix = new TextEncoder().encode("WebPush: info\0");
+  const ikmInfo = new Uint8Array(
+    webPushInfoPrefix.length + uaPublicKeyBytes.length + asPublicKeyBytes.length
   );
+  ikmInfo.set(webPushInfoPrefix, 0);
+  ikmInfo.set(uaPublicKeyBytes, webPushInfoPrefix.length);
+  ikmInfo.set(asPublicKeyBytes, webPushInfoPrefix.length + uaPublicKeyBytes.length);
 
-  const cek = await hkdf(
-    salt,
-    prk,
-    buildInfo("aesgcm", receiverPublicKeyBytes, senderPublicKeyBytes),
+  const ikmPrk = await hkdfExtract(authSecret, ecdhSecret);
+  const ikm    = await hkdfExpand(ikmPrk, ikmInfo, 32);
+
+  // ── 5. CEK and Nonce — RFC 8291 §3.3 ─────────────────────────────────────
+  // Both derived from the same salt + ikm; info strings contain NO key material.
+  const contentPrk = await hkdfExtract(salt, ikm);
+  const cek   = await hkdfExpand(
+    contentPrk,
+    new TextEncoder().encode("Content-Encoding: aes128gcm\0"),
     16
   );
-
-  const nonce = await hkdf(
-    salt,
-    prk,
-    buildInfo("nonce", receiverPublicKeyBytes, senderPublicKeyBytes),
+  const nonce = await hkdfExpand(
+    contentPrk,
+    new TextEncoder().encode("Content-Encoding: nonce\0"),
     12
   );
 
-  // Pad plaintext: 2-byte big-endian length + plaintext + delimiter byte
-  const padLen = 0;
-  const paddedLen = 2 + padLen + plaintextBytes.length + 1;
-  const padded = new Uint8Array(paddedLen);
-  padded[0] = (padLen >> 8) & 0xff;
-  padded[1] = padLen & 0xff;
-  padded.set(plaintextBytes, 2 + padLen);
-  padded[2 + padLen + plaintextBytes.length] = 0x02;
+  // ── 6. Padding — RFC 8291 §3.2 ───────────────────────────────────────────
+  // Append a single 0x02 delimiter byte (no 2-byte pad-length prefix).
+  const padded = new Uint8Array(plaintextBytes.length + 1);
+  padded.set(plaintextBytes, 0);
+  padded[plaintextBytes.length] = 0x02;
 
-  // AES-GCM encrypt
-  const key = await crypto.subtle.importKey("raw", cek as any, "AES-GCM", false, ["encrypt"]);
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv: nonce as any, tagLength: 128 },
-    key,
-    padded as any
-  );
+  // ── 7. AES-128-GCM encrypt ────────────────────────────────────────────────
+  const aesKey = await crypto.subtle.importKey("raw", cek, "AES-GCM", false, ["encrypt"]);
+  const ciphertext = new Uint8Array(await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: nonce, tagLength: 128 },
+    aesKey,
+    padded
+  ));
 
-  // Build the aes128gcm content-encoding header (RFC 8188)
-  // salt(16) + rs(4) + idlen(1) + keyid + ciphertext
-  const rs = 4096;
-  const header = new Uint8Array(16 + 4 + 1 + senderPublicKeyBytes.length);
+  // ── 8. RFC 8188 §2.1 content-encoding header ─────────────────────────────
+  // | salt (16) | rs (4, big-endian) | idlen (1) | keyid (65) | ciphertext |
+  const rs     = 4096;
+  const header = new Uint8Array(16 + 4 + 1 + asPublicKeyBytes.length);
   header.set(salt, 0);
-  new DataView(header.buffer).setUint32(16, rs, false);
-  header[20] = senderPublicKeyBytes.length;
-  header.set(senderPublicKeyBytes, 21);
+  new DataView(header.buffer).setUint32(16, rs, false); // big-endian
+  header[20] = asPublicKeyBytes.length;                 // idlen = 65
+  header.set(asPublicKeyBytes, 21);
 
   const result = new Uint8Array(header.length + ciphertext.byteLength);
   result.set(header, 0);
-  result.set(new Uint8Array(ciphertext), header.length);
+  result.set(ciphertext, header.length);
   return result.buffer;
 }
 
-function buildInfo(
-  type: string,
-  clientPublicKey: Uint8Array,
-  serverPublicKey: Uint8Array
-): Uint8Array {
-  const typeBytes = new TextEncoder().encode(`Content-Encoding: ${type}\0`);
-  const label = new TextEncoder().encode("P-256\0");
-  const info = new Uint8Array(
-    typeBytes.length +
-    label.length +
-    2 + clientPublicKey.length +
-    2 + serverPublicKey.length
-  );
-  let offset = 0;
-  info.set(typeBytes, offset); offset += typeBytes.length;
-  info.set(label, offset);    offset += label.length;
-  new DataView(info.buffer).setUint16(offset, clientPublicKey.length, false); offset += 2;
-  info.set(clientPublicKey, offset); offset += clientPublicKey.length;
-  new DataView(info.buffer).setUint16(offset, serverPublicKey.length, false); offset += 2;
-  info.set(serverPublicKey, offset);
-  return info;
-}
+// ─── HKDF Primitives (RFC 5869) ───────────────────────────────────────────────
 
-async function hkdf(
-  salt: Uint8Array,
-  ikm: Uint8Array,
-  info: Uint8Array,
-  length: number
-): Promise<Uint8Array> {
-  const ikmKey = await crypto.subtle.importKey("raw", ikm as any, "HKDF", false, ["deriveBits"]);
-  // Extract
-  const hmacKey = await crypto.subtle.importKey(
+/**
+ * HKDF-Extract: PRK = HMAC-SHA-256(salt, IKM)
+ * Returns a 32-byte pseudo-random key.
+ */
+async function hkdfExtract(salt: Uint8Array, ikm: Uint8Array): Promise<Uint8Array> {
+  const key = await crypto.subtle.importKey(
     "raw",
-    salt as any,
+    salt,
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"]
   );
-  const prk = new Uint8Array(await crypto.subtle.sign("HMAC", hmacKey, ikm as any));
-  // Expand
-  const prkKey = await crypto.subtle.importKey(
+  return new Uint8Array(await crypto.subtle.sign("HMAC", key, ikm));
+}
+
+/**
+ * HKDF-Expand: T(1) = HMAC-SHA-256(PRK, info || 0x01)
+ * Returns the first `length` bytes of T(1).
+ * (Single-block expand — sufficient for L ≤ 32.)
+ */
+async function hkdfExpand(prk: Uint8Array, info: Uint8Array, length: number): Promise<Uint8Array> {
+  const key = await crypto.subtle.importKey(
     "raw",
-    prk as any,
+    prk,
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"]
   );
   const t = new Uint8Array(
-    await crypto.subtle.sign("HMAC", prkKey, new Uint8Array([...info, 0x01]) as any)
+    await crypto.subtle.sign("HMAC", key, new Uint8Array([...info, 0x01]))
   );
   return t.slice(0, length);
 }
