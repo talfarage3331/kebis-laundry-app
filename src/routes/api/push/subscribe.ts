@@ -60,9 +60,15 @@ export const Route = createFileRoute("/api/push/subscribe")({
             { status: 201, headers: { "Content-Type": "application/json" } }
           );
         } catch (err) {
-          console.error("[push/subscribe] Error:", err);
+          const message = err instanceof Error ? err.message : String(err);
+          const stack   = err instanceof Error ? err.stack  : undefined;
+          console.error("[push/subscribe] Error:", message, stack);
           return new Response(
-            JSON.stringify({ error: "Internal server error" }),
+            JSON.stringify({
+              error: "Internal server error",
+              message: message,
+              stack: stack
+            }),
             { status: 500, headers: { "Content-Type": "application/json" } }
           );
         }
