@@ -251,7 +251,7 @@ function Chat() {
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
               placeholder="הקלד הודעה כאן..."
-              className="flex-1 bg-muted/50 border border-border rounded-full h-12 px-5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+              className="flex-1 bg-muted/50 border border-border rounded-full h-12 px-5 text-base focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
               dir="rtl"
             />
             <button
