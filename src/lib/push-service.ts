@@ -237,19 +237,47 @@ async function buildVapidJwt(
 /**
  * Convert a raw 32-byte EC private key to PKCS#8 DER format
  * so that crypto.subtle.importKey("pkcs8") can accept it.
+ *
+ * DER layout (RFC 5958 / SEC 1):
+ *   SEQUENCE (65 B) {           ← 0x30 0x41
+ *     INTEGER { 0 }             ← version (v1)
+ *     SEQUENCE (19 B) {         ← AlgorithmIdentifier
+ *       OID id-ecPublicKey
+ *       OID secp256r1 (P-256)
+ *     }
+ *     OCTET STRING (39 B) {     ← privateKey wrapper
+ *       SEQUENCE (37 B) {       ← ECPrivateKey (RFC 5915)
+ *         INTEGER { 1 }         ← ecVersion
+ *         OCTET STRING (32 B)   ← the raw key bytes
+ *       }
+ *     }
+ *   }
+ *
+ * Total structure = 2 + 65 = 67 bytes.
+ * The optional [1] publicKey field inside ECPrivateKey is omitted;
+ * crypto.subtle does NOT require it and including a zero-length
+ * placeholder causes DER parsers to reject the key outright.
  */
 function toPkcs8(rawPrivateKey: Uint8Array): ArrayBuffer {
-  // PKCS#8 wrapper for P-256 private key — static prefix bytes
   const prefix = new Uint8Array([
-    0x30, 0x81, 0x87, // SEQUENCE
-    0x02, 0x01, 0x00, // version = 0
-    0x30, 0x13,       // SEQUENCE (AlgorithmIdentifier)
-    0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, // id-ecPublicKey OID
-    0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, // P-256 OID
-    0x04, 0x6d,       // OCTET STRING (inner ECPrivateKey)
-    0x30, 0x6b,       // SEQUENCE
-    0x02, 0x01, 0x01, // version = 1
-    0x04, 0x20,       // OCTET STRING (32-byte private key follows)
+    // PrivateKeyInfo SEQUENCE — 65 bytes of content
+    0x30, 0x41,
+    // version INTEGER 0
+    0x02, 0x01, 0x00,
+    // AlgorithmIdentifier SEQUENCE — 19 bytes
+    0x30, 0x13,
+    //   id-ecPublicKey OID  (1.2.840.10045.2.1)
+    0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01,
+    //   secp256r1 OID       (1.2.840.10045.3.1.7)
+    0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07,
+    // privateKey OCTET STRING — 39 bytes
+    0x04, 0x27,
+    //   ECPrivateKey SEQUENCE — 37 bytes
+    0x30, 0x25,
+    //     ecVersion INTEGER 1
+    0x02, 0x01, 0x01,
+    //     privateKey OCTET STRING — 32 bytes (raw key appended below)
+    0x04, 0x20,
   ]);
   const result = new Uint8Array(prefix.length + rawPrivateKey.length);
   result.set(prefix);

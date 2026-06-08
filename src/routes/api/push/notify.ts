@@ -82,9 +82,12 @@ export const Route = createFileRoute("/api/push/notify")({
             headers: { "Content-Type": "application/json" },
           });
         } catch (err) {
-          console.error("[push/notify] Error:", err);
+          const message = err instanceof Error ? err.message : String(err);
+          const stack   = err instanceof Error ? err.stack  : undefined;
+          console.error("[push/notify] Unhandled error:", message);
+          if (stack) console.error("[push/notify] Stack:", stack);
           return new Response(
-            JSON.stringify({ error: "Internal server error" }),
+            JSON.stringify({ error: "Internal server error", detail: message }),
             { status: 500, headers: { "Content-Type": "application/json" } }
           );
         }
