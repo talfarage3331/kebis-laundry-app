@@ -114,32 +114,32 @@
 
 /* Safe Area Inset Utility Classes */
 .pt-safe-primary {
-  padding-top: calc(2.5rem + env(safe-area-inset-top));
+  padding-top: max(4rem, calc(2.5rem + env(safe-area-inset-top)));
 }
 
 .pt-safe-lavender {
-  padding-top: calc(1rem + env(safe-area-inset-top));
+  padding-top: max(3rem, calc(1rem + env(safe-area-inset-top)));
 }
 
 .pt-safe-chat {
-  padding-top: calc(1rem + env(safe-area-inset-top));
+  padding-top: max(3rem, calc(1rem + env(safe-area-inset-top)));
 }
 
 .pt-safe-payments {
-  padding-top: calc(1.5rem + env(safe-area-inset-top));
+  padding-top: max(3.5rem, calc(1.5rem + env(safe-area-inset-top)));
 }
 
 /* Login / Signup hero banners — matches their existing pt-10/pt-14 design */
 .pt-safe-auth {
-  padding-top: calc(2.5rem + env(safe-area-inset-top));
+  padding-top: max(4rem, calc(2.5rem + env(safe-area-inset-top)));
 }
 
 @media (min-width: 640px) {
   .pt-safe-lavender {
-    padding-top: calc(1.5rem + env(safe-area-inset-top));
+    padding-top: max(3.5rem, calc(1.5rem + env(safe-area-inset-top)));
   }
   .pt-safe-auth {
-    padding-top: calc(3.5rem + env(safe-area-inset-top));
+    padding-top: max(5rem, calc(3.5rem + env(safe-area-inset-top)));
   }
 }
 
