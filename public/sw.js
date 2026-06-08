@@ -73,82 +73,124 @@ self.addEventListener("fetch", (event) => {
 });
 
 // ─── Push Event ─────────────────────────────────────────────
-// Expected push payload (JSON):
+//
+// iOS/Safari strict requirements:
+//   • self.registration.showNotification() MUST be called inside
+//     event.waitUntil() — the SW is killed the moment the Promise
+//     returned to waitUntil() settles.
+//   • Any uncaught exception before showNotification() is called
+//     silently drops the notification.
+//   • 'actions' and 'requireInteraction' are not supported on iOS
+//     and must be omitted.
+//   • navigator.setAppBadge is NOT available in SW scope (use
+//     self.navigator with a guard).
+//
+// Expected push payload (JSON from server):
 // {
-//   "title": "הכביסה מוכנה",
-//   "body": "ההזמנה שלך מוכנה לאיסוף!",
-//   "icon": "/icon-192.png",
-//   "badge": "/icon-192.png",
-//   "tag": "order-status",        // optional – replaces previous same-tag notif
-//   "url": "/"                    // optional – URL to open on click
+//   "title":      "הכביסה מוכנה ✨",
+//   "body":       "ההזמנה שלך מוכנה לאיסוף",
+//   "icon":       "/icon-192.png",
+//   "badge":      "/icon-192.png",   ← URL string (not a number)
+//   "badgeCount": 2,                 ← numeric, for App Badging API
+//   "tag":        "order-status",
+//   "url":        "/tracking"
 // }
+
 self.addEventListener("push", (event) => {
-  let data = {
-    title: "כביסה",
-    body: "יש עדכון חדש",
-    icon: "/icon-192.png",
-    badge: "/icon-192.png",
-    tag: "kebisa-general",
-    url: "/",
+  // ── Step 1: Parse payload with full defensive fallbacks ──────
+  const FALLBACK = {
+    title:      "עדכון מקביסה 🧺",
+    body:       "יש עדכון חדש בהזמנה שלך",
+    icon:       "/icon-192.png",
+    badge:      "/icon-192.png",
+    badgeCount: 1,
+    tag:        "kebisa-general",
+    url:        "/",
   };
 
-  if (event.data) {
-    try {
-      data = { ...data, ...event.data.json() };
-    } catch {
-      data.body = event.data.text();
+  let data = { ...FALLBACK };
+
+  try {
+    if (event.data) {
+      let parsed = null;
+
+      // Try JSON first (expected path)
+      try {
+        parsed = event.data.json();
+      } catch (_jsonErr) {
+        // Not JSON — treat raw text as the notification body
+        const rawText = event.data.text();
+        if (rawText && rawText.trim().length > 0) {
+          parsed = { body: rawText.trim() };
+        }
+      }
+
+      if (parsed && typeof parsed === "object") {
+        // Merge only defined, non-null fields
+        for (const key of Object.keys(parsed)) {
+          if (parsed[key] !== null && parsed[key] !== undefined) {
+            data[key] = parsed[key];
+          }
+        }
+      }
     }
+  } catch (parseErr) {
+    // Last-resort: payload extraction itself failed — use FALLBACK
+    console.error("[SW] Push payload extraction failed:", parseErr);
+    data = { ...FALLBACK };
   }
 
-  // For showNotification, 'badge' needs to be an image URL.
-  // If the server sends a numeric counter in the 'badge' field, we use a fallback image.
-  const isNumericBadge = data.badge !== undefined && !isNaN(data.badge);
-  const badgeImage = isNumericBadge ? "/icon-192.png" : (data.badge || "/icon-192.png");
+  // ── Step 2: Sanitise badge — must always be an image URL ─────
+  // The server may send badgeCount as a number for the App Badging API.
+  // The showNotification 'badge' field MUST be an image URL string.
+  const badgeUrl =
+    typeof data.badge === "string" && data.badge.startsWith("/")
+      ? data.badge
+      : "/icon-192.png";
 
+  const badgeCount =
+    typeof data.badgeCount === "number" && data.badgeCount > 0
+      ? data.badgeCount
+      : 1;
+
+  // ── Step 3: Build notification options (iOS-safe) ─────────────
+  // 'actions' and 'requireInteraction' are deliberately omitted —
+  // Safari/WebKit silently drops notifications whose options object
+  // contains unsupported keys on some versions.
   const notificationOptions = {
-    body: data.body,
-    icon: data.icon,
-    badge: badgeImage,
-    tag: data.tag,
-    dir: "rtl",
-    lang: "he",
-    // Vibration pattern: short-short-long (pulse, pause, pulse, pause, buzz)
+    body:    data.body  || FALLBACK.body,
+    icon:    data.icon  || "/icon-192.png",
+    badge:   badgeUrl,
+    tag:     data.tag   || FALLBACK.tag,
+    dir:     "rtl",
+    lang:    "he",
     vibrate: [100, 50, 100, 50, 200],
-    // Keep notification on screen until user taps it
-    requireInteraction: false,
-    // Store the target URL so notificationclick can open it
-    data: { url: data.url ?? "/" },
-    actions: [
-      {
-        action: "open",
-        title: "פתח",
-      },
-      {
-        action: "dismiss",
-        title: "סגור",
-      },
-    ],
+    // Store the target URL for the notificationclick handler
+    data:    { url: data.url || "/" },
   };
 
-  const promises = [];
-  promises.push(self.registration.showNotification(data.title, notificationOptions));
-
-  // Set the app badge count if supported (App Badging API)
-  if (navigator.setAppBadge) {
-    let badgeCount = 1;
-    if (data.badge !== undefined && !isNaN(data.badge)) {
-      badgeCount = parseInt(data.badge, 10);
-    } else if (data.badgeCount !== undefined && !isNaN(data.badgeCount)) {
-      badgeCount = parseInt(data.badgeCount, 10);
-    }
-    promises.push(
-      navigator.setAppBadge(badgeCount).catch((err) => {
-        console.error("Failed to set app badge:", err);
+  // ── Step 4: Show notification inside event.waitUntil ──────────
+  // This is the ONLY thing in waitUntil. The SW cannot terminate
+  // until this Promise resolves, guaranteeing iOS sees the call.
+  event.waitUntil(
+    self.registration
+      .showNotification(data.title || FALLBACK.title, notificationOptions)
+      .then(() => {
+        // App Badging API — self.navigator guard required in SW scope
+        const nav = self.navigator;
+        if (nav && typeof nav.setAppBadge === "function") {
+          return nav.setAppBadge(badgeCount).catch((err) => {
+            console.warn("[SW] setAppBadge failed (non-fatal):", err);
+          });
+        }
       })
-    );
-  }
-
-  event.waitUntil(Promise.all(promises));
+      .catch((err) => {
+        // showNotification itself failed — log but do NOT re-throw
+        // (re-throwing here would cause the browser to log an
+        //  "unhandled push event" error and suppress future pushes)
+        console.error("[SW] showNotification failed:", err);
+      })
+  );
 });
 
 // ─── Notification Click ─────────────────────────────────────
