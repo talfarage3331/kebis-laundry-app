@@ -8,7 +8,7 @@
 //   3. notificationclick → open/focus the app
 // ============================================================
 
-const APP_CACHE = "kebisa-v1";
+const APP_CACHE = "kebisa-v2";
 const OFFLINE_URL = "/";
 
 // ─── Install ────────────────────────────────────────────────
