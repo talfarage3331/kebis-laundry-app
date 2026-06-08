@@ -89,7 +89,7 @@ function RootShell({ children }: { children: React.ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
-  // Clear app icon notification badge on launch/focus
+  // Handle PWA automatic updates and badge clearing
   useEffect(() => {
     const clearBadge = () => {
       if ("clearAppBadge" in navigator) {
@@ -99,22 +99,57 @@ function RootComponent() {
       }
     };
 
-    // Clear badge immediately when app loads
-    clearBadge();
-
-    // Clear badge when user returns to/opens the application tab
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        clearBadge();
+    const updateServiceWorker = () => {
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.ready
+          .then((registration) => {
+            console.log("[PWA] Checking for service worker updates...");
+            return registration.update();
+          })
+          .catch((err) => {
+            console.warn("[PWA] Service worker update check failed:", err);
+          });
       }
     };
 
+    // Initial check and badge clear on mount
+    clearBadge();
+    updateServiceWorker();
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        clearBadge();
+        updateServiceWorker();
+      }
+    };
+
+    const handleFocus = () => {
+      clearBadge();
+      updateServiceWorker();
+    };
+
+    const handleControllerChange = () => {
+      console.log("[PWA] Controller changed (newer service worker active). Reloading page smoothly...");
+      window.location.reload();
+    };
+
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("focus", clearBadge);
+    window.addEventListener("focus", handleFocus);
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.addEventListener("controllerchange", handleControllerChange);
+    }
+
+    // Check for updates periodically in the background (every 5 minutes)
+    const updateInterval = setInterval(updateServiceWorker, 5 * 60 * 1000);
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("focus", clearBadge);
+      window.removeEventListener("focus", handleFocus);
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.removeEventListener("controllerchange", handleControllerChange);
+      }
+      clearInterval(updateInterval);
     };
   }, []);
 

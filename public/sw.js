@@ -14,6 +14,7 @@ const OFFLINE_URL = "/";
 // ─── Install ────────────────────────────────────────────────
 self.addEventListener("install", (event) => {
   console.log("[Service Worker] Install event triggered");
+  self.skipWaiting(); // Call immediately
   event.waitUntil(
     caches
       .open(APP_CACHE)
@@ -21,10 +22,6 @@ self.addEventListener("install", (event) => {
         return cache.addAll([OFFLINE_URL]).catch((err) => {
           console.warn("[Service Worker] Offline cache addAll failed, continuing anyway:", err);
         });
-      })
-      .then(() => {
-        console.log("[Service Worker] skipWaiting() called");
-        return self.skipWaiting();
       })
   );
 });
