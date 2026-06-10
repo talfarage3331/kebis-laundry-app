@@ -14,6 +14,7 @@ import { LaundryProvider } from "@/lib/laundry-store";
 import { Toaster } from "@/components/ui/sonner";
 import { AccessibilityWidget } from "@/components/AccessibilityWidget";
 import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
+import { PwaTopSpacer } from "@/components/PwaTopSpacer";
 
 function NotFoundComponent() {
   return (
@@ -77,11 +78,42 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   errorComponent: ErrorComponent,
 });
 
+/**
+ * Inline script injected into <head> before any CSS renders.
+ * Reads the iOS safe-area-inset-top via a temporary element and exposes it
+ * as --sat on :root, enabling all pt-safe-* utilities to work reliably
+ * even on the very first paint in PWA standalone mode.
+ */
+const SAFE_AREA_SCRIPT = `
+(function() {
+  var isStandalone = window.navigator.standalone === true ||
+    window.matchMedia('(display-mode: standalone)').matches;
+  if (!isStandalone) return;
+  // Read env(safe-area-inset-top) via a tiny off-screen element
+  var el = document.createElement('div');
+  el.style.cssText = 'position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top,47px);pointer-events:none;visibility:hidden';
+  document.documentElement.appendChild(el);
+  var h = el.getBoundingClientRect().height || 47;
+  el.remove();
+  document.documentElement.style.setProperty('--sat', h + 'px');
+  document.documentElement.setAttribute('data-standalone', 'true');
+})();
+`;
+
 function RootShell({ children }: { children: React.ReactNode }) {
   return (
     <html lang="he" dir="rtl">
-      <head><HeadContent /></head>
-      <body>{children}<Scripts /></body>
+      <head>
+        <HeadContent />
+        {/* Must be synchronous and first so --sat is available before first paint */}
+        <script dangerouslySetInnerHTML={{ __html: SAFE_AREA_SCRIPT }} />
+      </head>
+      <body>
+        {/* Global PWA status-bar spacer — primary color, zero height in browser */}
+        <PwaTopSpacer color="var(--primary)" />
+        {children}
+        <Scripts />
+      </body>
     </html>
   );
 }
@@ -89,7 +121,7 @@ function RootShell({ children }: { children: React.ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
-  // Detect standalone PWA mode and set data-standalone attribute
+  // Detect standalone PWA mode — update CSS var if JS runs after initial script
   useEffect(() => {
     const isStandalone =
       window.matchMedia("(display-mode: standalone)").matches ||
@@ -97,7 +129,14 @@ function RootComponent() {
 
     if (isStandalone) {
       document.documentElement.setAttribute("data-standalone", "true");
-      console.log("[PWA] Standalone mode detected");
+      // Re-measure in case the inline script ran before iOS applied safe areas
+      const el = document.createElement("div");
+      el.style.cssText = "position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top,47px);pointer-events:none;visibility:hidden";
+      document.documentElement.appendChild(el);
+      const h = el.getBoundingClientRect().height || 47;
+      el.remove();
+      document.documentElement.style.setProperty("--sat", `${h}px`);
+      console.log(`[PWA] Standalone mode, safe-area-top=${h}px`);
     }
   }, []);
 

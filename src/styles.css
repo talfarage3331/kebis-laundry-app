@@ -112,24 +112,34 @@
   }
 }
 
-/* Safe Area Inset Utility Classes */
+/* ─── Safe Area Inset Utilities ────────────────────────────────────────
+ *
+ * --sat is set by the inline JS script in __root.tsx for PWA standalone mode.
+ * The env() fallback handles the regular browser case.
+ * max() ensures a minimum padding even when safe-area-inset-top is 0.
+ */
+
+/* Primary (purple) hero headers — home, tracking, delivery, profile */
 .pt-safe-primary {
   padding-top: max(4rem, calc(2.5rem + env(safe-area-inset-top)));
 }
 
+/* Lavender headers — admin, laundry-dashboard, admin-chat sidebar */
 .pt-safe-lavender {
   padding-top: max(3rem, calc(1rem + env(safe-area-inset-top)));
 }
 
+/* Chat page header */
 .pt-safe-chat {
   padding-top: max(3rem, calc(1rem + env(safe-area-inset-top)));
 }
 
+/* Payments page header */
 .pt-safe-payments {
   padding-top: max(3.5rem, calc(1.5rem + env(safe-area-inset-top)));
 }
 
-/* Login / Signup hero banners — matches their existing pt-10/pt-14 design */
+/* Login / Signup hero banners */
 .pt-safe-auth {
   padding-top: max(4rem, calc(2.5rem + env(safe-area-inset-top)));
 }
@@ -143,13 +153,24 @@
   }
 }
 
+/* ─── PWA Standalone: chat header padding override ─────────────────────
+ *
+ * The PwaTopSpacer in __root.tsx already adds a fixed overlay that visually
+ * covers the status bar with the correct background color. The headers below
+ * it just need their top padding to account for both the spacer height AND
+ * enough room for the content.
+ *
+ * We use var(--sat, 47px) which is injected by the inline script. This is
+ * more reliable than env() alone because iOS sometimes returns 0 for env()
+ * on the first render in standalone mode.
+ */
 @media (display-mode: standalone) {
   .chat-header-standalone {
-    padding-top: calc(44px + env(safe-area-inset-top, 47px)) !important;
+    padding-top: calc(var(--sat, env(safe-area-inset-top, 47px)) + 1rem) !important;
   }
 }
 
 html[data-standalone="true"] .chat-header-standalone {
-  padding-top: calc(44px + env(safe-area-inset-top, 47px)) !important;
+  padding-top: calc(var(--sat, env(safe-area-inset-top, 47px)) + 1rem) !important;
 }
 
