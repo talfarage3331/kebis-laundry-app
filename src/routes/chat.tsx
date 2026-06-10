@@ -172,7 +172,7 @@ function Chat() {
     <AppLayout>
       <div className="flex flex-col h-[100dvh] max-h-[100dvh] bg-slate-50 dir-rtl text-right" dir="rtl">
         {/* Header */}
-        <header className="bg-primary text-primary-foreground px-5 pb-4 pt-14 flex items-center shadow-md sticky top-0 z-10 shrink-0 rounded-b-3xl">
+        <header className="bg-primary text-primary-foreground px-5 pb-4 pt-14 chat-header-standalone flex items-center shadow-md sticky top-0 z-10 shrink-0 rounded-b-3xl">
           <button 
             onClick={() => navigate({ to: "/" })} 
             className="size-10 grid place-items-center rounded-full bg-primary-foreground/15 ml-3"
