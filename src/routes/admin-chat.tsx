@@ -386,7 +386,7 @@ function AdminChat() {
           ) : (
             <>
               {/* Chat Header */}
-              <header className="bg-white border-b border-border px-4 pb-4 pt-14 flex items-center gap-3 shadow-sm flex-shrink-0">
+              <header className="bg-white border-b border-border px-4 pb-4 pt-14 chat-header-standalone flex items-center gap-3 shadow-sm flex-shrink-0">
                 <button 
                   onClick={() => setActiveConvId(null)} 
                   className="md:hidden size-10 grid place-items-center rounded-full bg-muted text-foreground"

@@ -89,6 +89,18 @@ function RootShell({ children }: { children: React.ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
+  // Detect standalone PWA mode and set data-standalone attribute
+  useEffect(() => {
+    const isStandalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (window.navigator as any).standalone === true;
+
+    if (isStandalone) {
+      document.documentElement.setAttribute("data-standalone", "true");
+      console.log("[PWA] Standalone mode detected");
+    }
+  }, []);
+
   // Handle PWA automatic updates and badge clearing
   useEffect(() => {
     const clearBadge = () => {
