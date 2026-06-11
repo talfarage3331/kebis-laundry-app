@@ -3,17 +3,17 @@
   "private": true,
   "sideEffects": false,
   "type": "module",
-"scripts": {
-  "clean": "npx rimraf dist",
-  "dev": "vite dev",
-  "build": "npm run clean && vite build",
-  "postbuild": "node scripts/postbuild.cjs",
-  "build:dev": "vite build --mode development",
-  "preview": "vite preview",
-  "lint": "eslint .",
-  "format": "prettier --write .",
-  "deploy": "npm run build && wrangler pages deploy dist/client --project-name=kebis-laundry-app"
-},
+  "scripts": {
+    "clean": "npx rimraf dist",
+    "dev": "vite dev",
+    "build": "npm run clean && vite build",
+    "postbuild": "node scripts/postbuild.cjs",
+    "build:dev": "vite build --mode development",
+    "preview": "vite preview",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "deploy": "npm run build && wrangler pages deploy dist/client --project-name=kebis-laundry-app"
+  },
   "dependencies": {
     "@cloudflare/vite-plugin": "^1.25.5",
     "@hookform/resolvers": "^5.2.2",
@@ -56,6 +56,7 @@
     "firebase": "^12.14.0",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.575.0",
+    "nitro": "3.0.260603-beta",
     "react": "^19.2.0",
     "react-day-picker": "^9.14.0",
     "react-dom": "^19.2.0",
@@ -72,7 +73,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
-    "@lovable.dev/vite-tanstack-config": "^1.7.0",
+    "@lovable.dev/vite-tanstack-config": "2.3.2",
     "@types/node": "^22.16.5",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
@@ -90,5 +91,4 @@
     "vite": "^7.3.1",
     "rimraf": "^5.0.0"
   }
-  }
-
+}
