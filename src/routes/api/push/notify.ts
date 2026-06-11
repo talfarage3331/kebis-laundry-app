@@ -1,27 +1,11 @@
 /**
  * POST /api/push/notify
- * ─────────────────────────────────────────────────────────────────
- * Internal server route — called from laundry-dashboard's
- * saveAllChanges() whenever a status, price, or invoice changes.
+ * Server-side trigger to send an FCM push to a user.
  *
- * Expected JSON body:
- * {
- *   "userEmail": "customer@example.com",
- *   "event": "laundry-ready" | "laundry-picked-up" | "laundry-delivered"
- *           | "price-updated" | "invoice-ready"
- * }
- *
- * The Cloudflare env (with VAPID secrets) is accessed via the
- * request's platform context injected by the worker runtime.
+ * Body: { userEmail, event, customTitle?, customBody? }
  */
-
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  notifyUser,
-  NotificationEvent,
-  NOTIFICATION_TEMPLATES,
-} from "@/lib/push-service";
-import { getServerEnv } from "@/lib/server-env";
+import { notifyUser, NotificationEvent, NOTIFICATION_TEMPLATES } from "@/lib/push-service";
 
 const VALID_EVENTS = new Set(Object.keys(NOTIFICATION_TEMPLATES));
 
@@ -30,7 +14,7 @@ export const Route = createFileRoute("/api/push/notify")({
     handlers: {
       POST: async ({ request }) => {
         try {
-          const body = await request.json() as {
+          const body = (await request.json()) as {
             userEmail?: string;
             event?: string;
             customBody?: string;
@@ -43,39 +27,25 @@ export const Route = createFileRoute("/api/push/notify")({
               { status: 400, headers: { "Content-Type": "application/json" } }
             );
           }
-
           if (!VALID_EVENTS.has(body.event)) {
             return new Response(
-              JSON.stringify({
-                error: `Invalid event. Must be one of: ${[...VALID_EVENTS].join(", ")}`,
-              }),
+              JSON.stringify({ error: `Invalid event. Must be one of: ${[...VALID_EVENTS].join(", ")}` }),
               { status: 400, headers: { "Content-Type": "application/json" } }
             );
           }
 
-          // Read VAPID secrets from Cloudflare Worker environment (globally stored) or process.env (fallback)
-          const env = getServerEnv();
-
-          const vapidEnv = {
-            VAPID_PRIVATE_KEY: env.VAPID_PRIVATE_KEY ?? "",
-            VAPID_PUBLIC_KEY: env.VAPID_PUBLIC_KEY ?? "",
-            VAPID_SUBJECT: env.VAPID_SUBJECT ?? "mailto:admin@kebisa.app",
-          };
-
-          if (!vapidEnv.VAPID_PRIVATE_KEY || !vapidEnv.VAPID_PUBLIC_KEY) {
-            console.error("[push/notify] VAPID secrets not configured in environment");
+          if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
+            console.error("[push/notify] FIREBASE_SERVICE_ACCOUNT secret missing");
             return new Response(
               JSON.stringify({ error: "Push service not configured" }),
               { status: 503, headers: { "Content-Type": "application/json" } }
             );
           }
 
-          const result = await notifyUser(
-            body.userEmail,
-            body.event as NotificationEvent,
-            vapidEnv,
-            { customBody: body.customBody, customTitle: body.customTitle }
-          );
+          const result = await notifyUser(body.userEmail, body.event as NotificationEvent, {
+            customBody: body.customBody,
+            customTitle: body.customTitle,
+          });
 
           return new Response(JSON.stringify(result), {
             status: 200,
@@ -83,9 +53,7 @@ export const Route = createFileRoute("/api/push/notify")({
           });
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
-          const stack   = err instanceof Error ? err.stack  : undefined;
           console.error("[push/notify] Unhandled error:", message);
-          if (stack) console.error("[push/notify] Stack:", stack);
           return new Response(
             JSON.stringify({ error: "Internal server error", detail: message }),
             { status: 500, headers: { "Content-Type": "application/json" } }
