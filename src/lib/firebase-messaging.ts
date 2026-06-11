@@ -26,7 +26,7 @@ const firebaseConfig = {
  *
  * It's a PUBLIC key — safe to commit. Without it getToken() throws.
  */
-export const FCM_VAPID_PUBLIC_KEY = "REPLACE_WITH_YOUR_FCM_WEB_PUSH_CERTIFICATE_KEY";
+export const FCM_VAPID_PUBLIC_KEY = "BMF5z1ekGHC08nZjh-IIwG0zklaM9MLzimhzgt28mfBIMvo_MaDwJZqD2mA4Ictm4EkfN4iRvJRoF7M-PY_hl1A";
 
 let messagingInstance: Messaging | null = null;
 
