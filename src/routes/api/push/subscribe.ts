@@ -1,74 +1,56 @@
 /**
  * POST /api/push/subscribe
- * ─────────────────────────────────────────────────────────────────
- * Called by the client hook (use-push-notifications.ts) after the
- * user grants Notification permission and the browser creates a
- * PushSubscription. Saves the subscription in Firestore so the
- * backend can send pushes to this device later.
+ * Saves an FCM registration token for the user.
  *
- * Expected JSON body:
- * {
- *   "endpoint": "https://fcm.googleapis.com/...",
- *   "keys": { "p256dh": "...", "auth": "..." },
- *   "userEmail": "user@example.com"   ← optional; falls back to endpoint-keyed storage
- * }
+ * Body: { fcmToken: string, userEmail?: string }
  *
- * The route is already rate-limited in server.ts (100 req/min/IP).
+ * Legacy body { endpoint, keys, userEmail } is still accepted for
+ * backward-compat but is now a no-op write to a legacy collection.
  */
-
 import { createFileRoute } from "@tanstack/react-router";
-import { saveSubscription } from "@/lib/push-service";
+import { saveFcmToken, saveSubscription } from "@/lib/push-service";
 
 export const Route = createFileRoute("/api/push/subscribe")({
   server: {
     handlers: {
       POST: async ({ request }) => {
         try {
-          const body = await request.json() as {
+          const body = (await request.json()) as {
+            fcmToken?: string;
+            userEmail?: string;
             endpoint?: string;
             keys?: { p256dh?: string; auth?: string };
-            userEmail?: string;
           };
 
-          // Validate only the fields required for push delivery
-          if (
-            !body?.endpoint ||
-            !body?.keys?.p256dh ||
-            !body?.keys?.auth
-          ) {
+          if (body?.fcmToken && body?.userEmail) {
+            await saveFcmToken(body.userEmail, body.fcmToken);
             return new Response(
-              JSON.stringify({ error: "Missing required fields: endpoint, keys.p256dh, keys.auth" }),
-              { status: 400, headers: { "Content-Type": "application/json" } }
+              JSON.stringify({ success: true, type: "fcm" }),
+              { status: 201, headers: { "Content-Type": "application/json" } }
             );
           }
 
-          // Use email if provided, otherwise derive a stable key from the endpoint URL
-          const storageKey = body.userEmail?.trim()
-            ? body.userEmail.trim()
-            : `anon_${btoa(body.endpoint).replace(/[^a-zA-Z0-9]/g, "").slice(0, 40)}`;
-
-          await saveSubscription(storageKey, {
-            endpoint: body.endpoint,
-            keys: {
-              p256dh: body.keys.p256dh,
-              auth: body.keys.auth,
-            },
-          });
+          // Legacy web-push shape — accept silently
+          if (body?.endpoint && body?.keys?.p256dh && body?.keys?.auth) {
+            await saveSubscription(body.userEmail || "anon", {
+              endpoint: body.endpoint,
+              keys: { p256dh: body.keys.p256dh, auth: body.keys.auth },
+            });
+            return new Response(
+              JSON.stringify({ success: true, type: "legacy" }),
+              { status: 201, headers: { "Content-Type": "application/json" } }
+            );
+          }
 
           return new Response(
-            JSON.stringify({ success: true, message: "Subscription saved" }),
-            { status: 201, headers: { "Content-Type": "application/json" } }
+            JSON.stringify({ error: "Missing fcmToken+userEmail (or legacy endpoint+keys)" }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
           );
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
-          const stack   = err instanceof Error ? err.stack  : undefined;
-          console.error("[push/subscribe] Error:", message, stack);
+          console.error("[push/subscribe] Error:", message);
           return new Response(
-            JSON.stringify({
-              error: "Internal server error",
-              message: message,
-              stack: stack
-            }),
+            JSON.stringify({ error: "Internal server error", message }),
             { status: 500, headers: { "Content-Type": "application/json" } }
           );
         }
