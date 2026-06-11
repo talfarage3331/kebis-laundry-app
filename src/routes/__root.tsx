@@ -207,6 +207,7 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <LaundryProvider>
+        <AppBadgeBridge />
         <Outlet />
         <Toaster position="top-center" richColors />
         <AccessibilityWidget />
@@ -215,3 +216,9 @@ function RootComponent() {
     </QueryClientProvider>
   );
 }
+
+function AppBadgeBridge() {
+  useAppBadge();
+  return null;
+}
+
