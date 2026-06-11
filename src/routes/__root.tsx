@@ -14,6 +14,7 @@ import { LaundryProvider } from "@/lib/laundry-store";
 import { Toaster } from "@/components/ui/sonner";
 import { AccessibilityWidget } from "@/components/AccessibilityWidget";
 import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
+import { useAppBadge } from "@/hooks/use-app-badge";
 import { PwaTopSpacer } from "@/components/PwaTopSpacer";
 
 function NotFoundComponent() {
