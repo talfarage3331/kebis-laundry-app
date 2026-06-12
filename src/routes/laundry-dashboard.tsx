@@ -236,12 +236,24 @@ function LaundryDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userEmail: customerEmail, event, ...options }),
       });
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
-        console.warn(`[push] /api/push/notify returned ${res.status} for ${customerEmail} / ${event}`);
+        const errMsg = data?.error || `שגיאת שרת (${res.status})`;
+        console.warn(`[push] /api/push/notify failed:`, errMsg);
+        toast.error(`התראת הפוש ללקוח נכשלה: ${errMsg}`);
+        return;
       }
-    } catch (err) {
-      // Never block the UI if push fails — but do log for debugging
+      if (data && data.failed > 0) {
+        const details = data.errors?.join(", ") || "שגיאה לא ידועה ב-FCM";
+        toast.warning(`הזמנה עודכנה, אך שליחת התראת הפוש נכשלה: ${details}`);
+      } else if (data && data.sent === 0) {
+        toast.warning("הזמנה עודכנה, אך ללקוח זה אין מכשירים רשומים לקבלת התראות.");
+      } else {
+        toast.success("התראת פוש נשלחה בהצלחה ללקוח!");
+      }
+    } catch (err: any) {
       console.error("[push] Failed to reach /api/push/notify:", err);
+      toast.error(`שגיאה בשליחת התראת פוש: ${err?.message || err}`);
     }
   };
 

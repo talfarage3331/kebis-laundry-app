@@ -8,6 +8,8 @@
  * and send pushes — all over plain HTTPS, Workers-compatible.
  */
 
+import { getServerEnv } from "./server-env";
+
 interface ServiceAccount {
   client_email: string;
   private_key: string;
@@ -20,16 +22,25 @@ const SCOPES =
 let cachedToken: { token: string; exp: number } | null = null;
 
 function getServiceAccount(): ServiceAccount {
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (!raw) throw new Error("FIREBASE_SERVICE_ACCOUNT secret is not set");
+  const env = getServerEnv();
+  const raw = env.FIREBASE_SERVICE_ACCOUNT;
+  if (!raw) {
+    const errMsg = "[fcm-admin] CRITICAL: FIREBASE_SERVICE_ACCOUNT environment variable is not set on the server/worker bindings.";
+    console.error(errMsg);
+    throw new Error(errMsg);
+  }
   let parsed: ServiceAccount;
   try {
     parsed = JSON.parse(raw);
-  } catch {
-    throw new Error("FIREBASE_SERVICE_ACCOUNT is not valid JSON — paste the full service-account JSON file contents");
+  } catch (err: any) {
+    const errMsg = `[fcm-admin] CRITICAL: FIREBASE_SERVICE_ACCOUNT secret failed to parse as JSON. Error: ${err?.message || String(err)}`;
+    console.error(errMsg);
+    throw new Error(errMsg);
   }
   if (!parsed.client_email || !parsed.private_key || !parsed.project_id) {
-    throw new Error("FIREBASE_SERVICE_ACCOUNT missing required fields (client_email, private_key, project_id)");
+    const errMsg = "[fcm-admin] CRITICAL: FIREBASE_SERVICE_ACCOUNT JSON is missing required fields (client_email, private_key, project_id).";
+    console.error(errMsg);
+    throw new Error(errMsg);
   }
   return parsed;
 }

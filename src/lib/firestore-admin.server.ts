@@ -170,3 +170,44 @@ export async function saveOrphanToken(token: string, userEmail: string | null): 
     ],
   });
 }
+
+/** Log a push notification attempt and details to notification_logs collection. */
+export async function logNotification(data: {
+  recipient: string;
+  event: string;
+  title: string;
+  body: string;
+  status: "success" | "failed";
+  results?: any;
+  error?: string;
+}): Promise<void> {
+  const logId = `log_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  const fields: any = {
+    recipient: { stringValue: data.recipient },
+    event: { stringValue: data.event },
+    title: { stringValue: data.title },
+    body: { stringValue: data.body },
+    status: { stringValue: data.status },
+  };
+
+  if (data.results) {
+    fields.results = { stringValue: typeof data.results === "string" ? data.results : JSON.stringify(data.results) };
+  }
+  if (data.error) {
+    fields.error = { stringValue: data.error };
+  }
+
+  await fsRequest(":commit", {
+    writes: [
+      {
+        update: {
+          name: `${docsRoot()}/notification_logs/${logId}`,
+          fields,
+        },
+        updateTransforms: [
+          { fieldPath: "timestamp", setToServerValue: "REQUEST_TIME" },
+        ],
+      },
+    ],
+  });
+}

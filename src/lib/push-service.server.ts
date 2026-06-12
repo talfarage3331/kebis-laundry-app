@@ -80,7 +80,7 @@ export async function notifyUser(
   const targets = await getTargetUsers(userEmail);
   if (targets.length === 0) {
     console.warn(`[push] no Firestore user found for "${userEmail}"`);
-    return { sent: 0, failed: 0, note: "no user found for email" };
+    return { sent: 0, failed: 0, note: "no user found for email", errors: ["no user found for email"] };
   }
 
   // 1) Bump unreadCount on every target user so the in-app badge
@@ -99,12 +99,14 @@ export async function notifyUser(
   ];
   if (tokens.length === 0) {
     console.warn(`[push] user "${userEmail}" has no FCM tokens registered`);
-    return { sent: 0, failed: 0, note: "no tokens registered for user" };
+    return { sent: 0, failed: 0, note: "no tokens registered for user", errors: ["no tokens registered for user"] };
   }
 
   let sent = 0;
   let failed = 0;
   const invalidTokens: string[] = [];
+  const errors: string[] = [];
+  const resultsDetail: any[] = [];
 
   await Promise.all(
     tokens.map(async (token) => {
@@ -117,6 +119,12 @@ export async function notifyUser(
           tag: tpl.tag,
           badgeCount: 1,
         });
+        resultsDetail.push({
+          token: token.substring(0, 15) + "...",
+          ok: res.ok,
+          status: res.status,
+          body: res.body,
+        });
         if (res.ok) {
           sent++;
         } else {
@@ -124,12 +132,20 @@ export async function notifyUser(
           const errCode = res.body?.error?.details?.find?.(
             (d: any) => d?.errorCode
           )?.errorCode;
+          const errMsg = res.body?.error?.message || "Unknown error";
+          errors.push(`${errCode || "FCM_ERROR"}: ${errMsg}`);
           // UNREGISTERED / INVALID_ARGUMENT → token expired, prune it
           if (res.status === 404 || errCode === "UNREGISTERED") invalidTokens.push(token);
           console.warn("[fcm] send failed", res.status, JSON.stringify(res.body));
         }
-      } catch (err) {
+      } catch (err: any) {
         failed++;
+        const errMsg = err?.message || String(err);
+        errors.push(errMsg);
+        resultsDetail.push({
+          token: token.substring(0, 15) + "...",
+          error: errMsg,
+        });
         console.error("[fcm] send error", err);
       }
     })
@@ -141,6 +157,22 @@ export async function notifyUser(
     } catch {}
   }
 
+  // Log to Firestore notification_logs collection
+  try {
+    const { logNotification } = await import("./firestore-admin.server");
+    await logNotification({
+      recipient: userEmail,
+      event,
+      title: options?.customTitle || tpl.title,
+      body: options?.customBody || tpl.body,
+      status: failed === 0 && sent > 0 ? "success" : "failed",
+      results: resultsDetail,
+      error: errors.length > 0 ? errors.join("; ") : undefined,
+    });
+  } catch (logErr) {
+    console.error("[push] Failed to write notification log:", logErr);
+  }
+
   console.log(`[push] event=${event} target=${userEmail} sent=${sent} failed=${failed}`);
-  return { sent, failed };
+  return { sent, failed, errors };
 }

@@ -16,6 +16,7 @@
  */
 import { createFileRoute } from "@tanstack/react-router";
 import { sendFcmMessage } from "@/lib/fcm-admin.server";
+import { getServerEnv } from "@/lib/server-env";
 
 const VALID_EVENTS = new Set([
   "laundry-picked-up",
@@ -56,7 +57,24 @@ export const Route = createFileRoute("/api/push/notify")({
               url: targetUrl,
               badgeCount: 1,
             });
-            return new Response(JSON.stringify({ success: true, result: res }), {
+
+            // Log direct-token pushes to Firestore notification_logs too!
+            try {
+              const { logNotification } = await import("@/lib/firestore-admin.server");
+              await logNotification({
+                recipient: `token:${body.token.substring(0, 15)}...`,
+                event: "direct-token-test",
+                title,
+                body: bodyText,
+                status: res.ok ? "success" : "failed",
+                results: res.body,
+                error: res.ok ? undefined : `FCM send returned status ${res.status}`,
+              });
+            } catch (logErr) {
+              console.error("[push/notify] Failed to log direct-token notification:", logErr);
+            }
+
+            return new Response(JSON.stringify({ success: res.ok, result: res }), {
               status: 200,
               headers: { "Content-Type": "application/json" },
             });
@@ -81,8 +99,9 @@ export const Route = createFileRoute("/api/push/notify")({
             );
           }
 
-          if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
-            console.error("[push/notify] FIREBASE_SERVICE_ACCOUNT secret missing");
+          const env = getServerEnv();
+          if (!env.FIREBASE_SERVICE_ACCOUNT) {
+            console.error("[push/notify] FIREBASE_SERVICE_ACCOUNT secret missing in getServerEnv()");
             return new Response(
               JSON.stringify({ error: "Push service not configured: FIREBASE_SERVICE_ACCOUNT secret missing" }),
               { status: 503, headers: { "Content-Type": "application/json" } }
@@ -100,7 +119,8 @@ export const Route = createFileRoute("/api/push/notify")({
           );
 
           console.log("[push/notify]", body.event, "→", body.userEmail, JSON.stringify(result));
-          return new Response(JSON.stringify(result), {
+          const success = result.sent > 0 && result.failed === 0;
+          return new Response(JSON.stringify({ success, ...result }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           });

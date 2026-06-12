@@ -285,7 +285,18 @@ function AdminChat() {
           event: "chat-to-customer",
           customBody: `צוות המכבסה: ${content.substring(0, 60)}${content.length > 60 ? '...' : ''}`
         }),
-      }).catch((err) => console.error("Failed to send push notification:", err));
+      })
+        .then(async (res) => {
+          const data = await res.json().catch(() => null);
+          if (!res.ok) {
+            toast.error(`התראת הפוש ללקוח נכשלה: ${data?.error || res.status}`);
+          } else if (data?.failed > 0) {
+            toast.warning(`ההודעה נשלחה, אך התראת הפוש נכשלה: ${data.errors?.join(", ")}`);
+          } else if (data?.sent === 0) {
+            console.log("[admin-chat] Chat notification not sent: no tokens registered.");
+          }
+        })
+        .catch((err) => console.error("Failed to send push notification:", err));
 
       if (isNewConv) {
         // Swap active ID to the real customer_email to trigger live subscription
