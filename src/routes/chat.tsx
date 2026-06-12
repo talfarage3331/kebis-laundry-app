@@ -16,6 +16,7 @@ import {
 } from "firebase/firestore";
 import { ArrowRight, Send, Loader2, MessageSquareText } from "lucide-react";
 import { toast } from "sonner";
+import { clearAppBadgeAndUnread } from "@/hooks/use-app-badge";
 
 export const Route = createFileRoute("/chat")({ component: Chat });
 
@@ -44,6 +45,11 @@ function Chat() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Viewing the chat clears the app-icon badge + Firestore unread counter
+  useEffect(() => {
+    clearAppBadgeAndUnread();
+  }, []);
 
   useEffect(() => {
     if (!user) return;

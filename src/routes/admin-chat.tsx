@@ -19,6 +19,7 @@ import {
 import { ArrowRight, Send, Loader2, MessageSquareText, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { clearAppBadgeAndUnread } from "@/hooks/use-app-badge";
 
 export const Route = createFileRoute("/admin-chat")({ component: AdminChat });
 
@@ -62,6 +63,11 @@ function AdminChat() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Viewing the admin chat clears the app-icon badge + unread counter
+  useEffect(() => {
+    clearAppBadgeAndUnread();
+  }, []);
 
   // Check access
   useEffect(() => {

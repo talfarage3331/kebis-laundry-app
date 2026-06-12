@@ -1,21 +1,50 @@
 /**
  * useFcm — request notification permission, get an FCM registration token,
  * and store it in Firestore under users/{uid}.fcmTokens (array).
+ *
+ * The token is saved whenever BOTH the token and the authenticated user
+ * are available — fixing the race where auth restores after the token
+ * was generated (which previously dropped the token silently).
  */
 import { useCallback, useEffect, useState } from "react";
 import { auth, db } from "@/lib/firebase";
+import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, setDoc, arrayUnion, arrayRemove, serverTimestamp } from "firebase/firestore";
 import { requestFcmToken, onForegroundMessage } from "@/lib/firebase-messaging";
 import { toast } from "sonner";
 
 export type FcmStatus = "idle" | "unsupported" | "denied" | "granted" | "loading" | "error";
 
+async function persistToken(user: User, fcmToken: string) {
+  try {
+    await setDoc(
+      doc(db, "users", user.uid),
+      {
+        fcmTokens: arrayUnion(fcmToken),
+        fcmTokensUpdatedAt: serverTimestamp(),
+        email: user.email,
+      },
+      { merge: true }
+    );
+    console.log("[useFcm] token saved to users/" + user.uid);
+  } catch (err) {
+    console.error("[useFcm] failed to save token to Firestore:", err);
+  }
+}
+
 export function useFcm() {
   const [status, setStatus] = useState<FcmStatus>("idle");
   const [token, setToken] = useState<string | null>(null);
+  const [authUser, setAuthUser] = useState<User | null>(null);
   const [permission, setPermission] = useState<NotificationPermission>(
     typeof Notification !== "undefined" ? Notification.permission : "default"
   );
+
+  // Track auth state — auth.currentUser is null on first paint
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => setAuthUser(u));
+    return () => unsub();
+  }, []);
 
   // Foreground messages → toast
   useEffect(() => {
@@ -51,19 +80,10 @@ export function useFcm() {
         return null;
       }
       setToken(fcmToken);
-      // Save under users/{uid}.fcmTokens
-      const u = auth.currentUser;
-      if (u) {
-        await setDoc(
-          doc(db, "users", u.uid),
-          {
-            fcmTokens: arrayUnion(fcmToken),
-            fcmTokensUpdatedAt: serverTimestamp(),
-            email: u.email,
-          },
-          { merge: true }
-        );
+      if (auth.currentUser) {
+        await persistToken(auth.currentUser, fcmToken);
       }
+      // If auth hasn't restored yet, the effect below saves it once it does.
       setStatus("granted");
       return fcmToken;
     } catch (err: any) {
@@ -72,6 +92,13 @@ export function useFcm() {
       return null;
     }
   }, []);
+
+  // Save the token as soon as we have BOTH a token and a signed-in user
+  useEffect(() => {
+    if (token && authUser) {
+      persistToken(authUser, token);
+    }
+  }, [token, authUser]);
 
   const disable = useCallback(async () => {
     if (!token) return;
@@ -83,13 +110,13 @@ export function useFcm() {
     setStatus("idle");
   }, [token]);
 
-  // Auto-refresh token on login if previously granted
+  // Auto-refresh token on login if permission was previously granted
   useEffect(() => {
     if (typeof Notification === "undefined") return;
-    if (Notification.permission === "granted" && !token) {
+    if (authUser && Notification.permission === "granted" && !token) {
       enable();
     }
-  }, [enable, token]);
+  }, [enable, token, authUser]);
 
   return { status, token, permission, enable, disable };
 }
