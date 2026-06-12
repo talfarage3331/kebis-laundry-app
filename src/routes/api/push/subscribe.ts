@@ -1,14 +1,11 @@
 /**
  * POST /api/push/subscribe
- * Saves an FCM registration token for the user.
+ * Saves an FCM registration token for the user (server-side fallback —
+ * the client also writes directly to users/{uid}.fcmTokens).
  *
- * Body: { fcmToken: string, userEmail?: string }
- *
- * Legacy body { endpoint, keys, userEmail } is still accepted for
- * backward-compat but is now a no-op write to a legacy collection.
+ * Body: { fcmToken: string, userEmail: string }
  */
 import { createFileRoute } from "@tanstack/react-router";
-import { saveFcmToken, saveSubscription } from "@/lib/push-service";
 
 export const Route = createFileRoute("/api/push/subscribe")({
   server: {
@@ -18,34 +15,28 @@ export const Route = createFileRoute("/api/push/subscribe")({
           const body = (await request.json()) as {
             fcmToken?: string;
             userEmail?: string;
-            endpoint?: string;
-            keys?: { p256dh?: string; auth?: string };
           };
 
-          if (body?.fcmToken && body?.userEmail) {
-            await saveFcmToken(body.userEmail, body.fcmToken);
+          if (
+            !body?.fcmToken ||
+            typeof body.fcmToken !== "string" ||
+            body.fcmToken.length > 4096 ||
+            !body?.userEmail ||
+            typeof body.userEmail !== "string" ||
+            body.userEmail.length > 255
+          ) {
             return new Response(
-              JSON.stringify({ success: true, type: "fcm" }),
-              { status: 201, headers: { "Content-Type": "application/json" } }
+              JSON.stringify({ error: "Missing or invalid fcmToken / userEmail" }),
+              { status: 400, headers: { "Content-Type": "application/json" } }
             );
           }
 
-          // Legacy web-push shape — accept silently
-          if (body?.endpoint && body?.keys?.p256dh && body?.keys?.auth) {
-            await saveSubscription(body.userEmail || "anon", {
-              endpoint: body.endpoint,
-              keys: { p256dh: body.keys.p256dh, auth: body.keys.auth },
-            });
-            return new Response(
-              JSON.stringify({ success: true, type: "legacy" }),
-              { status: 201, headers: { "Content-Type": "application/json" } }
-            );
-          }
-
-          return new Response(
-            JSON.stringify({ error: "Missing fcmToken+userEmail (or legacy endpoint+keys)" }),
-            { status: 400, headers: { "Content-Type": "application/json" } }
-          );
+          const { saveFcmToken } = await import("@/lib/push-service.server");
+          await saveFcmToken(body.userEmail, body.fcmToken);
+          return new Response(JSON.stringify({ success: true, type: "fcm" }), {
+            status: 201,
+            headers: { "Content-Type": "application/json" },
+          });
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           console.error("[push/subscribe] Error:", message);
