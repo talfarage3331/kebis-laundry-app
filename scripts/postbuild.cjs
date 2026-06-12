@@ -36,6 +36,7 @@ const routesConfig = {
     "/assets/*",
     "/favicon.ico",
     "/sw.js",
+    "/firebase-messaging-sw.js",
     "/manifest.json",
     "/icon-192.png",
     "/icon-512.png",
@@ -47,6 +48,11 @@ console.log('Created dist/client/_routes.json for static asset routing');
 // 4. Generate _headers for custom static asset headers on Cloudflare Pages
 const headersConfig = [
   "/sw.js",
+  "  Content-Type: application/javascript",
+  "  Cache-Control: no-store, no-cache, must-revalidate, max-age=0",
+  "  Service-Worker-Allowed: /",
+  "",
+  "/firebase-messaging-sw.js",
   "  Content-Type: application/javascript",
   "  Cache-Control: no-store, no-cache, must-revalidate, max-age=0",
   "  Service-Worker-Allowed: /",

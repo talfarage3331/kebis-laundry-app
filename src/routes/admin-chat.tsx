@@ -319,7 +319,7 @@ function AdminChat() {
           <header className="bg-lavender px-5 pb-5 pt-safe-lavender shadow-sm flex-shrink-0 relative">
             <button 
               onClick={() => navigate({ to: user?.role === "admin" ? "/admin" : "/laundry-dashboard" })} 
-              className="absolute top-5 left-5 size-10 grid place-items-center rounded-full bg-background/50 text-foreground shadow-sm hover:bg-background"
+              className="absolute top-safe-sidebar-btn left-5 size-10 grid place-items-center rounded-full bg-background/50 text-foreground shadow-sm hover:bg-background"
             >
               <ArrowRight className="size-5" />
             </button>

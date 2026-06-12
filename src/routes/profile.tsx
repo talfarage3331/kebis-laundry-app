@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { db } from "@/lib/firebase";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { useFcm } from "@/hooks/use-fcm";
 
 export const Route = createFileRoute("/profile")({ component: Profile });
 
@@ -48,6 +49,50 @@ function Profile() {
   const [orders, setOrders] = useState<any[]>([]);
   const [fetchingOrders, setFetchingOrders] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
+
+  const { token: fcmToken, permission: fcmPermission, isLoading: fcmLoading, requestPermission: fcmRequestPermission } = useFcm();
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [testingPush, setTestingPush] = useState(false);
+
+  const handleTestPush = async () => {
+    const statusInfo = `סטטוס הרשאות: ${Notification.permission}\nטוקן FCM קיים: ${fcmToken ? "כן" : "לא"}\nטוקן: ${fcmToken || "ריק"}`;
+    console.log("[FCM Diagnostic]", statusInfo);
+    alert(`[אבחון התראות FCM]\n\n${statusInfo}`);
+
+    if (!fcmToken) {
+      alert("אין טוקן FCM זמין לשליחה. אנא אשר קבלת התראות תחילה.");
+      return;
+    }
+
+    setTestingPush(true);
+    try {
+      const res = await fetch("/api/push/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: fcmToken,
+          customTitle: "התראת ניסיון מוצלחת! 🚀",
+          customBody: "ערוץ התקשורת של Firebase Messaging עובד בצורה תקינה לחלוטין.",
+          url: "/profile"
+        })
+      });
+
+      const data = await res.json() as any;
+      if (!res.ok) {
+        throw new Error(data.detail || data.error || "שגיאת שרת לא ידועה");
+      }
+
+      toast.success("התראת הניסיון נשלחה בהצלחה!");
+      alert(`התראת הניסיון נשלחה בהצלחה!\nתשובת השרת: ${JSON.stringify(data)}`);
+    } catch (err: any) {
+      const errMsg = err?.message || String(err);
+      console.error("[FCM Test Error]", err);
+      alert(`שגיאה בשליחת התראת ניסיון!\nפרטי השגיאה:\n${errMsg}`);
+      toast.error("שגיאה בשליחת התראת ניסיון");
+    } finally {
+      setTestingPush(false);
+    }
+  };
 
   useEffect(() => {
     if (!user?.email) return;
@@ -121,6 +166,92 @@ function Profile() {
             <span>התנתקות</span>
           </span>
         </button>
+
+        {/* push diagnostics section */}
+        <div className="rounded-3xl border border-muted-foreground/10 bg-background/50 overflow-hidden">
+          <button 
+            onClick={() => setShowDiagnostics(!showDiagnostics)}
+            className="w-full px-4 sm:px-6 py-4 flex items-center justify-between font-bold text-foreground text-sm hover:bg-muted/20 transition cursor-pointer"
+          >
+            <span>אבחון והגדרות התראות דחיפה (FCM)</span>
+            <span className="text-xs text-muted-foreground">{showDiagnostics ? "◄ הסתר" : "▼ הצג"}</span>
+          </button>
+          
+          {showDiagnostics && (
+            <div className="p-4 sm:p-6 border-t border-muted-foreground/10 space-y-4 text-right">
+              {/* Permission Status */}
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-muted-foreground">הרשאת דפדפן:</span>
+                <span className={`px-2.5 py-0.5 rounded-full font-bold text-[10px] ${
+                  fcmPermission === "granted" 
+                    ? "bg-green-50 text-green-700 border border-green-200" 
+                    : fcmPermission === "denied"
+                    ? "bg-red-50 text-red-700 border border-red-200"
+                    : "bg-amber-50 text-amber-700 border border-amber-200"
+                }`}>
+                  {fcmPermission === "granted" ? "מאושר ✓" : fcmPermission === "denied" ? "חסום X" : "ממתין להרשאה"}
+                </span>
+              </div>
+
+              {/* FCM Token Status */}
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-muted-foreground">מזהה מכשיר (FCM Token):</span>
+                <span className={`font-bold ${fcmToken ? "text-lime" : "text-amber-500"}`}>
+                  {fcmToken ? "נוצר בהצלחה" : "לא קיים"}
+                </span>
+              </div>
+
+              {/* Token Display and Copy */}
+              {fcmToken && (
+                <div className="space-y-1.5">
+                  <span className="text-[10px] text-muted-foreground block">הטוקן הנוכחי (משמש לניתוב):</span>
+                  <div className="flex items-center gap-1.5">
+                    <input 
+                      readOnly 
+                      value={fcmToken}
+                      className="flex-1 bg-muted text-muted-foreground text-[9px] font-mono p-2 rounded-lg border border-muted-foreground/10 text-left dir-ltr truncate outline-none select-all"
+                    />
+                    <button 
+                      onClick={() => {
+                        navigator.clipboard.writeText(fcmToken);
+                        toast.success("הטוקן הועתק ללוח!");
+                      }}
+                      className="px-2.5 py-1.5 bg-primary/10 text-primary text-xs font-bold rounded-lg border border-primary/20 hover:bg-primary/20 active:scale-95 transition"
+                    >
+                      העתק
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={handleTestPush}
+                  disabled={testingPush || !fcmToken}
+                  className="flex-1 flex items-center justify-center gap-2 rounded-2xl bg-lime text-lime-foreground py-2.5 px-4 text-xs font-bold hover:shadow-md active:scale-95 transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  {testingPush ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      <span>בודק...</span>
+                    </>
+                  ) : (
+                    <span>בצע התראת ניסיון</span>
+                  )}
+                </button>
+
+                <button
+                  onClick={fcmRequestPermission}
+                  disabled={fcmLoading}
+                  className="rounded-2xl bg-muted text-foreground py-2.5 px-4 text-xs font-bold hover:bg-muted/70 active:scale-95 transition disabled:opacity-50 cursor-pointer"
+                >
+                  {fcmLoading ? "טוען..." : "רשום מכשיר"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Order History Section */}
         <div className="space-y-4">

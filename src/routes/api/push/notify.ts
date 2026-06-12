@@ -1,11 +1,21 @@
 /**
  * POST /api/push/notify
- * Server-side trigger to send an FCM push to a user (and bump their
- * Firestore unreadCount so the PWA app badge updates).
+ * ─────────────────────────────────────────────────────────────────
+ * Internal server route — called from client code and dashboards
+ * to dispatch push notifications using FCM HTTP v1 REST API.
  *
- * Body: { userEmail, event, customTitle?, customBody? }
+ * Expected JSON body:
+ * {
+ *   "userEmail": "customer@example.com", // OR direct token
+ *   "token": "d_token_...",             // Optional, for direct testing
+ *   "event": "laundry-ready",
+ *   "customTitle": "Optional title override",
+ *   "customBody": "Optional body override",
+ *   "url": "/payments"
+ * }
  */
 import { createFileRoute } from "@tanstack/react-router";
+import { sendFcmMessage } from "@/lib/fcm-admin.server";
 
 const VALID_EVENTS = new Set([
   "laundry-picked-up",
@@ -25,17 +35,41 @@ export const Route = createFileRoute("/api/push/notify")({
         try {
           const body = (await request.json()) as {
             userEmail?: string;
+            token?: string;
             event?: string;
             customBody?: string;
             customTitle?: string;
+            url?: string;
           };
 
+          const title = body.customTitle || "עדכון מקביסה 🧺";
+          const bodyText = body.customBody || "יש עדכון חדש בהזמנה שלך";
+          const targetUrl = body.url || "/";
+
+          // ─── Direct Token Diagnostic Testing Mode ──────────────────
+          if (body.token) {
+            console.log("[push/notify] Sending test push direct to token...");
+            const res = await sendFcmMessage({
+              token: body.token,
+              title,
+              body: bodyText,
+              url: targetUrl,
+              badgeCount: 1,
+            });
+            return new Response(JSON.stringify({ success: true, result: res }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+
+          // ─── Standard User Email Routing Mode ──────────────────────
           if (!body?.userEmail || !body?.event) {
             return new Response(
-              JSON.stringify({ error: "Missing required fields: userEmail, event" }),
+              JSON.stringify({ error: "Missing required fields: userEmail and event (or token)" }),
               { status: 400, headers: { "Content-Type": "application/json" } }
             );
           }
+
           if (
             typeof body.userEmail !== "string" ||
             body.userEmail.length > 255 ||
@@ -70,7 +104,7 @@ export const Route = createFileRoute("/api/push/notify")({
             status: 200,
             headers: { "Content-Type": "application/json" },
           });
-        } catch (err) {
+        } catch (err: any) {
           const message = err instanceof Error ? err.message : String(err);
           console.error("[push/notify] Unhandled error:", message);
           return new Response(

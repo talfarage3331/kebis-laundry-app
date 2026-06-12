@@ -51,32 +51,61 @@ export async function registerFcmServiceWorker(): Promise<ServiceWorkerRegistrat
     const reg = await navigator.serviceWorker.register("/firebase-messaging-sw.js", {
       scope: "/firebase-cloud-messaging-push-scope",
     });
-    await navigator.serviceWorker.ready;
+    
+    // Wrap service worker readiness check with a strict 5-second timeout
+    await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("FCM_SW_READY_TIMEOUT")), 5000)
+      )
+    ]);
+    
     return reg;
-  } catch (err) {
-    console.error("[fcm] SW registration failed:", err);
-    return null;
+  } catch (err: any) {
+    console.error("[fcm] SW registration or readiness check failed:", err);
+    if (err?.message === "FCM_SW_READY_TIMEOUT") {
+      window.alert("Stuck waiting for Service Worker (timed out after 5 seconds)");
+    } else {
+      window.alert(`Service Worker registration failed: ${err?.message || err}`);
+    }
+    throw err;
   }
 }
 
 export async function requestFcmToken(): Promise<string | null> {
   const messaging = await getMessagingIfSupported();
   if (!messaging) return null;
+  
+  // Validate VAPID Key: Ensure VAPID key is properly loaded and not empty/placeholder
   if (!FCM_VAPID_PUBLIC_KEY || FCM_VAPID_PUBLIC_KEY.startsWith("REPLACE_WITH")) {
-    console.error("[fcm] FCM_VAPID_PUBLIC_KEY is not set in src/lib/firebase-messaging.ts");
+    const errMsg = "[fcm] FCM_VAPID_PUBLIC_KEY is not set or invalid in src/lib/firebase-messaging.ts";
+    console.error(errMsg);
+    window.alert(errMsg);
     return null;
   }
-  const reg = await registerFcmServiceWorker();
-  if (!reg) return null;
+  
   try {
-    const token = await getToken(messaging, {
-      vapidKey: FCM_VAPID_PUBLIC_KEY,
-      serviceWorkerRegistration: reg,
-    });
+    const reg = await registerFcmServiceWorker();
+    if (!reg) return null;
+
+    // Wrap getToken() call with a strict 5-second timeout
+    const token = await Promise.race([
+      getToken(messaging, {
+        vapidKey: FCM_VAPID_PUBLIC_KEY,
+        serviceWorkerRegistration: reg,
+      }),
+      new Promise<string>((_, reject) =>
+        setTimeout(() => reject(new Error("FCM_REGISTRATION_TIMEOUT")), 5000)
+      )
+    ]);
+    
     return token || null;
-  } catch (err) {
-    console.error("[fcm] getToken failed:", err);
-    return null;
+  } catch (err: any) {
+    console.error("[fcm] requestFcmToken failed:", err);
+    if (err?.message === "FCM_REGISTRATION_TIMEOUT") {
+      window.alert("Stuck fetching FCM Token (timed out after 5 seconds)");
+    }
+    throw err;
   }
 }
 

@@ -29,6 +29,7 @@ export interface Invoice {
 }
 
 export interface User {
+  uid: string;
   name: string;
   email: string;
   role?: "admin" | "laundry" | "customer";
@@ -151,6 +152,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         const displayName = storedName || dbName;
 
         setUser({
+          uid: sessionUser.uid,
           name: displayName,
           email: sessionUser.email,
           role

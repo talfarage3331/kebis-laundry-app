@@ -121,36 +121,45 @@
 
 /* Primary (purple) hero headers — home, tracking, delivery, profile */
 .pt-safe-primary {
-  padding-top: max(4rem, calc(2.5rem + env(safe-area-inset-top)));
+  padding-top: max(4rem, calc(2.5rem + var(--sat, env(safe-area-inset-top, 47px))));
 }
 
 /* Lavender headers — admin, laundry-dashboard, admin-chat sidebar */
 .pt-safe-lavender {
-  padding-top: max(3rem, calc(1rem + env(safe-area-inset-top)));
+  padding-top: max(3rem, calc(1rem + var(--sat, env(safe-area-inset-top, 47px))));
 }
 
 /* Chat page header */
 .pt-safe-chat {
-  padding-top: max(3rem, calc(1rem + env(safe-area-inset-top)));
+  padding-top: max(3rem, calc(1rem + var(--sat, env(safe-area-inset-top, 47px))));
 }
 
 /* Payments page header */
 .pt-safe-payments {
-  padding-top: max(3.5rem, calc(1.5rem + env(safe-area-inset-top)));
+  padding-top: max(3.5rem, calc(1.5rem + var(--sat, env(safe-area-inset-top, 47px))));
 }
 
 /* Login / Signup hero banners */
 .pt-safe-auth {
-  padding-top: max(4rem, calc(2.5rem + env(safe-area-inset-top)));
+  padding-top: max(4rem, calc(2.5rem + var(--sat, env(safe-area-inset-top, 47px))));
 }
 
 @media (min-width: 640px) {
   .pt-safe-lavender {
-    padding-top: max(3.5rem, calc(1.5rem + env(safe-area-inset-top)));
+    padding-top: max(3.5rem, calc(1.5rem + var(--sat, env(safe-area-inset-top, 47px))));
   }
   .pt-safe-auth {
-    padding-top: max(5rem, calc(3.5rem + env(safe-area-inset-top)));
+    padding-top: max(5rem, calc(3.5rem + var(--sat, env(safe-area-inset-top, 47px))));
   }
+}
+
+/* ─── Dynamic positioning for absolute-positioned header buttons ────── */
+.top-safe-back-btn {
+  top: max(1.5rem, calc(1.25rem + var(--sat, env(safe-area-inset-top, 47px)))) !important;
+}
+
+.top-safe-sidebar-btn {
+  top: max(1.25rem, calc(1rem + var(--sat, env(safe-area-inset-top, 47px)))) !important;
 }
 
 /* ─── PWA Standalone: chat header padding override ─────────────────────
@@ -166,11 +175,11 @@
  */
 @media (display-mode: standalone) {
   .chat-header-standalone {
-    padding-top: calc(var(--sat, env(safe-area-inset-top, 47px)) + 1rem) !important;
+    padding-top: max(3.5rem, calc(var(--sat, env(safe-area-inset-top, 47px)) + 1.25rem)) !important;
   }
 }
 
 html[data-standalone="true"] .chat-header-standalone {
-  padding-top: calc(var(--sat, env(safe-area-inset-top, 47px)) + 1rem) !important;
+  padding-top: max(3.5rem, calc(var(--sat, env(safe-area-inset-top, 47px)) + 1.25rem)) !important;
 }
 

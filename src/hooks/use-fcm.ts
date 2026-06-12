@@ -90,6 +90,9 @@ export function useFcm() {
       console.error("[useFcm] enable failed:", err);
       setStatus("error");
       return null;
+    } finally {
+      // Strict state reset: ensure the loading state is never left true/active
+      setStatus((currentStatus) => (currentStatus === "loading" ? "error" : currentStatus));
     }
   }, []);
 
@@ -118,5 +121,13 @@ export function useFcm() {
     }
   }, [enable, token, authUser]);
 
-  return { status, token, permission, enable, disable };
+  return {
+    status,
+    token,
+    permission,
+    enable,
+    disable,
+    isLoading: status === "loading",
+    requestPermission: enable,
+  };
 }
