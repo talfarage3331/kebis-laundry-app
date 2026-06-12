@@ -12,6 +12,7 @@ import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, setDoc, arrayUnion, arrayRemove, serverTimestamp } from "firebase/firestore";
 import { requestFcmToken, onForegroundMessage } from "@/lib/firebase-messaging";
 import { toast } from "sonner";
+import { useLocation } from "@tanstack/react-router";
 
 export type FcmStatus = "idle" | "unsupported" | "denied" | "granted" | "loading" | "error";
 
@@ -24,7 +25,7 @@ async function persistToken(user: User, fcmToken: string) {
         fcmTokensUpdatedAt: serverTimestamp(),
         email: user.email,
       },
-      { merge: true }
+      { merge: true },
     );
     console.log("[useFcm] token saved to users/" + user.uid);
   } catch (err) {
@@ -32,13 +33,36 @@ async function persistToken(user: User, fcmToken: string) {
   }
 }
 
+interface BadgingNavigator extends Navigator {
+  setAppBadge?: (count: number) => Promise<void>;
+  clearAppBadge?: () => Promise<void>;
+}
+
+const setAppBadge = (count: number) => {
+  if (typeof navigator === "undefined") return;
+  const nav = navigator as BadgingNavigator;
+  if (typeof nav.setAppBadge === "function") {
+    nav.setAppBadge(count).catch(() => {});
+  }
+};
+
+const clearAppBadge = () => {
+  if (typeof navigator === "undefined") return;
+  const nav = navigator as BadgingNavigator;
+  if (typeof nav.clearAppBadge === "function") {
+    nav.clearAppBadge().catch(() => {});
+  }
+};
+
 export function useFcm() {
   const [status, setStatus] = useState<FcmStatus>("idle");
   const [token, setToken] = useState<string | null>(null);
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [permission, setPermission] = useState<NotificationPermission>(
-    typeof Notification !== "undefined" ? Notification.permission : "default"
+    typeof Notification !== "undefined" ? Notification.permission : "default",
   );
+
+  const { pathname } = useLocation();
 
   // Track auth state — auth.currentUser is null on first paint
   useEffect(() => {
@@ -46,20 +70,79 @@ export function useFcm() {
     return () => unsub();
   }, []);
 
-  // Foreground messages → toast
+  // Foreground messages → toast + app badge
   useEffect(() => {
-    let unsub: any;
+    let unsub: (() => void) | undefined;
     (async () => {
-      unsub = await onForegroundMessage((payload) => {
+      unsub = (await onForegroundMessage((payload) => {
         const title = payload?.data?.title || payload?.notification?.title || "התראה חדשה";
         const body = payload?.data?.body || payload?.notification?.body || "";
         toast(title, { description: body });
-      });
+
+        // Foreground badging update
+        const badgeVal =
+          payload?.data?.badgeCount || payload?.data?.unreadCount || payload?.notification?.badge;
+        if (badgeVal) {
+          const count = Number(badgeVal);
+          if (Number.isFinite(count) && count > 0) {
+            setAppBadge(count);
+          } else {
+            clearAppBadge();
+          }
+        }
+      })) as (() => void) | undefined;
     })();
     return () => {
       if (typeof unsub === "function") unsub();
     };
   }, []);
+
+  // Listen for focus/visibility/route changes to sync badge
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      typeof navigator === "undefined" ||
+      !("setAppBadge" in navigator)
+    )
+      return;
+
+    const syncBadge = async () => {
+      if (!authUser) {
+        clearAppBadge();
+        return;
+      }
+
+      try {
+        const { getDoc, doc: fsDoc } = await import("firebase/firestore");
+        const snap = await getDoc(fsDoc(db, "users", authUser.uid));
+        if (snap.exists()) {
+          const count = Number(snap.data()?.unreadCount ?? 0);
+          if (Number.isFinite(count) && count > 0) {
+            setAppBadge(count);
+          } else {
+            clearAppBadge();
+          }
+        }
+      } catch (err) {
+        console.warn("[useFcm] Failed to sync app badge on focus/change:", err);
+      }
+    };
+
+    // Run on mount or path change
+    syncBadge();
+
+    const handleFocus = () => {
+      syncBadge();
+    };
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleFocus);
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleFocus);
+    };
+  }, [authUser, pathname]);
 
   const enable = useCallback(async () => {
     if (typeof Notification === "undefined" || !("serviceWorker" in navigator)) {
@@ -86,7 +169,7 @@ export function useFcm() {
       // If auth hasn't restored yet, the effect below saves it once it does.
       setStatus("granted");
       return fcmToken;
-    } catch (err: any) {
+    } catch (err) {
       console.error("[useFcm] enable failed:", err);
       setStatus("error");
       return null;

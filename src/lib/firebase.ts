@@ -9,7 +9,7 @@ const firebaseConfig = {
   storageBucket: "kevisa-5983b.firebasestorage.app",
   messagingSenderId: "1009737796478",
   appId: "1:1009737796478:web:d55807a14c66ae901bc12f",
-  measurementId: "G-1FSQBXGYE3"
+  measurementId: "G-1FSQBXGYE3",
 };
 
 const app = initializeApp(firebaseConfig);

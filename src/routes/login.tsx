@@ -9,16 +9,23 @@ import { doc, getDoc } from "firebase/firestore";
 
 // Custom Google brand icon (inline SVG)
 const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg
-    viewBox="0 0 533.5 544.3"
-    xmlns="http://www.w3.org/2000/svg"
-    fill="currentColor"
-    {...props}
-  >
-    <path d="M533.5 278.4c0-17.7-1.6-35-4.6-51.8H272v97.9h146.9c-6.3 34.1-25.5 63-54.3 82.4v68h87.8c51.4-47.4 80.9-117.3 80.9-196.5z" fill="#4285F4" />
-    <path d="M272 544.3c73.4 0 135-24.3 180-66.1l-87.8-68c-24.4 16.4-55.6 26-92.2 26-70.9 0-131-47.9-152.5-112.4h-90.9v70.6c45.4 89.8 138.3 149.9 243.4 149.9z" fill="#34A853" />
-    <path d="M119.5 323.8c-10.4-30.9-10.4-64.1 0-95l-90.9-70.6c-38.3 74.6-38.3 162.6 0 237.2l90.9-71.6z" fill="#FBBC05" />
-    <path d="M272 107.9c39.7-.6 78 13.7 107.5 39.4l80.7-80.7C408.7 21.3 342.4-1.7 272 0 166.9 0 74 60.1 28.6 149.9l90.9 71.6C141 155.8 201.1 107.9 272 107.9z" fill="#EA4335" />
+  <svg viewBox="0 0 533.5 544.3" xmlns="http://www.w3.org/2000/svg" fill="currentColor" {...props}>
+    <path
+      d="M533.5 278.4c0-17.7-1.6-35-4.6-51.8H272v97.9h146.9c-6.3 34.1-25.5 63-54.3 82.4v68h87.8c51.4-47.4 80.9-117.3 80.9-196.5z"
+      fill="#4285F4"
+    />
+    <path
+      d="M272 544.3c73.4 0 135-24.3 180-66.1l-87.8-68c-24.4 16.4-55.6 26-92.2 26-70.9 0-131-47.9-152.5-112.4h-90.9v70.6c45.4 89.8 138.3 149.9 243.4 149.9z"
+      fill="#34A853"
+    />
+    <path
+      d="M119.5 323.8c-10.4-30.9-10.4-64.1 0-95l-90.9-70.6c-38.3 74.6-38.3 162.6 0 237.2l90.9-71.6z"
+      fill="#FBBC05"
+    />
+    <path
+      d="M272 107.9c39.7-.6 78 13.7 107.5 39.4l80.7-80.7C408.7 21.3 342.4-1.7 272 0 166.9 0 74 60.1 28.6 149.9l90.9 71.6C141 155.8 201.1 107.9 272 107.9z"
+      fill="#EA4335"
+    />
   </svg>
 );
 
@@ -50,9 +57,9 @@ function Login() {
       if (fbUser) {
         const userDoc = await getDoc(doc(db, "users", fbUser.uid));
         const role = userDoc.exists() ? userDoc.data().role : "customer";
-        
+
         toast.success("התחברת בהצלחה");
-        
+
         if (role === "admin") {
           navigate({ to: "/admin" });
         } else if (role === "laundry") {
@@ -70,18 +77,18 @@ function Login() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) return toast.error("יש למלא את כל השדות");
-    
+
     setLoading(true);
     try {
       const result = await signInWithEmailAndPassword(auth, email, password);
       const fbUser = result.user;
-      
+
       const userDoc = await getDoc(doc(db, "users", fbUser.uid));
       const role = userDoc.exists() ? userDoc.data().role : "customer";
-      
+
       setLoading(false);
       toast.success("התחברת בהצלחה");
-      
+
       if (role === "admin") {
         navigate({ to: "/admin" });
       } else if (role === "laundry") {
@@ -92,9 +99,11 @@ function Login() {
     } catch (error: any) {
       setLoading(false);
       return toast.error(
-        error.code === "auth/invalid-credential" || error.code === "auth/user-not-found" || error.code === "auth/wrong-password"
-          ? "פרטי התחברות לא נכונים" 
-          : error.message
+        error.code === "auth/invalid-credential" ||
+          error.code === "auth/user-not-found" ||
+          error.code === "auth/wrong-password"
+          ? "פרטי התחברות לא נכונים"
+          : error.message,
       );
     }
   };
@@ -113,7 +122,10 @@ function Login() {
         </div>
       </div>
 
-      <form onSubmit={submit} className="mx-auto max-w-md w-full px-4 sm:px-6 mt-6 sm:mt-8 space-y-4 flex-1 pb-8">
+      <form
+        onSubmit={submit}
+        className="mx-auto max-w-md w-full px-4 sm:px-6 mt-6 sm:mt-8 space-y-4 flex-1 pb-8"
+      >
         <div>
           <label className="text-sm font-semibold">דוא"ל</label>
           <input
@@ -151,7 +163,9 @@ function Login() {
         </button>
         <p className="text-center text-sm text-muted-foreground">
           אין לך חשבון?{" "}
-          <Link to="/signup" className="text-primary font-bold">הירשם עכשיו</Link>
+          <Link to="/signup" className="text-primary font-bold">
+            הירשם עכשיו
+          </Link>
         </p>
       </form>
     </div>

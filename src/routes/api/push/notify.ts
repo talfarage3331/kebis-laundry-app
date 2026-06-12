@@ -84,7 +84,7 @@ export const Route = createFileRoute("/api/push/notify")({
           if (!body?.userEmail || !body?.event) {
             return new Response(
               JSON.stringify({ error: "Missing required fields: userEmail and event (or token)" }),
-              { status: 400, headers: { "Content-Type": "application/json" } }
+              { status: 400, headers: { "Content-Type": "application/json" } },
             );
           }
 
@@ -94,17 +94,23 @@ export const Route = createFileRoute("/api/push/notify")({
             !VALID_EVENTS.has(body.event)
           ) {
             return new Response(
-              JSON.stringify({ error: `Invalid payload. event must be one of: ${[...VALID_EVENTS].join(", ")}` }),
-              { status: 400, headers: { "Content-Type": "application/json" } }
+              JSON.stringify({
+                error: `Invalid payload. event must be one of: ${[...VALID_EVENTS].join(", ")}`,
+              }),
+              { status: 400, headers: { "Content-Type": "application/json" } },
             );
           }
 
           const env = getServerEnv();
           if (!env.FIREBASE_SERVICE_ACCOUNT) {
-            console.error("[push/notify] FIREBASE_SERVICE_ACCOUNT secret missing in getServerEnv()");
+            console.error(
+              "[push/notify] FIREBASE_SERVICE_ACCOUNT secret missing in getServerEnv()",
+            );
             return new Response(
-              JSON.stringify({ error: "Push service not configured: FIREBASE_SERVICE_ACCOUNT secret missing" }),
-              { status: 503, headers: { "Content-Type": "application/json" } }
+              JSON.stringify({
+                error: "Push service not configured: FIREBASE_SERVICE_ACCOUNT secret missing",
+              }),
+              { status: 503, headers: { "Content-Type": "application/json" } },
             );
           }
 
@@ -113,9 +119,11 @@ export const Route = createFileRoute("/api/push/notify")({
             body.userEmail,
             body.event as import("@/lib/push-service.server").NotificationEvent,
             {
-              customBody: typeof body.customBody === "string" ? body.customBody.slice(0, 500) : undefined,
-              customTitle: typeof body.customTitle === "string" ? body.customTitle.slice(0, 200) : undefined,
-            }
+              customBody:
+                typeof body.customBody === "string" ? body.customBody.slice(0, 500) : undefined,
+              customTitle:
+                typeof body.customTitle === "string" ? body.customTitle.slice(0, 200) : undefined,
+            },
           );
 
           console.log("[push/notify]", body.event, "→", body.userEmail, JSON.stringify(result));
@@ -127,10 +135,10 @@ export const Route = createFileRoute("/api/push/notify")({
         } catch (err: any) {
           const message = err instanceof Error ? err.message : String(err);
           console.error("[push/notify] Unhandled error:", message);
-          return new Response(
-            JSON.stringify({ error: "Internal server error", detail: message }),
-            { status: 500, headers: { "Content-Type": "application/json" } }
-          );
+          return new Response(JSON.stringify({ error: "Internal server error", detail: message }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+          });
         }
       },
     },

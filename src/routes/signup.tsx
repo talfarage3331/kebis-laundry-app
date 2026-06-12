@@ -32,27 +32,27 @@ function Signup() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !email || !password) return toast.error("יש למלא את כל השדות");
-    
+
     setLoading(true);
     try {
       const result = await createUserWithEmailAndPassword(auth, email, password);
       const fbUser = result.user;
-      
+
       // Update Auth display name
       await updateProfile(fbUser, { displayName: name });
-      
+
       // Save profile in Firestore users collection
       const role = email === "talfarage3331@gmail.com" ? "admin" : "customer";
       await setDoc(doc(db, "users", fbUser.uid), {
         fullName: name,
         email: email,
         role: role,
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
       });
-      
+
       setLoading(false);
       toast.success("נרשמת בהצלחה");
-      
+
       if (role === "admin") {
         navigate({ to: "/admin" });
       } else {
@@ -78,7 +78,10 @@ function Signup() {
         </div>
       </div>
 
-      <form onSubmit={submit} className="mx-auto max-w-md w-full px-4 sm:px-6 mt-6 sm:mt-8 space-y-4 flex-1 pb-8">
+      <form
+        onSubmit={submit}
+        className="mx-auto max-w-md w-full px-4 sm:px-6 mt-6 sm:mt-8 space-y-4 flex-1 pb-8"
+      >
         <div>
           <label className="text-sm font-semibold">שם מלא</label>
           <input
@@ -117,7 +120,9 @@ function Signup() {
         </button>
         <p className="text-center text-sm text-muted-foreground">
           כבר רשום?{" "}
-          <Link to="/login" className="text-primary font-bold">התחבר</Link>
+          <Link to="/login" className="text-primary font-bold">
+            התחבר
+          </Link>
         </p>
       </form>
     </div>

@@ -25,7 +25,8 @@ function getServiceAccount(): ServiceAccount {
   const env = getServerEnv();
   const raw = env.FIREBASE_SERVICE_ACCOUNT;
   if (!raw) {
-    const errMsg = "[fcm-admin] CRITICAL: FIREBASE_SERVICE_ACCOUNT environment variable is not set on the server/worker bindings.";
+    const errMsg =
+      "[fcm-admin] CRITICAL: FIREBASE_SERVICE_ACCOUNT environment variable is not set on the server/worker bindings.";
     console.error(errMsg);
     throw new Error(errMsg);
   }
@@ -38,7 +39,8 @@ function getServiceAccount(): ServiceAccount {
     throw new Error(errMsg);
   }
   if (!parsed.client_email || !parsed.private_key || !parsed.project_id) {
-    const errMsg = "[fcm-admin] CRITICAL: FIREBASE_SERVICE_ACCOUNT JSON is missing required fields (client_email, private_key, project_id).";
+    const errMsg =
+      "[fcm-admin] CRITICAL: FIREBASE_SERVICE_ACCOUNT JSON is missing required fields (client_email, private_key, project_id).";
     console.error(errMsg);
     throw new Error(errMsg);
   }
@@ -102,18 +104,18 @@ export async function getGoogleAccessToken(): Promise<string> {
       keyBuf,
       { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
       false,
-      ["sign"]
+      ["sign"],
     );
   } catch (err) {
     throw new Error(
-      `FIREBASE_SERVICE_ACCOUNT private_key could not be parsed (RS256 import failed): ${err instanceof Error ? err.message : String(err)}`
+      `FIREBASE_SERVICE_ACCOUNT private_key could not be parsed (RS256 import failed): ${err instanceof Error ? err.message : String(err)}`,
     );
   }
 
   const sig = await crypto.subtle.sign(
     "RSASSA-PKCS1-v1_5",
     cryptoKey,
-    new TextEncoder().encode(signingInput)
+    new TextEncoder().encode(signingInput),
   );
   const jwt = `${signingInput}.${base64UrlEncode(sig)}`;
 
@@ -147,7 +149,7 @@ export interface FcmMessageInput {
 }
 
 export async function sendFcmMessage(
-  input: FcmMessageInput
+  input: FcmMessageInput,
 ): Promise<{ ok: boolean; status: number; body?: any }> {
   const projectId = getFirebaseProjectId();
   const accessToken = await getGoogleAccessToken();
@@ -166,19 +168,32 @@ export async function sendFcmMessage(
         headers: { Urgency: "high", TTL: "86400" },
         fcm_options: { link: input.url ?? "/" },
       },
+      apns: {
+        headers: {
+          "apns-push-type": "alert",
+          "apns-priority": "10",
+        },
+        payload: {
+          aps: {
+            alert: {
+              title: input.title,
+              body: input.body,
+            },
+            badge: input.badgeCount ?? 1,
+            sound: "default",
+          },
+        },
+      },
     },
   };
-  const res = await fetch(
-    `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(message),
-    }
-  );
+  const res = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(message),
+  });
   const body = await res.json().catch(() => null);
   if (!res.ok) {
     console.error("[fcm-admin] FCM send failed:", res.status, JSON.stringify(body));

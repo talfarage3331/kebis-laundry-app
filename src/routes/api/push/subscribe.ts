@@ -27,7 +27,7 @@ export const Route = createFileRoute("/api/push/subscribe")({
           ) {
             return new Response(
               JSON.stringify({ error: "Missing or invalid fcmToken / userEmail" }),
-              { status: 400, headers: { "Content-Type": "application/json" } }
+              { status: 400, headers: { "Content-Type": "application/json" } },
             );
           }
 
@@ -40,10 +40,10 @@ export const Route = createFileRoute("/api/push/subscribe")({
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           console.error("[push/subscribe] Error:", message);
-          return new Response(
-            JSON.stringify({ error: "Internal server error", message }),
-            { status: 500, headers: { "Content-Type": "application/json" } }
-          );
+          return new Response(JSON.stringify({ error: "Internal server error", message }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+          });
         }
       },
     },

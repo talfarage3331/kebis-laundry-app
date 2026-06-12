@@ -26,7 +26,8 @@ const firebaseConfig = {
  *
  * It's a PUBLIC key — safe to commit. Without it getToken() throws.
  */
-export const FCM_VAPID_PUBLIC_KEY = "BMF5z1ekGHC08nZjh-IIwG0zklaM9MLzimhzgt28mfBIMvo_MaDwJZqD2mA4Ictm4EkfN4iRvJRoF7M-PY_hl1A";
+export const FCM_VAPID_PUBLIC_KEY =
+  "BMF5z1ekGHC08nZjh-IIwG0zklaM9MLzimhzgt28mfBIMvo_MaDwJZqD2mA4Ictm4EkfN4iRvJRoF7M-PY_hl1A";
 
 let messagingInstance: Messaging | null = null;
 
@@ -45,16 +46,18 @@ export async function getMessagingIfSupported(): Promise<Messaging | null> {
   }
 }
 
-async function waitForRegistrationActive(reg: ServiceWorkerRegistration): Promise<ServiceWorkerRegistration> {
+async function waitForRegistrationActive(
+  reg: ServiceWorkerRegistration,
+): Promise<ServiceWorkerRegistration> {
   if (reg.active) {
     return reg;
   }
-  
+
   const serviceWorker = reg.installing || reg.waiting;
   if (!serviceWorker) {
     return reg;
   }
-  
+
   return new Promise<ServiceWorkerRegistration>((resolve) => {
     const stateChangeHandler = () => {
       if (serviceWorker.state === "activated" || reg.active) {
@@ -72,15 +75,13 @@ export async function registerFcmServiceWorker(): Promise<ServiceWorkerRegistrat
     const reg = await navigator.serviceWorker.register("/firebase-messaging-sw.js", {
       scope: "/firebase-cloud-messaging-push-scope",
     });
-    
+
     // Wrap custom service worker readiness check with a strict 5-second timeout
     await Promise.race([
       waitForRegistrationActive(reg),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("FCM_SW_READY_TIMEOUT")), 5000)
-      )
+      new Promise((_, reject) => setTimeout(() => reject(new Error("FCM_SW_READY_TIMEOUT")), 5000)),
     ]);
-    
+
     return reg;
   } catch (err: any) {
     console.error("[fcm] SW registration or readiness check failed:", err);
@@ -96,15 +97,16 @@ export async function registerFcmServiceWorker(): Promise<ServiceWorkerRegistrat
 export async function requestFcmToken(): Promise<string | null> {
   const messaging = await getMessagingIfSupported();
   if (!messaging) return null;
-  
+
   // Validate VAPID Key: Ensure VAPID key is properly loaded and not empty/placeholder
   if (!FCM_VAPID_PUBLIC_KEY || FCM_VAPID_PUBLIC_KEY.startsWith("REPLACE_WITH")) {
-    const errMsg = "[fcm] FCM_VAPID_PUBLIC_KEY is not set or invalid in src/lib/firebase-messaging.ts";
+    const errMsg =
+      "[fcm] FCM_VAPID_PUBLIC_KEY is not set or invalid in src/lib/firebase-messaging.ts";
     console.error(errMsg);
     window.alert(errMsg);
     return null;
   }
-  
+
   try {
     const reg = await registerFcmServiceWorker();
     if (!reg) return null;
@@ -116,10 +118,10 @@ export async function requestFcmToken(): Promise<string | null> {
         serviceWorkerRegistration: reg,
       }),
       new Promise<string>((_, reject) =>
-        setTimeout(() => reject(new Error("FCM_REGISTRATION_TIMEOUT")), 5000)
-      )
+        setTimeout(() => reject(new Error("FCM_REGISTRATION_TIMEOUT")), 5000),
+      ),
     ]);
-    
+
     return token || null;
   } catch (err: any) {
     console.error("[fcm] requestFcmToken failed:", err);

@@ -45,7 +45,7 @@ export function useAppBadge() {
           const count = Number((snap.data() as any)?.unreadCount ?? 0);
           setBadge(Number.isFinite(count) && count > 0 ? count : 0);
         },
-        (err) => console.warn("[badge] unreadCount listener error:", err)
+        (err) => console.warn("[badge] unreadCount listener error:", err),
       );
     });
 

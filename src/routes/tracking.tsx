@@ -3,7 +3,16 @@ import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { AppHeader } from "@/components/AppHeader";
 import { useLaundry, stateLabel, ORDER_STEPS } from "@/lib/laundry-store";
-import { PackageOpen, Check, Loader2, MessageSquare, ChevronDown, ChevronUp, FileText, Download } from "lucide-react";
+import {
+  PackageOpen,
+  Check,
+  Loader2,
+  MessageSquare,
+  ChevronDown,
+  ChevronUp,
+  FileText,
+  Download,
+} from "lucide-react";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
@@ -32,63 +41,72 @@ function Tracking() {
       return;
     }
 
-    const q = query(
-      collection(db, "orders"),
-      where("user_email", "==", user.email)
-    );
+    const q = query(collection(db, "orders"), where("user_email", "==", user.email));
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetchedOrders = snapshot.docs.map(doc => {
-        const data = doc.data();
-        let parsedImages: string[] = [];
-        if (data.images) {
-          parsedImages = Array.isArray(data.images) ? data.images : [];
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const fetchedOrders = snapshot.docs.map((doc) => {
+          const data = doc.data();
+          let parsedImages: string[] = [];
+          if (data.images) {
+            parsedImages = Array.isArray(data.images) ? data.images : [];
+          }
+          return {
+            id: doc.id,
+            created_at: data.created_at || data.createdAt || new Date().toISOString(),
+            status: data.status,
+            delivery_method: data.delivery_method || data.deliveryMethod || "none",
+            payment_state: data.payment_state || data.paymentState || "unpaid",
+            amount_due:
+              data.amount_due !== undefined
+                ? data.amount_due
+                : data.amountDue !== undefined
+                  ? data.amountDue
+                  : 0,
+            user_email: data.user_email || data.userEmail || user.email,
+            notes: data.notes || "",
+            images: parsedImages,
+            requires_ironing: !!(data.requires_ironing || data.requiresIroning),
+            requires_dry_cleaning: !!(data.requires_dry_cleaning || data.requiresDryCleaning),
+            invoice: data.invoiceUrl
+              ? {
+                  id: `inv-${doc.id}`,
+                  date: data.created_at || data.createdAt || new Date().toISOString(),
+                  name: data.invoiceName || "invoice.pdf",
+                  data: data.invoiceUrl,
+                }
+              : null,
+          };
+        });
+
+        // Client-side sort desc
+        fetchedOrders.sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+        );
+
+        // Filter out placeholders
+        const filtered = fetchedOrders.filter(
+          (o) => o.delivery_method !== "placeholder" && !o.id.startsWith("placeholder"),
+        );
+
+        setOrders(filtered);
+
+        // Determine which order to auto-expand
+        if (orderId) {
+          const found = filtered.find((o: any) => o.id === orderId);
+          setExpandedId(found ? found.id : (filtered[0]?.id ?? null));
+        } else {
+          setExpandedId((prev) => prev ?? filtered[0]?.id ?? null);
         }
-        return {
-          id: doc.id,
-          created_at: data.created_at || data.createdAt || new Date().toISOString(),
-          status: data.status,
-          delivery_method: data.delivery_method || data.deliveryMethod || "none",
-          payment_state: data.payment_state || data.paymentState || "unpaid",
-          amount_due: data.amount_due !== undefined ? data.amount_due : (data.amountDue !== undefined ? data.amountDue : 0),
-          user_email: data.user_email || data.userEmail || user.email,
-          notes: data.notes || "",
-          images: parsedImages,
-          requires_ironing: !!(data.requires_ironing || data.requiresIroning),
-          requires_dry_cleaning: !!(data.requires_dry_cleaning || data.requiresDryCleaning),
-          invoice: data.invoiceUrl ? {
-            id: `inv-${doc.id}`,
-            date: data.created_at || data.createdAt || new Date().toISOString(),
-            name: data.invoiceName || "invoice.pdf",
-            data: data.invoiceUrl
-          } : null
-        };
-      });
 
-      // Client-side sort desc
-      fetchedOrders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
-      // Filter out placeholders
-      const filtered = fetchedOrders.filter(o => 
-        o.delivery_method !== "placeholder" && 
-        !o.id.startsWith("placeholder")
-      );
-
-      setOrders(filtered);
-
-      // Determine which order to auto-expand
-      if (orderId) {
-        const found = filtered.find((o: any) => o.id === orderId);
-        setExpandedId(found ? found.id : filtered[0]?.id ?? null);
-      } else {
-        setExpandedId(prev => prev ?? filtered[0]?.id ?? null);
-      }
-
-      setLoading(false);
-    }, (err) => {
-      console.error("Firestore onSnapshot error:", err);
-      setLoading(false);
-    });
+        setLoading(false);
+      },
+      (err) => {
+        console.error("Firestore onSnapshot error:", err);
+        setLoading(false);
+      },
+    );
 
     const handleStorage = () => {}; // Muted but kept for ref
     window.addEventListener("storage", handleStorage);
@@ -139,28 +157,48 @@ function Tracking() {
   );
 }
 
-function OrderCard({ order, isExpanded, onToggle }: { order: any, isExpanded: boolean, onToggle: () => void }) {
+function OrderCard({
+  order,
+  isExpanded,
+  onToggle,
+}: {
+  order: any;
+  isExpanded: boolean;
+  onToggle: () => void;
+}) {
   const currentIdx = ORDER_STEPS.findIndex((s) => s.key === order.status);
 
   const getStatusLabel = (status: string) => {
     switch (status) {
-      case "pending": return "ממתין לאיסוף";
-      case "picked_up": return "נאסף";
-      case "in_progress": return "בטיפול";
-      case "ready": return "מוכן";
-      case "completed": return "הושלם";
-      default: return "טרם נקבע";
+      case "pending":
+        return "ממתין לאיסוף";
+      case "picked_up":
+        return "נאסף";
+      case "in_progress":
+        return "בטיפול";
+      case "ready":
+        return "מוכן";
+      case "completed":
+        return "הושלם";
+      default:
+        return "טרם נקבע";
     }
   };
 
   const getStatusBadgeClass = (status: string) => {
     switch (status) {
-      case "pending": return "bg-purple-50 text-purple-700 border-purple-200/50";
-      case "picked_up": return "bg-blue-50 text-blue-700 border-blue-200/50";
-      case "in_progress": return "bg-amber-50 text-amber-700 border-amber-200/50";
-      case "ready": return "bg-emerald-50 text-emerald-700 border-emerald-200/50";
-      case "completed": return "bg-gray-100 text-gray-700 border-gray-200";
-      default: return "bg-slate-50 text-slate-600 border-slate-200";
+      case "pending":
+        return "bg-purple-50 text-purple-700 border-purple-200/50";
+      case "picked_up":
+        return "bg-blue-50 text-blue-700 border-blue-200/50";
+      case "in_progress":
+        return "bg-amber-50 text-amber-700 border-amber-200/50";
+      case "ready":
+        return "bg-emerald-50 text-emerald-700 border-emerald-200/50";
+      case "completed":
+        return "bg-gray-100 text-gray-700 border-gray-200";
+      default:
+        return "bg-slate-50 text-slate-600 border-slate-200";
     }
   };
 
@@ -169,7 +207,9 @@ function OrderCard({ order, isExpanded, onToggle }: { order: any, isExpanded: bo
 
   let parsedImages: string[] = [];
   if (order.images) {
-    try { parsedImages = typeof order.images === "string" ? JSON.parse(order.images) : order.images; } catch (e) { }
+    try {
+      parsedImages = typeof order.images === "string" ? JSON.parse(order.images) : order.images;
+    } catch (e) {}
   }
   const hasImages = parsedImages && parsedImages.length > 0;
   const hasLaundryMsg = laundryMsg && laundryMsg.trim().length > 0;
@@ -177,11 +217,14 @@ function OrderCard({ order, isExpanded, onToggle }: { order: any, isExpanded: bo
   if (isExpanded) {
     return (
       <div className="space-y-4 animate-fade-in">
-        <div className={`rounded-3xl p-5 relative cursor-pointer ${
-          order.status === "completed"
-            ? "bg-slate-100 text-slate-700 border border-slate-200"
-            : "bg-lime text-lime-foreground shadow-[0_15px_40px_-15px_oklch(0.92_0.18_125/0.6)]"
-        }`} onClick={onToggle}>
+        <div
+          className={`rounded-3xl p-5 relative cursor-pointer ${
+            order.status === "completed"
+              ? "bg-slate-100 text-slate-700 border border-slate-200"
+              : "bg-lime text-lime-foreground shadow-[0_15px_40px_-15px_oklch(0.92_0.18_125/0.6)]"
+          }`}
+          onClick={onToggle}
+        >
           <div className="flex justify-between items-center text-xs opacity-80 mb-3 font-bold border-b border-current/20 pb-2">
             <span className="text-sm">הזמנה #{order.id.split("-")[0]}</span>
             <span>{new Date(order.created_at).toLocaleDateString("he-IL")}</span>
@@ -190,7 +233,9 @@ function OrderCard({ order, isExpanded, onToggle }: { order: any, isExpanded: bo
             <ChevronUp className="size-5" />
           </div>
           <p className="text-xs font-semibold opacity-70 mt-4">סטטוס נוכחי</p>
-          <h2 className="text-xl font-extrabold mt-1">{stateLabel[order.status as keyof typeof stateLabel] || getStatusLabel(order.status)}</h2>
+          <h2 className="text-xl font-extrabold mt-1">
+            {stateLabel[order.status as keyof typeof stateLabel] || getStatusLabel(order.status)}
+          </h2>
           <ol className="mt-4 space-y-2">
             {ORDER_STEPS.map((s, i) => {
               const done = i <= currentIdx;
@@ -220,8 +265,12 @@ function OrderCard({ order, isExpanded, onToggle }: { order: any, isExpanded: bo
               <div className="rounded-3xl bg-lavender text-lavender-foreground p-5 space-y-4 shadow-sm border border-lavender-foreground/5">
                 {hasNotes && (
                   <div>
-                    <h3 className="font-extrabold text-xs mb-1 text-foreground">דגשים מיוחדים לכביסה:</h3>
-                    <p className="text-xs opacity-90 leading-relaxed text-muted-foreground whitespace-pre-wrap">{custNotes}</p>
+                    <h3 className="font-extrabold text-xs mb-1 text-foreground">
+                      דגשים מיוחדים לכביסה:
+                    </h3>
+                    <p className="text-xs opacity-90 leading-relaxed text-muted-foreground whitespace-pre-wrap">
+                      {custNotes}
+                    </p>
                   </div>
                 )}
                 {hasImages && (
@@ -229,8 +278,19 @@ function OrderCard({ order, isExpanded, onToggle }: { order: any, isExpanded: bo
                     <h3 className="font-extrabold text-xs mb-2 text-foreground">תמונות שצורפו:</h3>
                     <div className="flex gap-2 flex-wrap">
                       {parsedImages.map((img, idx) => (
-                        <div key={idx} className="relative size-14 rounded-2xl overflow-hidden border-2 border-background shadow-sm hover:scale-105 transition-transform cursor-pointer">
-                          <img src={img} alt="דגש" className="size-full object-cover" onClick={(e) => { e.stopPropagation(); toast.info("תמונה מצורפת לכביסה"); }} />
+                        <div
+                          key={idx}
+                          className="relative size-14 rounded-2xl overflow-hidden border-2 border-background shadow-sm hover:scale-105 transition-transform cursor-pointer"
+                        >
+                          <img
+                            src={img}
+                            alt="דגש"
+                            className="size-full object-cover"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toast.info("תמונה מצורפת לכביסה");
+                            }}
+                          />
                         </div>
                       ))}
                     </div>
@@ -245,8 +305,12 @@ function OrderCard({ order, isExpanded, onToggle }: { order: any, isExpanded: bo
                     <MessageSquare className="size-4 animate-pulse text-lime-foreground" />
                   </div>
                   <div>
-                    <h3 className="font-extrabold text-xs text-lime-foreground">עדכון והודעה מהמכבסה:</h3>
-                    <span className="text-[9px] font-bold text-muted-foreground">הודעה רשמית מצוות המכבסה</span>
+                    <h3 className="font-extrabold text-xs text-lime-foreground">
+                      עדכון והודעה מהמכבסה:
+                    </h3>
+                    <span className="text-[9px] font-bold text-muted-foreground">
+                      הודעה רשמית מצוות המכבסה
+                    </span>
                   </div>
                 </div>
                 <p className="text-xs font-black text-foreground/90 leading-relaxed bg-white/50 p-3 rounded-2xl border border-lime/5 break-words whitespace-pre-wrap">
@@ -263,7 +327,9 @@ function OrderCard({ order, isExpanded, onToggle }: { order: any, isExpanded: bo
                   </div>
                   <div>
                     <h3 className="font-extrabold text-xs text-primary">חשבונית מצורפת:</h3>
-                    <span className="text-[9px] font-bold text-muted-foreground">{order.invoice.name}</span>
+                    <span className="text-[9px] font-bold text-muted-foreground">
+                      {order.invoice.name}
+                    </span>
                   </div>
                 </div>
                 <button
@@ -287,24 +353,41 @@ function OrderCard({ order, isExpanded, onToggle }: { order: any, isExpanded: bo
         )}
 
         <div className="rounded-3xl bg-lavender text-lavender-foreground p-5 space-y-2 text-sm border border-lavender-foreground/5 shadow-sm animate-fade-in">
-          <Row label="שיטת מסירה" value={
-            order.delivery_method === "self_pickup" ? "איסוף עצמי" :
-            order.delivery_method === "home_delivery" ? "משלוח הביתה" : "טרם נבחר"
-          } />
-          <Row label="סטטוס תשלום" value={order.payment_state === "paid" ? "שולם" : "ממתין לתשלום"} />
+          <Row
+            label="שיטת מסירה"
+            value={
+              order.delivery_method === "self_pickup"
+                ? "איסוף עצמי"
+                : order.delivery_method === "home_delivery"
+                  ? "משלוח הביתה"
+                  : "טרם נבחר"
+            }
+          />
+          <Row
+            label="סטטוס תשלום"
+            value={order.payment_state === "paid" ? "שולם" : "ממתין לתשלום"}
+          />
           <Row label="סכום" value={`₪${(order.amount_due || 0).toFixed(2)}`} />
         </div>
 
         {order.delivery_method === "none" && order.status !== "completed" && (
-          <Link to="/delivery" className="block rounded-3xl bg-primary text-primary-foreground p-4 text-center font-bold shadow-md shadow-primary/20 hover:scale-[1.01] active:scale-95 transition">
+          <Link
+            to="/delivery"
+            className="block rounded-3xl bg-primary text-primary-foreground p-4 text-center font-bold shadow-md shadow-primary/20 hover:scale-[1.01] active:scale-95 transition"
+          >
             בחר שיטת מסירה
           </Link>
         )}
-        {order.delivery_method !== "none" && order.payment_state === "unpaid" && order.status !== "completed" && (
-          <Link to="/payments" className="block rounded-3xl bg-primary text-primary-foreground p-4 text-center font-bold shadow-md shadow-primary/20 hover:scale-[1.01] active:scale-95 transition">
-            המשך לתשלום
-          </Link>
-        )}
+        {order.delivery_method !== "none" &&
+          order.payment_state === "unpaid" &&
+          order.status !== "completed" && (
+            <Link
+              to="/payments"
+              className="block rounded-3xl bg-primary text-primary-foreground p-4 text-center font-bold shadow-md shadow-primary/20 hover:scale-[1.01] active:scale-95 transition"
+            >
+              המשך לתשלום
+            </Link>
+          )}
       </div>
     );
   }
@@ -320,7 +403,9 @@ function OrderCard({ order, isExpanded, onToggle }: { order: any, isExpanded: bo
           <span className="text-xs font-bold text-foreground">#{order.id.split("-")[0]}</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getStatusBadgeClass(order.status)}`}>
+          <span
+            className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getStatusBadgeClass(order.status)}`}
+          >
             {getStatusLabel(order.status)}
           </span>
           <ChevronDown className="size-4 text-muted-foreground" />
@@ -331,7 +416,11 @@ function OrderCard({ order, isExpanded, onToggle }: { order: any, isExpanded: bo
         <div>
           <span className="text-muted-foreground block">שיטת מסירה:</span>
           <span className="font-semibold text-foreground">
-            {order.delivery_method === "home_delivery" ? "משלוח הביתה" : order.delivery_method === "self_pickup" ? "איסוף עצמי" : "טרם נקבע"}
+            {order.delivery_method === "home_delivery"
+              ? "משלוח הביתה"
+              : order.delivery_method === "self_pickup"
+                ? "איסוף עצמי"
+                : "טרם נקבע"}
           </span>
         </div>
         <div>
@@ -345,7 +434,9 @@ function OrderCard({ order, isExpanded, onToggle }: { order: any, isExpanded: bo
       <div className="flex justify-between items-center pt-1">
         <div>
           <span className="text-[10px] text-muted-foreground block">תשלום:</span>
-          <span className={`text-[10px] font-bold ${order.payment_state === "paid" ? "text-emerald-600" : "text-amber-600"}`}>
+          <span
+            className={`text-[10px] font-bold ${order.payment_state === "paid" ? "text-emerald-600" : "text-amber-600"}`}
+          >
             {order.payment_state === "paid" ? "✓ שולם" : "ממתין לתשלום"}
           </span>
         </div>

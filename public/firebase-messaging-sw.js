@@ -64,6 +64,52 @@ self.addEventListener("notificationclick", (event) => {
         }
       }
       if (self.clients.openWindow) return self.clients.openWindow(absoluteUrl);
-    })
+    }),
   );
+});
+
+// Native push event listener to handle iOS background PWA app badging
+self.addEventListener("push", (event) => {
+  console.log("[firebase-messaging-sw] Native push event received:", event);
+
+  let unreadCount = null;
+
+  if (event.data) {
+    try {
+      const payload = event.data.json();
+      console.log("[firebase-messaging-sw] Native push JSON payload:", payload);
+
+      // Extract unreadCount / badgeCount from standard FCM/APNs payload structure
+      const data = payload.data || {};
+      const badgeVal =
+        data.badgeCount ||
+        data.unreadCount ||
+        data.badge ||
+        (payload.notification && payload.notification.badge) ||
+        (payload.aps && payload.aps.badge) ||
+        payload.badgeCount ||
+        payload.unreadCount ||
+        payload.badge;
+
+      if (badgeVal !== undefined && badgeVal !== null) {
+        unreadCount = Number(badgeVal);
+      }
+    } catch (e) {
+      console.warn("[firebase-messaging-sw] Native push payload is not JSON:", e);
+    }
+  }
+
+  // Fallback / default badge logic if extraction failed but we know a push happened
+  if (unreadCount === null || isNaN(unreadCount)) {
+    unreadCount = 1;
+  }
+
+  if (self.navigator && typeof self.navigator.setAppBadge === "function") {
+    console.log("[firebase-messaging-sw] Setting app badge from push event to:", unreadCount);
+    event.waitUntil(
+      self.navigator.setAppBadge(unreadCount).catch((err) => {
+        console.error("[firebase-messaging-sw] Failed to set app badge in push event:", err);
+      }),
+    );
+  }
 });

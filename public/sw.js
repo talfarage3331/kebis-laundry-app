@@ -16,13 +16,11 @@ self.addEventListener("install", (event) => {
   console.log("[Service Worker] Install event triggered");
   self.skipWaiting(); // Call immediately
   event.waitUntil(
-    caches
-      .open(APP_CACHE)
-      .then((cache) => {
-        return cache.addAll([OFFLINE_URL]).catch((err) => {
-          console.warn("[Service Worker] Offline cache addAll failed, continuing anyway:", err);
-        });
-      })
+    caches.open(APP_CACHE).then((cache) => {
+      return cache.addAll([OFFLINE_URL]).catch((err) => {
+        console.warn("[Service Worker] Offline cache addAll failed, continuing anyway:", err);
+      });
+    }),
   );
 });
 
@@ -32,28 +30,18 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) =>
-        Promise.all(
-          keys
-            .filter((k) => k !== APP_CACHE)
-            .map((k) => caches.delete(k))
-        )
-      )
+      .then((keys) => Promise.all(keys.filter((k) => k !== APP_CACHE).map((k) => caches.delete(k))))
       .then(() => {
         console.log("[Service Worker] clients.claim() called");
         return self.clients.claim();
-      })
+      }),
   );
 });
 
 // ─── Fetch (network-first, cache fallback) ──────────────────
 self.addEventListener("fetch", (event) => {
   // Only handle same-origin GET requests
-  if (
-    event.request.method !== "GET" ||
-    !event.request.url.startsWith(self.location.origin)
-  )
-    return;
+  if (event.request.method !== "GET" || !event.request.url.startsWith(self.location.origin)) return;
 
   event.respondWith(
     fetch(event.request)
@@ -65,11 +53,10 @@ self.addEventListener("fetch", (event) => {
         }
         return response;
       })
-      .catch(() => caches.match(event.request).then((r) => r ?? caches.match(OFFLINE_URL)))
+      .catch(() => caches.match(event.request).then((r) => r ?? caches.match(OFFLINE_URL))),
   );
 });
 
 // ─── Push handling moved to /firebase-messaging-sw.js ──────────
 // FCM owns push/notification rendering now; this worker only handles
 // the app-shell cache + offline fallback above.
-

@@ -182,4 +182,3 @@
 html[data-standalone="true"] .chat-header-standalone {
   padding-top: max(3.5rem, calc(var(--sat, env(safe-area-inset-top, 47px)) + 1.25rem)) !important;
 }
-

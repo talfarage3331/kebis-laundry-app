@@ -1,19 +1,19 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
 import { auth, db } from "./firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { 
-  collection, 
-  doc, 
-  getDoc, 
-  setDoc, 
-  updateDoc, 
-  addDoc, 
-  query, 
-  where, 
-  onSnapshot, 
+import {
+  collection,
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  addDoc,
+  query,
+  where,
+  onSnapshot,
   serverTimestamp,
   deleteDoc,
-  getDocs
+  getDocs,
 } from "firebase/firestore";
 
 export type OrderState = "none" | "pending" | "picked_up" | "in_progress" | "ready" | "completed";
@@ -48,13 +48,18 @@ interface Store {
   activeOrderId: string | null;
   activeOrderDate: string | null;
   invoices: Invoice[];
-  
+
   orderNotes: string | null;
   orderImages: string[];
   requiresIroning: boolean;
   requiresDryCleaning: boolean;
 
-  createOrder: (notes?: string, images?: string[], requiresIroning?: boolean, requiresDryCleaning?: boolean) => Promise<string | null>;
+  createOrder: (
+    notes?: string,
+    images?: string[],
+    requiresIroning?: boolean,
+    requiresDryCleaning?: boolean,
+  ) => Promise<string | null>;
   advanceOrder: () => void;
   setDelivery: (m: DeliveryMethod) => void;
   payAndInvoice: () => void;
@@ -116,8 +121,8 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       if (sessionUser && sessionUser.email) {
         setLoading(true);
         let role: "admin" | "laundry" | "customer" = "customer";
-        let dbName = sessionUser.displayName || sessionUser.email.split('@')[0] || "משתמש";
-        
+        let dbName = sessionUser.displayName || sessionUser.email.split("@")[0] || "משתמש";
+
         if (sessionUser.email === "talfarage3331@gmail.com") {
           role = "admin";
         }
@@ -136,7 +141,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
               fullName: dbName,
               email: sessionUser.email,
               role: role,
-              createdAt: serverTimestamp()
+              createdAt: serverTimestamp(),
             });
           }
         } catch (err) {
@@ -155,7 +160,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
           uid: sessionUser.uid,
           name: displayName,
           email: sessionUser.email,
-          role
+          role,
         });
         setLoading(false);
       } else {
@@ -187,25 +192,27 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const q = query(
-      collection(db, "orders"),
-      where("user_email", "==", user.email)
-    );
+    const q = query(collection(db, "orders"), where("user_email", "==", user.email));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const allOrders = snapshot.docs.map(doc => {
+      const allOrders = snapshot.docs.map((doc) => {
         const data = doc.data();
         return {
           id: doc.id,
           ...data,
           delivery_method: data.delivery_method || data.deliveryMethod || "none",
           payment_state: data.payment_state || data.paymentState || "unpaid",
-          amount_due: data.amount_due !== undefined ? data.amount_due : (data.amountDue !== undefined ? data.amountDue : 0),
+          amount_due:
+            data.amount_due !== undefined
+              ? data.amount_due
+              : data.amountDue !== undefined
+                ? data.amountDue
+                : 0,
           notes: data.notes || "",
           images: data.images || [],
           requires_ironing: !!(data.requires_ironing || data.requiresIroning),
           requires_dry_cleaning: !!(data.requires_dry_cleaning || data.requiresDryCleaning),
-          created_at: data.created_at || data.createdAt || new Date().toISOString()
+          created_at: data.created_at || data.createdAt || new Date().toISOString(),
         } as any;
       });
 
@@ -213,20 +220,19 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       allOrders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
       // Filter out placeholders
-      const activeOrder = allOrders.find(o => 
-        o.delivery_method !== "placeholder" && 
-        !o.id.startsWith("placeholder")
+      const activeOrder = allOrders.find(
+        (o) => o.delivery_method !== "placeholder" && !o.id.startsWith("placeholder"),
       );
 
       // Invoices - derived from order's invoiceUrl field
       const userInvoices: Invoice[] = allOrders
-        .filter(o => o.invoiceUrl)
-        .map(o => ({
+        .filter((o) => o.invoiceUrl)
+        .map((o) => ({
           id: `inv-${o.id}`,
           amount: o.amount_due || 0,
           date: o.created_at,
           name: o.invoiceName || "invoice.pdf",
-          data: o.invoiceUrl
+          data: o.invoiceUrl,
         }));
       setInvoices(userInvoices);
 
@@ -266,103 +272,111 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     setRequiresDryCleaning(false);
   }, []);
 
-  const createOrder = useCallback(async (
-    notes?: string, 
-    images?: string[], 
-    ironing: boolean = false, 
-    dryCleaning: boolean = false
-  ): Promise<string | null> => {
-    if (!user) return null;
-    const newState: OrderState = "pending";
-    const amount = 0;
-    
-    setOrderState(newState);
-    setDeliveryMethod("none");
-    setPaymentState("unpaid");
-    setAmountDue(amount);
-    setRequiresIroning(ironing);
-    setRequiresDryCleaning(dryCleaning);
+  const createOrder = useCallback(
+    async (
+      notes?: string,
+      images?: string[],
+      ironing: boolean = false,
+      dryCleaning: boolean = false,
+    ): Promise<string | null> => {
+      if (!user) return null;
+      const newState: OrderState = "pending";
+      const amount = 0;
 
-    localStorage.setItem(`laundry_ironing_${user.email}`, String(ironing));
-    localStorage.setItem(`laundry_dry_cleaning_${user.email}`, String(dryCleaning));
-    localStorage.setItem("laundry_ironing", String(ironing));
-    localStorage.setItem("laundry_dry_cleaning", String(dryCleaning));
+      setOrderState(newState);
+      setDeliveryMethod("none");
+      setPaymentState("unpaid");
+      setAmountDue(amount);
+      setRequiresIroning(ironing);
+      setRequiresDryCleaning(dryCleaning);
 
-    if (notes) {
-      setOrderNotes(notes);
-      localStorage.setItem("laundry_notes", notes);
-      localStorage.setItem(`laundry_notes_${user.email}`, notes);
-    } else {
-      setOrderNotes(null);
-      localStorage.removeItem("laundry_notes");
-      localStorage.removeItem(`laundry_notes_${user.email}`);
-    }
+      localStorage.setItem(`laundry_ironing_${user.email}`, String(ironing));
+      localStorage.setItem(`laundry_dry_cleaning_${user.email}`, String(dryCleaning));
+      localStorage.setItem("laundry_ironing", String(ironing));
+      localStorage.setItem("laundry_dry_cleaning", String(dryCleaning));
 
-    if (images && images.length > 0) {
-      setOrderImages(images);
-      localStorage.setItem("laundry_images", JSON.stringify(images));
-      localStorage.setItem(`laundry_images_${user.email}`, JSON.stringify(images));
-    } else {
-      setOrderImages([]);
-      localStorage.removeItem("laundry_images");
-      localStorage.removeItem(`laundry_images_${user.email}`);
-    }
+      if (notes) {
+        setOrderNotes(notes);
+        localStorage.setItem("laundry_notes", notes);
+        localStorage.setItem(`laundry_notes_${user.email}`, notes);
+      } else {
+        setOrderNotes(null);
+        localStorage.removeItem("laundry_notes");
+        localStorage.removeItem(`laundry_notes_${user.email}`);
+      }
 
-    try {
-      // Delete any existing placeholder orders for this user email
-      const q = query(
-        collection(db, "orders"),
-        where("user_email", "==", user.email),
-        where("delivery_method", "==", "placeholder")
-      );
-      const placeholderSnaps = await getDocs(q);
-      const deletePromises = placeholderSnaps.docs.map(d => deleteDoc(d.ref));
-      await Promise.all(deletePromises);
+      if (images && images.length > 0) {
+        setOrderImages(images);
+        localStorage.setItem("laundry_images", JSON.stringify(images));
+        localStorage.setItem(`laundry_images_${user.email}`, JSON.stringify(images));
+      } else {
+        setOrderImages([]);
+        localStorage.removeItem("laundry_images");
+        localStorage.removeItem(`laundry_images_${user.email}`);
+      }
 
-      // Create new order doc in Firestore
-      const docRef = await addDoc(collection(db, "orders"), {
-        user_id: auth.currentUser?.uid || "",
-        userId: auth.currentUser?.uid || "",
-        status: newState,
-        delivery_method: "none",
-        deliveryMethod: "none",
-        payment_state: "unpaid",
-        paymentState: "unpaid",
-        amount_due: amount,
-        total_price: amount,
-        user_email: user.email,
-        userEmail: user.email,
-        requires_ironing: ironing,
-        requiresIroning: ironing,
-        requires_dry_cleaning: dryCleaning,
-        requiresDryCleaning: dryCleaning,
-        notes: notes || "",
-        images: images || [],
-        invoiceUrl: "",
-        invoiceName: "",
-        created_at: new Date().toISOString(),
-        createdAt: new Date().toISOString()
-      });
+      try {
+        // Delete any existing placeholder orders for this user email
+        const q = query(
+          collection(db, "orders"),
+          where("user_email", "==", user.email),
+          where("delivery_method", "==", "placeholder"),
+        );
+        const placeholderSnaps = await getDocs(q);
+        const deletePromises = placeholderSnaps.docs.map((d) => deleteDoc(d.ref));
+        await Promise.all(deletePromises);
 
-      // Synchronize laundry notifications list locally (Mock triggers)
-      const newNotification = {
-        id: docRef.id,
-        user_email: user.email || "לקוח",
-        notes: notes || "כביסה רגילה",
-        images: images || [],
-        timestamp: new Date().toLocaleTimeString("he-IL")
-      };
-      
-      const existingNotifications = JSON.parse(localStorage.getItem("laundry_notifications") || "[]");
-      localStorage.setItem("laundry_notifications", JSON.stringify([newNotification, ...existingNotifications]));
-      
-      window.dispatchEvent(new CustomEvent("laundry-order-updated"));
-      return docRef.id;
-    } catch (err) {
-      console.error("Order creation failed in Firestore:", err);
-      return null;
-    }
-  }, [user]);
+        // Create new order doc in Firestore
+        const docRef = await addDoc(collection(db, "orders"), {
+          user_id: auth.currentUser?.uid || "",
+          userId: auth.currentUser?.uid || "",
+          status: newState,
+          delivery_method: "none",
+          deliveryMethod: "none",
+          payment_state: "unpaid",
+          paymentState: "unpaid",
+          amount_due: amount,
+          total_price: amount,
+          user_email: user.email,
+          userEmail: user.email,
+          requires_ironing: ironing,
+          requiresIroning: ironing,
+          requires_dry_cleaning: dryCleaning,
+          requiresDryCleaning: dryCleaning,
+          notes: notes || "",
+          images: images || [],
+          invoiceUrl: "",
+          invoiceName: "",
+          created_at: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+        });
+
+        // Synchronize laundry notifications list locally (Mock triggers)
+        const newNotification = {
+          id: docRef.id,
+          user_email: user.email || "לקוח",
+          notes: notes || "כביסה רגילה",
+          images: images || [],
+          timestamp: new Date().toLocaleTimeString("he-IL"),
+        };
+
+        const existingNotifications = JSON.parse(
+          localStorage.getItem("laundry_notifications") || "[]",
+        );
+        localStorage.setItem(
+          "laundry_notifications",
+          JSON.stringify([newNotification, ...existingNotifications]),
+        );
+
+        window.dispatchEvent(new CustomEvent("laundry-order-updated"));
+        return docRef.id;
+      } catch (err) {
+        console.error("Order creation failed in Firestore:", err);
+        return null;
+      }
+    },
+    [user],
+  );
 
   const advanceOrder = useCallback(async () => {
     if (!activeOrderId) return;
@@ -375,7 +389,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     setOrderState(finalState);
     try {
       await updateDoc(doc(db, "orders", activeOrderId), {
-        status: finalState
+        status: finalState,
       });
       window.dispatchEvent(new CustomEvent("laundry-order-updated"));
     } catch (err) {
@@ -383,19 +397,22 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     }
   }, [activeOrderId, orderState]);
 
-  const setDelivery = useCallback(async (m: DeliveryMethod) => {
-    if (!activeOrderId) return;
-    setDeliveryMethod(m);
-    try {
-      await updateDoc(doc(db, "orders", activeOrderId), {
-        delivery_method: m,
-        deliveryMethod: m
-      });
-      window.dispatchEvent(new CustomEvent("laundry-order-updated"));
-    } catch (err) {
-      console.error("Failed to set delivery:", err);
-    }
-  }, [activeOrderId]);
+  const setDelivery = useCallback(
+    async (m: DeliveryMethod) => {
+      if (!activeOrderId) return;
+      setDeliveryMethod(m);
+      try {
+        await updateDoc(doc(db, "orders", activeOrderId), {
+          delivery_method: m,
+          deliveryMethod: m,
+        });
+        window.dispatchEvent(new CustomEvent("laundry-order-updated"));
+      } catch (err) {
+        console.error("Failed to set delivery:", err);
+      }
+    },
+    [activeOrderId],
+  );
 
   const payAndInvoice = useCallback(async () => {
     if (!activeOrderId) return;
@@ -405,7 +422,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       await updateDoc(doc(db, "orders", activeOrderId), {
         payment_state: "paid",
         paymentState: "paid",
-        amount_due: 0
+        amount_due: 0,
       });
       window.dispatchEvent(new CustomEvent("laundry-order-updated"));
     } catch (err) {
@@ -429,15 +446,29 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem("laundry_images");
   }, []);
 
-
   return (
     <Ctx.Provider
       value={{
-        user, loading, login, logout,
-        orderState, deliveryMethod, paymentState, amountDue, invoices,
-        activeOrderId, activeOrderDate,
-        orderNotes, orderImages, requiresIroning, requiresDryCleaning,
-        createOrder, advanceOrder, setDelivery, payAndInvoice, reset,
+        user,
+        loading,
+        login,
+        logout,
+        orderState,
+        deliveryMethod,
+        paymentState,
+        amountDue,
+        invoices,
+        activeOrderId,
+        activeOrderDate,
+        orderNotes,
+        orderImages,
+        requiresIroning,
+        requiresDryCleaning,
+        createOrder,
+        advanceOrder,
+        setDelivery,
+        payAndInvoice,
+        reset,
         refreshActiveOrder,
       }}
     >

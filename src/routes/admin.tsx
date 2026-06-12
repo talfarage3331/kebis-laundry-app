@@ -15,11 +15,29 @@ import {
   where,
   orderBy,
 } from "firebase/firestore";
-import { 
-  Users, UserCheck, Shield, Trash2, Edit2, Search, 
-  LogOut, Plus, X, Check, ArrowRight, UserPlus, Filter, MessageSquareText
+import {
+  Users,
+  UserCheck,
+  Shield,
+  Trash2,
+  Edit2,
+  Search,
+  LogOut,
+  Plus,
+  X,
+  Check,
+  ArrowRight,
+  UserPlus,
+  Filter,
+  MessageSquareText,
 } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 
@@ -37,12 +55,12 @@ interface Profile {
 function AdminDashboard() {
   const { user, logout } = useLaundry();
   const navigate = useNavigate();
-  
+
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
-  
+
   // Edit State
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
   const [editName, setEditName] = useState("");
@@ -59,7 +77,7 @@ function AdminDashboard() {
     const unsubscribe = onSnapshot(messagesGroup, (snapshot) => {
       try {
         const count = snapshot.docs.filter(
-          (d) => d.data().is_read === false && d.data().sender_email !== user.email
+          (d) => d.data().is_read === false && d.data().sender_email !== user.email,
         ).length;
         setUnreadChatCount(count);
       } catch (err) {
@@ -129,7 +147,7 @@ function AdminDashboard() {
       toast.error("לא ניתן למחוק את מנהל המערכת הראשי!");
       return;
     }
-    
+
     if (!confirm("האם אתה בטוח שברצונך למחוק משתמש זה? פעולה זו היא בלתי הפיכה.")) {
       return;
     }
@@ -153,12 +171,12 @@ function AdminDashboard() {
 
   // Filtered profiles
   const filteredProfiles = profiles.filter((p) => {
-    const matchesSearch = 
+    const matchesSearch =
       (p.fullName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
       (p.email || "").toLowerCase().includes(searchQuery.toLowerCase());
-      
+
     const matchesRole = roleFilter === "all" || p.role === roleFilter;
-    
+
     return matchesSearch && matchesRole;
   });
 
@@ -175,20 +193,30 @@ function AdminDashboard() {
 
   const getRoleLabel = (role: string) => {
     switch (role) {
-      case "admin": return "מנהל מערכת";
-      case "laundry": return "צוות מכבסה";
-      default: return "לקוח";
+      case "admin":
+        return "מנהל מערכת";
+      case "laundry":
+        return "צוות מכבסה";
+      default:
+        return "לקוח";
     }
   };
 
   return (
     <AppLayout>
-      <div className="min-h-screen bg-background pb-12 dir-rtl text-right overflow-x-hidden" dir="rtl">
+      <div
+        className="min-h-screen bg-background pb-12 dir-rtl text-right overflow-x-hidden"
+        dir="rtl"
+      >
         {/* Header banner */}
         <header className="bg-lavender px-4 pb-4 sm:px-6 sm:pb-6 pt-safe-lavender rounded-b-[2rem] shadow-sm flex items-center justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <span className="text-[10px] sm:text-xs font-bold text-primary bg-primary/10 px-2.5 sm:px-3 py-1 rounded-full">לוח בקרה מנהל</span>
-            <h1 className="text-lg sm:text-2xl font-black mt-2 text-lavender-foreground truncate">ניהול פרופילי משתמשים</h1>
+            <span className="text-[10px] sm:text-xs font-bold text-primary bg-primary/10 px-2.5 sm:px-3 py-1 rounded-full">
+              לוח בקרה מנהל
+            </span>
+            <h1 className="text-lg sm:text-2xl font-black mt-2 text-lavender-foreground truncate">
+              ניהול פרופילי משתמשים
+            </h1>
           </div>
           <button
             onClick={() => {
@@ -207,20 +235,24 @@ function AdminDashboard() {
           <section className="grid grid-cols-3 gap-2 sm:gap-3">
             <div className="bg-lavender/40 border border-lavender/50 rounded-2xl p-3 sm:p-4 flex flex-col items-center justify-center text-center">
               <Users className="size-5 sm:size-6 text-primary mb-1" />
-              <span className="text-lg sm:text-xl font-black text-foreground">{profiles.length}</span>
-              <span className="text-[9px] sm:text-[10px] text-muted-foreground font-bold">סה"כ רשומים</span>
+              <span className="text-lg sm:text-xl font-black text-foreground">
+                {profiles.length}
+              </span>
+              <span className="text-[9px] sm:text-[10px] text-muted-foreground font-bold">
+                סה"כ רשומים
+              </span>
             </div>
             <div className="bg-cyan-50 border border-cyan-100 rounded-2xl p-3 sm:p-4 flex flex-col items-center justify-center text-center">
               <UserCheck className="size-5 sm:size-6 text-cyan-600 mb-1" />
               <span className="text-lg sm:text-xl font-black text-cyan-700">
-                {profiles.filter(p => p.role === "laundry").length}
+                {profiles.filter((p) => p.role === "laundry").length}
               </span>
               <span className="text-[9px] sm:text-[10px] text-cyan-600 font-bold">מכבסה</span>
             </div>
             <div className="bg-rose-50 border border-rose-100 rounded-2xl p-3 sm:p-4 flex flex-col items-center justify-center text-center">
               <Shield className="size-5 sm:size-6 text-rose-600 mb-1" />
               <span className="text-lg sm:text-xl font-black text-rose-700">
-                {profiles.filter(p => p.role === "admin").length}
+                {profiles.filter((p) => p.role === "admin").length}
               </span>
               <span className="text-[9px] sm:text-[10px] text-rose-600 font-bold">מנהלים</span>
             </div>
@@ -241,8 +273,12 @@ function AdminDashboard() {
                 )}
               </div>
               <div className="text-right min-w-0">
-                <span className="block text-sm sm:text-base truncate">לוח הודעות ללקוחות (צ'אט)</span>
-                <span className="text-[10px] sm:text-xs opacity-80 font-semibold block mt-0.5 truncate">מענה מיידי ללקוחות בזמן אמת</span>
+                <span className="block text-sm sm:text-base truncate">
+                  לוח הודעות ללקוחות (צ'אט)
+                </span>
+                <span className="text-[10px] sm:text-xs opacity-80 font-semibold block mt-0.5 truncate">
+                  מענה מיידי ללקוחות בזמן אמת
+                </span>
               </div>
             </div>
             <ArrowRight className="size-5 shrink-0 rotate-180 opacity-50 group-hover:opacity-100 group-hover:-translate-x-1 transition-all" />
@@ -266,7 +302,7 @@ function AdminDashboard() {
                 { key: "all", label: "הכל" },
                 { key: "customer", label: "לקוחות" },
                 { key: "laundry", label: "מכבסה" },
-                { key: "admin", label: "מנהלים" }
+                { key: "admin", label: "מנהלים" },
               ].map((filter) => (
                 <button
                   key={filter.key}
@@ -285,8 +321,10 @@ function AdminDashboard() {
 
           {/* Profiles list */}
           <div className="space-y-3">
-            <h2 className="text-base font-extrabold text-foreground px-1">רשימת משתמשים ({filteredProfiles.length})</h2>
-            
+            <h2 className="text-base font-extrabold text-foreground px-1">
+              רשימת משתמשים ({filteredProfiles.length})
+            </h2>
+
             {isLoading ? (
               <div className="py-20 flex flex-col items-center justify-center gap-2">
                 <div className="animate-spin rounded-full size-8 border-4 border-primary border-t-transparent" />
@@ -299,7 +337,7 @@ function AdminDashboard() {
             ) : (
               <div className="space-y-3">
                 {filteredProfiles.map((profile) => (
-                  <div 
+                  <div
                     key={profile.id}
                     className="bg-card border border-muted-foreground/10 rounded-3xl p-3 sm:p-4 flex items-center justify-between gap-2 shadow-sm transition-all hover:shadow-md"
                   >
@@ -308,9 +346,18 @@ function AdminDashboard() {
                         {(profile.fullName || "?")[0]}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <h3 className="font-extrabold text-foreground text-xs sm:text-sm truncate">{profile.fullName || "משתמש ללא שם"}</h3>
-                        <p className="text-[10px] sm:text-xs text-muted-foreground leading-normal mt-0.5 truncate" style={{ overflowWrap: 'anywhere' }}>{profile.email}</p>
-                        <span className={`inline-block mt-1.5 sm:mt-2 px-2 sm:px-2.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold ${getRoleBadge(profile.role)}`}>
+                        <h3 className="font-extrabold text-foreground text-xs sm:text-sm truncate">
+                          {profile.fullName || "משתמש ללא שם"}
+                        </h3>
+                        <p
+                          className="text-[10px] sm:text-xs text-muted-foreground leading-normal mt-0.5 truncate"
+                          style={{ overflowWrap: "anywhere" }}
+                        >
+                          {profile.email}
+                        </p>
+                        <span
+                          className={`inline-block mt-1.5 sm:mt-2 px-2 sm:px-2.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold ${getRoleBadge(profile.role)}`}
+                        >
                           {getRoleLabel(profile.role)}
                         </span>
                       </div>
@@ -341,8 +388,14 @@ function AdminDashboard() {
       </div>
 
       {/* Edit Profile Modal */}
-      <Dialog open={editingProfile !== null} onOpenChange={(open) => !open && setEditingProfile(null)}>
-        <DialogContent className="max-w-md w-[96%] sm:w-[92%] rounded-2xl sm:rounded-3xl p-4 sm:p-6 text-right dir-rtl backdrop-blur-xl bg-background/95 border-none shadow-[0_20px_50px_rgba(0,0,0,0.15)] focus:outline-none max-h-[90dvh] overflow-y-auto" dir="rtl">
+      <Dialog
+        open={editingProfile !== null}
+        onOpenChange={(open) => !open && setEditingProfile(null)}
+      >
+        <DialogContent
+          className="max-w-md w-[96%] sm:w-[92%] rounded-2xl sm:rounded-3xl p-4 sm:p-6 text-right dir-rtl backdrop-blur-xl bg-background/95 border-none shadow-[0_20px_50px_rgba(0,0,0,0.15)] focus:outline-none max-h-[90dvh] overflow-y-auto"
+          dir="rtl"
+        >
           <DialogHeader className="space-y-2 text-right">
             <DialogTitle className="text-lg sm:text-xl font-black text-foreground flex items-center gap-2">
               <Shield className="size-5 text-primary" />

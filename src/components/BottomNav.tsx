@@ -10,7 +10,7 @@ const items = [
 export function BottomNav() {
   const { pathname } = useLocation();
   return (
-    <nav 
+    <nav
       className="fixed inset-x-5 z-40"
       style={{ bottom: "calc(1.5rem + env(safe-area-inset-bottom))" }}
     >
@@ -26,14 +26,16 @@ export function BottomNav() {
                   <Link
                     to={to}
                     className={`grid place-items-center size-16 rounded-full transition-all duration-500 shadow-2xl ${
-                      active 
-                        ? "bg-primary text-primary-foreground scale-110 rotate-[360deg]" 
+                      active
+                        ? "bg-primary text-primary-foreground scale-110 rotate-[360deg]"
                         : "bg-muted text-muted-foreground hover:bg-primary/10"
                     }`}
                   >
                     <Icon strokeWidth={2.25} className="size-7" />
                   </Link>
-                  <span className={`mt-2 text-xs font-bold transition-colors ${active ? "text-primary" : "text-muted-foreground"}`}>
+                  <span
+                    className={`mt-2 text-xs font-bold transition-colors ${active ? "text-primary" : "text-muted-foreground"}`}
+                  >
                     {label}
                   </span>
                 </li>
@@ -46,11 +48,13 @@ export function BottomNav() {
                   to={to}
                   className="flex flex-col items-center gap-1.5 py-2 transition-all active:scale-90"
                 >
-                  <Icon 
-                    strokeWidth={active ? 2.5 : 1.75} 
-                    className={`size-6 transition-colors ${active ? "text-primary" : "text-muted-foreground"}`} 
+                  <Icon
+                    strokeWidth={active ? 2.5 : 1.75}
+                    className={`size-6 transition-colors ${active ? "text-primary" : "text-muted-foreground"}`}
                   />
-                  <span className={`text-[11px] font-bold transition-colors ${active ? "text-primary" : "text-muted-foreground"}`}>
+                  <span
+                    className={`text-[11px] font-bold transition-colors ${active ? "text-primary" : "text-muted-foreground"}`}
+                  >
                     {label}
                   </span>
                 </Link>

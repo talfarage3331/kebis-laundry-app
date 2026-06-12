@@ -5,8 +5,25 @@ import { AppHeader } from "@/components/AppHeader";
 import { useLaundry, ORDER_STEPS, stateLabel } from "@/lib/laundry-store";
 import { db } from "@/lib/firebase";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
-import { ShoppingBasket, ChevronLeft, Check, Camera, Trash2, Sparkles, Loader2, Shirt, MapPin, MessageCircle } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  ShoppingBasket,
+  ChevronLeft,
+  Check,
+  Camera,
+  Trash2,
+  Sparkles,
+  Loader2,
+  Shirt,
+  MapPin,
+  MessageCircle,
+} from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 
@@ -35,15 +52,10 @@ function Dashboard() {
   useEffect(() => {
     if (!user?.email) return;
 
-    const q = query(
-      collection(db, `chats/${user.email}/messages`),
-      where("is_read", "==", false)
-    );
+    const q = query(collection(db, `chats/${user.email}/messages`), where("is_read", "==", false));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const unread = snapshot.docs.filter(
-        (doc) => doc.data().sender_email !== user.email
-      ).length;
+      const unread = snapshot.docs.filter((doc) => doc.data().sender_email !== user.email).length;
       setUnreadCount(unread);
     });
 
@@ -64,7 +76,10 @@ function Dashboard() {
               </div>
               <div className="space-y-1">
                 <h3 className="text-base font-extrabold text-foreground">יש לך כביסה בטיפול!</h3>
-                <p className="text-xs text-muted-foreground leading-relaxed px-2 sm:px-4 break-words">הזמנתך התקבלה בהצלחה ונמצאת כעת בשלבי טיפול. תוכל לעקוב אחר ההתקדמות ולבצע תשלום במסך המעקב.</p>
+                <p className="text-xs text-muted-foreground leading-relaxed px-2 sm:px-4 break-words">
+                  הזמנתך התקבלה בהצלחה ונמצאת כעת בשלבי טיפול. תוכל לעקוב אחר ההתקדמות ולבצע תשלום
+                  במסך המעקב.
+                </p>
               </div>
               <button
                 onClick={() => navigate({ to: "/tracking" })}
@@ -82,7 +97,9 @@ function Dashboard() {
             </button>
 
             <div className="pt-6 border-t border-border/60 flex flex-col items-center gap-2">
-              <span className="text-sm font-bold text-muted-foreground">רוצה לבצע הזמנה נוספת?</span>
+              <span className="text-sm font-bold text-muted-foreground">
+                רוצה לבצע הזמנה נוספת?
+              </span>
               <EmptyState onOpenModal={() => setIsModalOpen(true)} />
             </div>
           </div>
@@ -94,8 +111,13 @@ function Dashboard() {
         onClose={() => setIsModalOpen(false)}
         onSubmit={async (address, notes, images, requiresIroning, requiresDryCleaning) => {
           // Combine address + optional user notes into a single notes string stored in the DB
-          const combinedNotes = [address, notes].filter(Boolean).join('\n\n');
-          const orderId = await createOrder(combinedNotes, images, requiresIroning, requiresDryCleaning);
+          const combinedNotes = [address, notes].filter(Boolean).join("\n\n");
+          const orderId = await createOrder(
+            combinedNotes,
+            images,
+            requiresIroning,
+            requiresDryCleaning,
+          );
           setIsModalOpen(false);
           if (orderId) {
             toast.success("הזמנת האיסוף נוצרה בהצלחה!");
@@ -143,7 +165,13 @@ function EmptyState({ onOpenModal }: { onOpenModal: () => void }) {
 interface PickupModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (address: string, notes: string, images: string[], requiresIroning: boolean, requiresDryCleaning: boolean) => Promise<void>;
+  onSubmit: (
+    address: string,
+    notes: string,
+    images: string[],
+    requiresIroning: boolean,
+    requiresDryCleaning: boolean,
+  ) => Promise<void>;
 }
 
 function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
@@ -194,7 +222,11 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
   }, [isOpen]);
 
   useEffect(() => {
-    if (!addressSearchQuery || addressSearchQuery.length < 3 || (selectedAddress && selectedAddress.display_name === addressSearchQuery)) {
+    if (
+      !addressSearchQuery ||
+      addressSearchQuery.length < 3 ||
+      (selectedAddress && selectedAddress.display_name === addressSearchQuery)
+    ) {
       setSuggestions([]);
       return;
     }
@@ -203,7 +235,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
       setIsSearching(true);
       try {
         const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(addressSearchQuery)}&format=json&accept-language=he&countrycodes=il&addressdetails=1&limit=5`
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(addressSearchQuery)}&format=json&accept-language=he&countrycodes=il&addressdetails=1&limit=5`,
         );
         if (res.ok) {
           const data = await res.json();
@@ -224,17 +256,17 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
     const street = addr.road || addr.pedestrian || addr.suburb || "";
     const houseNum = addr.house_number || "";
     const city = addr.city || addr.town || addr.village || "";
-    
+
     let finalAddr = "";
     if (street) {
-      finalAddr = `${street}${city ? ', ' + city : ''}`;
+      finalAddr = `${street}${city ? ", " + city : ""}`;
     } else {
-      finalAddr = item.display_name.split(',').slice(0, 3).join(',');
+      finalAddr = item.display_name.split(",").slice(0, 3).join(",");
     }
 
     setSelectedAddress({
       display_name: finalAddr,
-      raw: item
+      raw: item,
     });
     setAddressSearchQuery(finalAddr);
     if (houseNum) {
@@ -258,7 +290,9 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
       async (position) => {
         const { latitude, longitude } = position.coords;
         try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=he&addressdetails=1`);
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=he&addressdetails=1`,
+          );
           if (res.ok) {
             const data = await res.json();
             if (data && data.address) {
@@ -266,17 +300,17 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
               const street = addr.road || addr.pedestrian || addr.suburb || "";
               const houseNum = addr.house_number || "";
               const city = addr.city || addr.town || addr.village || "";
-              
+
               let finalAddr = "";
               if (street) {
-                finalAddr = `${street}${city ? ', ' + city : ''}`;
+                finalAddr = `${street}${city ? ", " + city : ""}`;
               } else {
-                finalAddr = data.display_name.split(',').slice(0, 3).join(',');
+                finalAddr = data.display_name.split(",").slice(0, 3).join(",");
               }
-              
+
               setSelectedAddress({
                 display_name: finalAddr,
-                raw: data
+                raw: data,
               });
               setAddressSearchQuery(finalAddr);
               if (houseNum) setHouseNumber(houseNum);
@@ -293,7 +327,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
         const fallbackAddr = `מיקום נוכחי (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`;
         setSelectedAddress({
           display_name: fallbackAddr,
-          raw: { display_name: fallbackAddr }
+          raw: { display_name: fallbackAddr },
         });
         setAddressSearchQuery(fallbackAddr);
         toast.success("המיקום נקבע לפי קואורדינטות");
@@ -307,7 +341,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
           toast.error("שגיאה בזיהוי המיקום");
         }
       },
-      { enableHighAccuracy: true, timeout: 8000 }
+      { enableHighAccuracy: true, timeout: 8000 },
     );
   };
 
@@ -316,7 +350,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
       // Backward compatibility for old string format
       setSelectedAddress({
         display_name: recent,
-        raw: {}
+        raw: {},
       });
       setAddressSearchQuery(recent);
       setHouseNumber("");
@@ -326,7 +360,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
     } else {
       setSelectedAddress({
         display_name: recent.display_name,
-        raw: {}
+        raw: {},
       });
       setAddressSearchQuery(recent.display_name);
       setHouseNumber(recent.houseNumber || "");
@@ -382,7 +416,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
     setIsSubmitting(true);
     try {
       const baseAddr = selectedAddress.display_name;
-      const fullAddressString = `${baseAddr}, בית ${houseNumber.trim()}, קומה ${floor.trim()}, דירה ${apartment.trim()}${entrance.trim() ? ', כניסה ' + entrance.trim() : ''}`;
+      const fullAddressString = `${baseAddr}, בית ${houseNumber.trim()}, קומה ${floor.trim()}, דירה ${apartment.trim()}${entrance.trim() ? ", כניסה " + entrance.trim() : ""}`;
 
       // Save unique address to recent locations
       const recentObj = {
@@ -390,7 +424,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
         houseNumber: houseNumber.trim(),
         floor: floor.trim(),
         apartment: apartment.trim(),
-        entrance: entrance.trim()
+        entrance: entrance.trim(),
       };
 
       const updatedRecents = [
@@ -398,13 +432,13 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
         ...recentAddresses.filter((addr: any) => {
           const dName = typeof addr === "string" ? addr : addr.display_name;
           return dName !== baseAddr;
-        })
+        }),
       ].slice(0, 5);
-      
+
       localStorage.setItem("recent_laundry_addresses", JSON.stringify(updatedRecents));
 
       await onSubmit(fullAddressString, notes, images, requiresIroning, requiresDryCleaning);
-      
+
       setAddressSearchQuery("");
       setSelectedAddress(null);
       setHouseNumber("");
@@ -424,7 +458,10 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-md w-[95%] sm:w-[92%] max-h-[90vh] overflow-y-auto overflow-x-hidden rounded-2xl sm:rounded-3xl p-4 sm:p-6 text-right dir-rtl backdrop-blur-xl bg-background/95 border-none shadow-[0_20px_50px_rgba(0,0,0,0.15)] focus:outline-none" dir="rtl">
+      <DialogContent
+        className="max-w-md w-[95%] sm:w-[92%] max-h-[90vh] overflow-y-auto overflow-x-hidden rounded-2xl sm:rounded-3xl p-4 sm:p-6 text-right dir-rtl backdrop-blur-xl bg-background/95 border-none shadow-[0_20px_50px_rgba(0,0,0,0.15)] focus:outline-none"
+        dir="rtl"
+      >
         <DialogHeader className="space-y-2 text-right">
           <DialogTitle className="text-xl sm:text-2xl font-extrabold text-foreground flex items-center gap-2 justify-start">
             <Sparkles className="size-6 text-primary animate-pulse" />
@@ -448,7 +485,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
                 </span>
               )}
             </div>
-            
+
             <div className="relative">
               <div className="relative flex items-center">
                 <input
@@ -514,7 +551,9 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
             {selectedAddress && (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 pt-2 animate-in slide-in-from-top-2 duration-300">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-foreground block text-right">בית <span className="text-destructive font-black">*</span></label>
+                  <label className="text-[10px] font-bold text-foreground block text-right">
+                    בית <span className="text-destructive font-black">*</span>
+                  </label>
                   <input
                     type="text"
                     value={houseNumber}
@@ -524,7 +563,9 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-foreground block text-right">קומה <span className="text-destructive font-black">*</span></label>
+                  <label className="text-[10px] font-bold text-foreground block text-right">
+                    קומה <span className="text-destructive font-black">*</span>
+                  </label>
                   <input
                     type="text"
                     value={floor}
@@ -534,7 +575,9 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-foreground block text-right">דירה <span className="text-destructive font-black">*</span></label>
+                  <label className="text-[10px] font-bold text-foreground block text-right">
+                    דירה <span className="text-destructive font-black">*</span>
+                  </label>
                   <input
                     type="text"
                     value={apartment}
@@ -544,7 +587,9 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-foreground block text-right">כניסה / קוד</label>
+                  <label className="text-[10px] font-bold text-foreground block text-right">
+                    כניסה / קוד
+                  </label>
                   <input
                     type="text"
                     value={entrance}
@@ -555,11 +600,13 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
                 </div>
               </div>
             )}
-            
+
             {/* Recent Locations */}
             {recentAddresses.length > 0 && (
               <div className="space-y-1.5 pt-1">
-                <span className="text-[10px] font-black text-muted-foreground block">כתובות אחרונות בשימוש:</span>
+                <span className="text-[10px] font-black text-muted-foreground block">
+                  כתובות אחרונות בשימוש:
+                </span>
                 <div className="flex flex-wrap gap-1.5 justify-start">
                   {recentAddresses.map((addr, idx) => {
                     const disp = typeof addr === "string" ? addr : addr.display_name;
@@ -584,7 +631,9 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-bold text-foreground block">דגשים מיוחדים לכביסה (אופציונלי)</label>
+            <label className="text-sm font-bold text-foreground block">
+              דגשים מיוחדים לכביסה (אופציונלי)
+            </label>
             <Textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
@@ -596,7 +645,9 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
 
           {/* Additional Services Section */}
           <div className="space-y-2.5">
-            <label className="text-sm font-bold text-foreground block">שירותים נוספים (אופציונלי)</label>
+            <label className="text-sm font-bold text-foreground block">
+              שירותים נוספים (אופציונלי)
+            </label>
             <div className="grid grid-cols-2 gap-4 text-right dir-rtl" dir="rtl">
               {/* Ironing Card */}
               <div
@@ -612,14 +663,24 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
                     <Check className="size-3 stroke-[3]" />
                   </span>
                 )}
-                <div className={`size-12 rounded-2xl flex items-center justify-center transition-all ${
-                  requiresIroning ? "bg-primary/20 scale-110" : "bg-muted/60"
-                }`}>
-                  <Shirt className={`size-6 transition-colors ${requiresIroning ? "text-primary animate-pulse" : "text-muted-foreground"}`} />
+                <div
+                  className={`size-12 rounded-2xl flex items-center justify-center transition-all ${
+                    requiresIroning ? "bg-primary/20 scale-110" : "bg-muted/60"
+                  }`}
+                >
+                  <Shirt
+                    className={`size-6 transition-colors ${requiresIroning ? "text-primary animate-pulse" : "text-muted-foreground"}`}
+                  />
                 </div>
                 <div className="flex flex-col gap-0.5">
-                  <span className={`text-sm font-black transition-colors ${requiresIroning ? "text-primary" : "text-foreground"}`}>גיהוץ 🧺</span>
-                  <span className="text-[10px] font-medium text-muted-foreground leading-normal">כולל קיפול ריחני</span>
+                  <span
+                    className={`text-sm font-black transition-colors ${requiresIroning ? "text-primary" : "text-foreground"}`}
+                  >
+                    גיהוץ 🧺
+                  </span>
+                  <span className="text-[10px] font-medium text-muted-foreground leading-normal">
+                    כולל קיפול ריחני
+                  </span>
                 </div>
               </div>
 
@@ -637,22 +698,34 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
                     <Check className="size-3 stroke-[3]" />
                   </span>
                 )}
-                <div className={`size-12 rounded-2xl flex items-center justify-center transition-all ${
-                  requiresDryCleaning ? "bg-primary/20 scale-110" : "bg-muted/60"
-                }`}>
-                  <Sparkles className={`size-6 transition-colors ${requiresDryCleaning ? "text-primary" : "text-muted-foreground"}`} />
+                <div
+                  className={`size-12 rounded-2xl flex items-center justify-center transition-all ${
+                    requiresDryCleaning ? "bg-primary/20 scale-110" : "bg-muted/60"
+                  }`}
+                >
+                  <Sparkles
+                    className={`size-6 transition-colors ${requiresDryCleaning ? "text-primary" : "text-muted-foreground"}`}
+                  />
                 </div>
                 <div className="flex flex-col gap-0.5">
-                  <span className={`text-sm font-black transition-colors ${requiresDryCleaning ? "text-primary" : "text-foreground"}`}>ניקוי יבש ✨</span>
-                  <span className="text-[10px] font-medium text-muted-foreground leading-normal">הסרת כתמים וטיפול עדין</span>
+                  <span
+                    className={`text-sm font-black transition-colors ${requiresDryCleaning ? "text-primary" : "text-foreground"}`}
+                  >
+                    ניקוי יבש ✨
+                  </span>
+                  <span className="text-[10px] font-medium text-muted-foreground leading-normal">
+                    הסרת כתמים וטיפול עדין
+                  </span>
                 </div>
               </div>
             </div>
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-bold text-foreground block">צילום כתמים או פריטים עדינים (אופציונלי)</label>
-            
+            <label className="text-sm font-bold text-foreground block">
+              צילום כתמים או פריטים עדינים (אופציונלי)
+            </label>
+
             <div
               onClick={() => fileInputRef.current?.click()}
               className="border-2 border-dashed border-muted-foreground/20 hover:border-primary/50 transition-colors rounded-2xl p-4 sm:p-6 text-center cursor-pointer flex flex-col items-center justify-center gap-2 bg-muted/30 group min-h-[44px]"
@@ -675,7 +748,10 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
             {images.length > 0 && (
               <div className="flex flex-wrap gap-2 pt-2 justify-start">
                 {images.map((img, idx) => (
-                  <div key={idx} className="relative size-16 sm:size-20 rounded-2xl overflow-hidden group border border-muted-foreground/10 shadow-sm">
+                  <div
+                    key={idx}
+                    className="relative size-16 sm:size-20 rounded-2xl overflow-hidden group border border-muted-foreground/10 shadow-sm"
+                  >
                     <img src={img} alt="תצוגה מקדימה" className="size-full object-cover" />
                     <button
                       type="button"
@@ -718,4 +794,3 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
     </Dialog>
   );
 }
-

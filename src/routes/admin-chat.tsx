@@ -44,7 +44,7 @@ interface ChatMessage {
 function AdminChat() {
   const { user } = useLaundry();
   const navigate = useNavigate();
-  
+
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -52,7 +52,7 @@ function AdminChat() {
   const [loadingList, setLoadingList] = useState(true);
   const [loadingChat, setLoadingChat] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Scroll to bottom
@@ -89,10 +89,11 @@ function AdminChat() {
       // 2. Fetch all user profiles to get display names
       const usersSnap = await getDocs(collection(db, "users"));
       const customerProfiles = usersSnap.docs
-        .map((d) => ({ id: d.id, ...(d.data() as { fullName: string; email: string; role: string }) }))
-        .filter(
-          (p) => p.role !== "laundry" && p.email.toLowerCase() !== user?.email.toLowerCase()
-        );
+        .map((d) => ({
+          id: d.id,
+          ...(d.data() as { fullName: string; email: string; role: string }),
+        }))
+        .filter((p) => p.role !== "laundry" && p.email.toLowerCase() !== user?.email.toLowerCase());
 
       const profileMap = new Map<string, string>();
       customerProfiles.forEach((p) => {
@@ -110,16 +111,14 @@ function AdminChat() {
 
           // Unread count: messages not from admin that are unread
           const unreadCount = allMsgs.filter(
-            (m) => !m.is_read && m.sender_email !== user?.email
+            (m) => !m.is_read && m.sender_email !== user?.email,
           ).length;
 
           // Last message
           const lastMessage = allMsgs.length > 0 ? allMsgs[0].content : "אין הודעות";
 
           const customerEmail = conv.customer_email || conv.id;
-          const name =
-            profileMap.get(customerEmail.toLowerCase()) ||
-            customerEmail.split("@")[0];
+          const name = profileMap.get(customerEmail.toLowerCase()) || customerEmail.split("@")[0];
 
           return {
             id: conv.id,
@@ -129,13 +128,11 @@ function AdminChat() {
             last_message: lastMessage,
             display_name: name,
           } as Conversation;
-        })
+        }),
       );
 
       // 4. Find profiles without conversations and add placeholders
-      const existingEmails = new Set(
-        chatDocs.map((c) => (c.customer_email || c.id).toLowerCase())
-      );
+      const existingEmails = new Set(chatDocs.map((c) => (c.customer_email || c.id).toLowerCase()));
       const placeholders: Conversation[] = customerProfiles
         .filter((p) => !existingEmails.has(p.email.toLowerCase()))
         .map((p) => ({
@@ -167,7 +164,7 @@ function AdminChat() {
 
   useEffect(() => {
     if (!user || user.role === "customer") return;
-    
+
     fetchConversations();
 
     // Subscribe to any changes in the chats collection to update the sidebar
@@ -208,12 +205,10 @@ function AdminChat() {
       setLoadingChat(false);
 
       // Mark unread messages from customer as read
-      const unreadDocs = snapshot.docs.filter(
-        (d) => {
-          const data = d.data();
-          return data.sender_email !== user?.email && !data.is_read;
-        }
-      );
+      const unreadDocs = snapshot.docs.filter((d) => {
+        const data = d.data();
+        return data.sender_email !== user?.email && !data.is_read;
+      });
 
       if (unreadDocs.length > 0) {
         const batch = writeBatch(db);
@@ -245,7 +240,7 @@ function AdminChat() {
       is_read: false,
       created_at: new Date().toISOString(),
     };
-    
+
     setMessages((prev) => [...prev, optimisticMsg]);
 
     let targetEmail = activeConvId;
@@ -255,7 +250,7 @@ function AdminChat() {
       if (activeConvId.startsWith("new-")) {
         isNewConv = true;
         targetEmail = activeConvId.replace("new-", "");
-        
+
         // 1. Create the chat doc (keyed by customer email)
         await setDoc(doc(db, "chats", targetEmail), {
           customer_email: targetEmail,
@@ -283,7 +278,7 @@ function AdminChat() {
         body: JSON.stringify({
           userEmail: targetEmail,
           event: "chat-to-customer",
-          customBody: `צוות המכבסה: ${content.substring(0, 60)}${content.length > 60 ? '...' : ''}`
+          customBody: `צוות המכבסה: ${content.substring(0, 60)}${content.length > 60 ? "..." : ""}`,
         }),
       })
         .then(async (res) => {
@@ -314,22 +309,30 @@ function AdminChat() {
 
   const formatTime = (isoString: string) => {
     const date = new Date(isoString);
-    return date.toLocaleTimeString("he-IL", { hour: '2-digit', minute: '2-digit' });
+    return date.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
   };
 
-  const filteredConversations = conversations.filter(c => 
-    c.customer_email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (c.display_name && c.display_name.toLowerCase().includes(searchQuery.toLowerCase()))
+  const filteredConversations = conversations.filter(
+    (c) =>
+      c.customer_email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (c.display_name && c.display_name.toLowerCase().includes(searchQuery.toLowerCase())),
   );
 
   return (
     <AppLayout>
-      <div className="fixed inset-0 h-[100dvh] max-h-[100dvh] flex bg-background text-right overflow-hidden" dir="rtl">
+      <div
+        className="fixed inset-0 h-[100dvh] max-h-[100dvh] flex bg-background text-right overflow-hidden"
+        dir="rtl"
+      >
         {/* Sidebar */}
-        <aside className={`w-full md:w-[350px] flex-shrink-0 flex flex-col border-l border-border bg-slate-50/50 ${activeConvId ? 'hidden md:flex' : 'flex'}`}>
+        <aside
+          className={`w-full md:w-[350px] flex-shrink-0 flex flex-col border-l border-border bg-slate-50/50 ${activeConvId ? "hidden md:flex" : "flex"}`}
+        >
           <header className="bg-lavender px-5 pb-5 pt-safe-lavender shadow-sm flex-shrink-0 relative">
-            <button 
-              onClick={() => navigate({ to: user?.role === "admin" ? "/admin" : "/laundry-dashboard" })} 
+            <button
+              onClick={() =>
+                navigate({ to: user?.role === "admin" ? "/admin" : "/laundry-dashboard" })
+              }
               className="absolute top-safe-sidebar-btn left-5 size-10 grid place-items-center rounded-full bg-background/50 text-foreground shadow-sm hover:bg-background"
             >
               <ArrowRight className="size-5" />
@@ -345,7 +348,7 @@ function AdminChat() {
               <Search className="absolute right-3 top-3 size-5 text-muted-foreground" />
             </div>
           </header>
-          
+
           <div className="flex-1 overflow-y-auto">
             {loadingList ? (
               <div className="py-10 flex justify-center">
@@ -363,7 +366,9 @@ function AdminChat() {
                     <button
                       onClick={() => setActiveConvId(conv.id)}
                       className={`w-full text-right p-4 flex items-center gap-3 transition-colors hover:bg-muted/50 ${
-                        activeConvId === conv.id ? 'bg-primary/5 border-r-4 border-primary' : 'border-r-4 border-transparent'
+                        activeConvId === conv.id
+                          ? "bg-primary/5 border-r-4 border-primary"
+                          : "border-r-4 border-transparent"
                       }`}
                     >
                       <div className="size-12 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-lg flex-shrink-0">
@@ -376,7 +381,9 @@ function AdminChat() {
                             {!conv.is_placeholder && formatTime(conv.updated_at)}
                           </span>
                         </div>
-                        <p className={`text-xs truncate ${conv.unread_count > 0 ? 'text-foreground font-semibold' : 'text-muted-foreground'}`}>
+                        <p
+                          className={`text-xs truncate ${conv.unread_count > 0 ? "text-foreground font-semibold" : "text-muted-foreground"}`}
+                        >
                           {conv.last_message}
                         </p>
                       </div>
@@ -394,7 +401,9 @@ function AdminChat() {
         </aside>
 
         {/* Main Chat Area */}
-        <main className={`flex-1 flex flex-col bg-white min-w-0 ${!activeConvId ? 'hidden md:flex' : 'flex'}`}>
+        <main
+          className={`flex-1 flex flex-col bg-white min-w-0 ${!activeConvId ? "hidden md:flex" : "flex"}`}
+        >
           {!activeConvId ? (
             <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground bg-slate-50/30">
               <MessageSquareText className="size-16 mb-4 opacity-20" />
@@ -404,14 +413,14 @@ function AdminChat() {
             <>
               {/* Chat Header */}
               <header className="bg-white border-b border-border px-4 pb-4 pt-14 chat-header-standalone flex items-center gap-3 shadow-sm flex-shrink-0">
-                <button 
-                  onClick={() => setActiveConvId(null)} 
+                <button
+                  onClick={() => setActiveConvId(null)}
                   className="md:hidden size-10 grid place-items-center rounded-full bg-muted text-foreground"
                 >
                   <ArrowRight className="size-5" />
                 </button>
                 {(() => {
-                  const activeConv = conversations.find(c => c.id === activeConvId);
+                  const activeConv = conversations.find((c) => c.id === activeConvId);
                   const name = activeConv?.display_name || activeConv?.customer_email || "";
                   const avatarLetter = name[0]?.toUpperCase() || "";
                   return (
@@ -420,14 +429,16 @@ function AdminChat() {
                         {avatarLetter}
                       </div>
                       <div className="flex-1 min-w-0 text-right">
-                        <h2 className="font-bold text-sm truncate">
-                          {name}
-                        </h2>
-                        {activeConv?.display_name && activeConv.display_name !== activeConv.customer_email && (
-                          <p className="text-[10px] text-muted-foreground truncate leading-none mt-0.5" dir="ltr">
-                            {activeConv.customer_email}
-                          </p>
-                        )}
+                        <h2 className="font-bold text-sm truncate">{name}</h2>
+                        {activeConv?.display_name &&
+                          activeConv.display_name !== activeConv.customer_email && (
+                            <p
+                              className="text-[10px] text-muted-foreground truncate leading-none mt-0.5"
+                              dir="ltr"
+                            >
+                              {activeConv.customer_email}
+                            </p>
+                          )}
                       </div>
                       <span className="text-[10px] text-green-600 font-bold bg-green-50 px-2 py-0.5 rounded-full shrink-0">
                         לקוח
@@ -452,19 +463,23 @@ function AdminChat() {
                     {messages.map((msg) => {
                       const isAdmin = msg.sender_email === user?.email;
                       return (
-                        <div 
-                          key={msg.id} 
-                          className={`flex ${isAdmin ? 'justify-start' : 'justify-end'} animate-fade-in`}
+                        <div
+                          key={msg.id}
+                          className={`flex ${isAdmin ? "justify-start" : "justify-end"} animate-fade-in`}
                         >
-                          <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 shadow-sm ${
-                            isAdmin 
-                              ? 'bg-primary text-primary-foreground rounded-tr-sm' 
-                              : 'bg-white text-foreground border border-border/50 rounded-tl-sm'
-                          }`}>
+                          <div
+                            className={`max-w-[75%] rounded-2xl px-4 py-2.5 shadow-sm ${
+                              isAdmin
+                                ? "bg-primary text-primary-foreground rounded-tr-sm"
+                                : "bg-white text-foreground border border-border/50 rounded-tl-sm"
+                            }`}
+                          >
                             <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
-                            <div className={`text-[10px] mt-1 text-left ${
-                              isAdmin ? 'text-primary-foreground/70' : 'text-muted-foreground'
-                            }`}>
+                            <div
+                              className={`text-[10px] mt-1 text-left ${
+                                isAdmin ? "text-primary-foreground/70" : "text-muted-foreground"
+                              }`}
+                            >
                               {formatTime(msg.created_at)}
                             </div>
                           </div>
@@ -477,7 +492,7 @@ function AdminChat() {
               </div>
 
               {/* Input */}
-              <footer 
+              <footer
                 className="bg-white border-t border-border px-3 pt-3 flex-shrink-0"
                 style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
               >

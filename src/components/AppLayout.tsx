@@ -29,7 +29,12 @@ export function AppLayout({ children }: { children: ReactNode }) {
       }
     } else {
       // customer
-      if (pathname === "/admin" || pathname.startsWith("/admin/") || pathname === "/laundry-dashboard" || pathname === "/admin-chat") {
+      if (
+        pathname === "/admin" ||
+        pathname.startsWith("/admin/") ||
+        pathname === "/laundry-dashboard" ||
+        pathname === "/admin-chat"
+      ) {
         navigate({ to: "/" });
       }
     }
@@ -45,7 +50,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   if (!user) return null;
 
-  const isSpecialDashboard = ["/admin", "/laundry-dashboard", "/admin-chat"].includes(pathname) || user?.role === "admin" || user?.role === "laundry";
+  const isSpecialDashboard =
+    ["/admin", "/laundry-dashboard", "/admin-chat"].includes(pathname) ||
+    user?.role === "admin" ||
+    user?.role === "laundry";
   const hideBottomNav = isSpecialDashboard || pathname === "/chat";
 
   return (

@@ -26,9 +26,7 @@ async function fsRequest(pathSuffix: string, body: unknown): Promise<any> {
   });
   const json = await res.json().catch(() => null);
   if (!res.ok) {
-    throw new Error(
-      `Firestore REST ${pathSuffix} failed: ${res.status} ${JSON.stringify(json)}`
-    );
+    throw new Error(`Firestore REST ${pathSuffix} failed: ${res.status} ${JSON.stringify(json)}`);
   }
   return json;
 }
@@ -163,9 +161,7 @@ export async function saveOrphanToken(token: string, userEmail: string | null): 
             userEmail: userEmail ? { stringValue: userEmail } : { nullValue: null },
           },
         },
-        updateTransforms: [
-          { fieldPath: "createdAt", setToServerValue: "REQUEST_TIME" },
-        ],
+        updateTransforms: [{ fieldPath: "createdAt", setToServerValue: "REQUEST_TIME" }],
       },
     ],
   });
@@ -191,7 +187,9 @@ export async function logNotification(data: {
   };
 
   if (data.results) {
-    fields.results = { stringValue: typeof data.results === "string" ? data.results : JSON.stringify(data.results) };
+    fields.results = {
+      stringValue: typeof data.results === "string" ? data.results : JSON.stringify(data.results),
+    };
   }
   if (data.error) {
     fields.error = { stringValue: data.error };
@@ -204,9 +202,7 @@ export async function logNotification(data: {
           name: `${docsRoot()}/notification_logs/${logId}`,
           fields,
         },
-        updateTransforms: [
-          { fieldPath: "timestamp", setToServerValue: "REQUEST_TIME" },
-        ],
+        updateTransforms: [{ fieldPath: "timestamp", setToServerValue: "REQUEST_TIME" }],
       },
     ],
   });

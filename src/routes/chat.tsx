@@ -98,7 +98,7 @@ function Chat() {
             console.error("Error listening to messages:", error);
             toast.error("שגיאה בטעינת השיחה");
             setLoading(false);
-          }
+          },
         );
       } catch (err) {
         console.error(err);
@@ -130,7 +130,7 @@ function Chat() {
       is_read: false,
       created_at: new Date().toISOString(),
     };
-    
+
     setMessages((prev) => [...prev, optimisticMsg]);
 
     try {
@@ -155,7 +155,7 @@ function Chat() {
         body: JSON.stringify({
           userEmail: "laundry-staff",
           event: "chat-to-staff",
-          customBody: `${user?.name || user?.email.split("@")[0]}: ${content.substring(0, 60)}${content.length > 60 ? '...' : ''}`
+          customBody: `${user?.name || user?.email.split("@")[0]}: ${content.substring(0, 60)}${content.length > 60 ? "..." : ""}`,
         }),
       }).catch((err) => console.error("Failed to send push notification:", err));
 
@@ -171,21 +171,24 @@ function Chat() {
 
   const formatTime = (isoString: string) => {
     const date = new Date(isoString);
-    return date.toLocaleTimeString("he-IL", { hour: '2-digit', minute: '2-digit' });
+    return date.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
   };
 
   return (
     <AppLayout>
-      <div className="flex flex-col h-[100dvh] max-h-[100dvh] bg-slate-50 dir-rtl text-right" dir="rtl">
+      <div
+        className="flex flex-col h-[100dvh] max-h-[100dvh] bg-slate-50 dir-rtl text-right"
+        dir="rtl"
+      >
         {/* Header — pt-14 is the base; chat-header-standalone overrides to var(--sat)+1rem in PWA */}
         <header className="bg-primary text-primary-foreground px-5 pb-4 pt-14 chat-header-standalone flex items-center shadow-md sticky top-0 z-10 shrink-0 rounded-b-3xl">
-          <button 
-            onClick={() => navigate({ to: "/" })} 
+          <button
+            onClick={() => navigate({ to: "/" })}
             className="size-10 grid place-items-center rounded-full bg-primary-foreground/15 ml-3"
           >
             <ArrowRight className="size-5" strokeWidth={2} />
           </button>
-          
+
           <div className="flex items-center gap-3">
             <div className="size-10 bg-primary-foreground/20 rounded-full grid place-items-center relative">
               <MessageSquareText className="size-5" />
@@ -222,19 +225,25 @@ function Chat() {
               {messages.map((msg) => {
                 const isCustomer = msg.sender_email === user?.email;
                 return (
-                  <div 
-                    key={msg.id} 
-                    className={`flex ${isCustomer ? 'justify-start' : 'justify-end'} animate-fade-in`}
+                  <div
+                    key={msg.id}
+                    className={`flex ${isCustomer ? "justify-start" : "justify-end"} animate-fade-in`}
                   >
-                    <div className={`max-w-[80%] rounded-2xl px-4 py-3 shadow-sm ${
-                      isCustomer 
-                        ? 'bg-primary text-primary-foreground rounded-tr-sm' 
-                        : 'bg-white border border-border text-foreground rounded-tl-sm'
-                    }`}>
-                      <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{msg.content}</p>
-                      <div className={`text-[10px] mt-1 text-left flex items-center gap-1 ${
-                        isCustomer ? 'text-primary-foreground/70' : 'text-muted-foreground'
-                      }`}>
+                    <div
+                      className={`max-w-[80%] rounded-2xl px-4 py-3 shadow-sm ${
+                        isCustomer
+                          ? "bg-primary text-primary-foreground rounded-tr-sm"
+                          : "bg-white border border-border text-foreground rounded-tl-sm"
+                      }`}
+                    >
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+                        {msg.content}
+                      </p>
+                      <div
+                        className={`text-[10px] mt-1 text-left flex items-center gap-1 ${
+                          isCustomer ? "text-primary-foreground/70" : "text-muted-foreground"
+                        }`}
+                      >
                         {formatTime(msg.created_at)}
                       </div>
                     </div>
@@ -247,7 +256,7 @@ function Chat() {
         </main>
 
         {/* Input Footer */}
-        <footer 
+        <footer
           className="bg-white border-t border-border px-4 pt-4 shrink-0"
           style={{ paddingBottom: "calc(2rem + env(safe-area-inset-bottom))" }}
         >
