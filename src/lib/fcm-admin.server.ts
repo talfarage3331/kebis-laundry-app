@@ -1,11 +1,11 @@
 /**
- * Server-only FCM HTTP v1 client.
+ * Server-only Google service-account client (FCM HTTP v1 + Firestore REST).
  *
  * Reads FIREBASE_SERVICE_ACCOUNT (full service-account JSON as a string),
- * mints a Google OAuth2 access token via service-account JWT (RS256),
- * and sends messages to https://fcm.googleapis.com/v1/projects/{id}/messages:send
- *
- * Runs on Cloudflare Workers — uses Web Crypto, no Node-only deps.
+ * mints a Google OAuth2 access token via service-account JWT (RS256).
+ * The token is scoped for BOTH FCM and Firestore so server code can
+ * read/write Firestore with admin privileges (bypasses security rules)
+ * and send pushes — all over plain HTTPS, Workers-compatible.
  */
 
 interface ServiceAccount {
@@ -13,6 +13,9 @@ interface ServiceAccount {
   private_key: string;
   project_id: string;
 }
+
+const SCOPES =
+  "https://www.googleapis.com/auth/firebase.messaging https://www.googleapis.com/auth/datastore";
 
 let cachedToken: { token: string; exp: number } | null = null;
 
@@ -23,12 +26,16 @@ function getServiceAccount(): ServiceAccount {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    throw new Error("FIREBASE_SERVICE_ACCOUNT is not valid JSON");
+    throw new Error("FIREBASE_SERVICE_ACCOUNT is not valid JSON — paste the full service-account JSON file contents");
   }
   if (!parsed.client_email || !parsed.private_key || !parsed.project_id) {
-    throw new Error("FIREBASE_SERVICE_ACCOUNT missing required fields");
+    throw new Error("FIREBASE_SERVICE_ACCOUNT missing required fields (client_email, private_key, project_id)");
   }
   return parsed;
+}
+
+export function getFirebaseProjectId(): string {
+  return getServiceAccount().project_id;
 }
 
 function base64UrlEncode(input: string | ArrayBuffer): string {
@@ -45,7 +52,9 @@ function base64UrlEncode(input: string | ArrayBuffer): string {
 }
 
 function pemToArrayBuffer(pem: string): ArrayBuffer {
-  const b64 = pem
+  // Handle keys where "\n" arrived as literal backslash-n in the secret value
+  const normalized = pem.replace(/\\n/g, "\n");
+  const b64 = normalized
     .replace(/-----BEGIN PRIVATE KEY-----/g, "")
     .replace(/-----END PRIVATE KEY-----/g, "")
     .replace(/\s+/g, "");
@@ -56,7 +65,7 @@ function pemToArrayBuffer(pem: string): ArrayBuffer {
   return buf;
 }
 
-async function getAccessToken(): Promise<string> {
+export async function getGoogleAccessToken(): Promise<string> {
   if (cachedToken && cachedToken.exp > Date.now() + 60_000) return cachedToken.token;
 
   const sa = getServiceAccount();
@@ -64,7 +73,7 @@ async function getAccessToken(): Promise<string> {
   const header = { alg: "RS256", typ: "JWT" };
   const payload = {
     iss: sa.client_email,
-    scope: "https://www.googleapis.com/auth/firebase.messaging",
+    scope: SCOPES,
     aud: "https://oauth2.googleapis.com/token",
     iat: now,
     exp: now + 3600,
@@ -74,14 +83,22 @@ async function getAccessToken(): Promise<string> {
   const payloadB64 = base64UrlEncode(JSON.stringify(payload));
   const signingInput = `${headerB64}.${payloadB64}`;
 
-  const keyBuf = pemToArrayBuffer(sa.private_key);
-  const cryptoKey = await crypto.subtle.importKey(
-    "pkcs8",
-    keyBuf,
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
+  let cryptoKey: CryptoKey;
+  try {
+    const keyBuf = pemToArrayBuffer(sa.private_key);
+    cryptoKey = await crypto.subtle.importKey(
+      "pkcs8",
+      keyBuf,
+      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
+  } catch (err) {
+    throw new Error(
+      `FIREBASE_SERVICE_ACCOUNT private_key could not be parsed (RS256 import failed): ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+
   const sig = await crypto.subtle.sign(
     "RSASSA-PKCS1-v1_5",
     cryptoKey,
@@ -99,7 +116,7 @@ async function getAccessToken(): Promise<string> {
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`OAuth token exchange failed: ${res.status} ${text}`);
+    throw new Error(`Google OAuth token exchange failed: ${res.status} ${text}`);
   }
   const json = (await res.json()) as { access_token: string; expires_in: number };
   cachedToken = {
@@ -118,13 +135,15 @@ export interface FcmMessageInput {
   badgeCount?: number;
 }
 
-export async function sendFcmMessage(input: FcmMessageInput): Promise<{ ok: boolean; status: number; body?: any }> {
-  const sa = getServiceAccount();
-  const accessToken = await getAccessToken();
+export async function sendFcmMessage(
+  input: FcmMessageInput
+): Promise<{ ok: boolean; status: number; body?: any }> {
+  const projectId = getFirebaseProjectId();
+  const accessToken = await getGoogleAccessToken();
   const message = {
     message: {
       token: input.token,
-      // Use data-only payload so the SW's onBackgroundMessage controls rendering
+      // Data-only payload so the SW's onBackgroundMessage controls rendering
       data: {
         title: input.title,
         body: input.body,
@@ -139,7 +158,7 @@ export async function sendFcmMessage(input: FcmMessageInput): Promise<{ ok: bool
     },
   };
   const res = await fetch(
-    `https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`,
+    `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
     {
       method: "POST",
       headers: {
@@ -150,5 +169,8 @@ export async function sendFcmMessage(input: FcmMessageInput): Promise<{ ok: bool
     }
   );
   const body = await res.json().catch(() => null);
+  if (!res.ok) {
+    console.error("[fcm-admin] FCM send failed:", res.status, JSON.stringify(body));
+  }
   return { ok: res.ok, status: res.status, body };
 }
