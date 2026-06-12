@@ -31,6 +31,21 @@ async function fsRequest(pathSuffix: string, body: unknown): Promise<any> {
   return json;
 }
 
+async function fsGetRequest(pathSuffix: string): Promise<any> {
+  const token = await getGoogleAccessToken();
+  const res = await fetch(`${FS_BASE}/${docsRoot()}${pathSuffix}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(`Firestore REST GET ${pathSuffix} failed: ${res.status} ${JSON.stringify(json)}`);
+  }
+  return json;
+}
+
 // ─── Value helpers ──────────────────────────────────────────────
 export function getStringArrayField(fields: any, name: string): string[] {
   const values = fields?.[name]?.arrayValue?.values;
@@ -89,6 +104,22 @@ export async function findUsersWithToken(token: string): Promise<UserDoc[]> {
       value: { stringValue: token },
     },
   });
+}
+
+export async function findUserById(userId: string): Promise<UserDoc | null> {
+  try {
+    const json = await fsGetRequest(`/users/${userId}`);
+    if (json && json.name) {
+      return {
+        name: json.name,
+        fields: json.fields || {},
+      };
+    }
+    return null;
+  } catch (err) {
+    console.error(`[firestore-admin] failed to find user by id ${userId}:`, err);
+    return null;
+  }
 }
 
 // ─── Writes ─────────────────────────────────────────────────────

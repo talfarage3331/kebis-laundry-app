@@ -9,6 +9,7 @@ import {
   findUsersByEmail,
   findUsersByRole,
   findUsersWithToken,
+  findUserById,
   appendFcmToken,
   removeFcmTokenFromDoc,
   incrementUnreadCount,
@@ -101,30 +102,55 @@ export async function removeFcmToken(token: string) {
   await Promise.all(users.map((u) => removeFcmTokenFromDoc(u.name, token)));
 }
 
-async function getTargetUsers(userEmail: string): Promise<UserDoc[]> {
-  if (userEmail === "laundry-staff") {
+async function getTargetUsers(
+  identifier: string | { userEmail?: string; userId?: string },
+): Promise<UserDoc[]> {
+  const email = typeof identifier === "string" ? identifier : identifier.userEmail;
+  const uid = typeof identifier === "string" ? undefined : identifier.userId;
+
+  if (email === "laundry-staff") {
     return findUsersByRole(["admin", "laundry"]);
   }
-  return findUsersByEmail(userEmail);
+
+  if (uid) {
+    const user = await findUserById(uid);
+    if (user) return [user];
+  }
+
+  if (email) {
+    const emailLower = email.toLowerCase();
+    const users = await findUsersByEmail(emailLower);
+    if (users.length > 0) return users;
+    if (email !== emailLower) {
+      const usersRaw = await findUsersByEmail(email);
+      if (usersRaw.length > 0) return usersRaw;
+    }
+  }
+
+  return [];
 }
 
 // ─── Notify ────────────────────────────────────────────────────
 export async function notifyUser(
-  userEmail: string,
+  identifier: string | { userEmail?: string; userId?: string },
   event: NotificationEvent,
   options?: { customTitle?: string; customBody?: string },
 ) {
   const tpl = NOTIFICATION_TEMPLATES[event];
   if (!tpl) throw new Error(`Unknown event: ${event}`);
 
-  const targets = await getTargetUsers(userEmail);
+  const targets = await getTargetUsers(identifier);
+  const identifierStr =
+    typeof identifier === "string"
+      ? identifier
+      : `${identifier.userId || ""}:${identifier.userEmail || ""}`;
   if (targets.length === 0) {
-    console.warn(`[push] no Firestore user found for "${userEmail}"`);
+    console.warn(`[push] no Firestore user found for "${identifierStr}"`);
     return {
       sent: 0,
       failed: 0,
-      note: "no user found for email",
-      errors: ["no user found for email"],
+      note: "no user found for identifier",
+      errors: ["no user found for identifier"],
     };
   }
 
@@ -220,7 +246,7 @@ export async function notifyUser(
   try {
     const { logNotification } = await import("./firestore-admin.server");
     await logNotification({
-      recipient: userEmail,
+      recipient: identifierStr,
       event,
       title: options?.customTitle || tpl.title,
       body: options?.customBody || tpl.body,
@@ -232,6 +258,6 @@ export async function notifyUser(
     console.error("[push] Failed to write notification log:", logErr);
   }
 
-  console.log(`[push] event=${event} target=${userEmail} sent=${sent} failed=${failed}`);
+  console.log(`[push] event=${event} target=${identifierStr} sent=${sent} failed=${failed}`);
   return { sent, failed, errors };
 }

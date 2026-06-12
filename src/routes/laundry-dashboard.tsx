@@ -37,6 +37,7 @@ interface LaundryOrder {
   amount_due: number;
   price?: number;
   user_email: string;
+  userId: string;
   notes?: string;
   deliveryNotes?: string;
   images?: string[];
@@ -118,6 +119,7 @@ function LaundryDashboard() {
                       ? o.amountDue
                       : 0,
               user_email: o.user_email || o.userEmail || "",
+              userId: o.user_id || o.userId || "",
               notes: o.notes || "",
               deliveryNotes: o.deliveryNotes || o.delivery_notes || "",
               images: finalImages,
@@ -269,6 +271,7 @@ function LaundryDashboard() {
   // secrets from the Cloudflare environment and sends the push.
   const sendPushEvent = async (
     customerEmail: string,
+    customerUserId: string,
     event: string,
     options?: { customBody?: string; customTitle?: string },
   ) => {
@@ -276,7 +279,12 @@ function LaundryDashboard() {
       const res = await fetch("/api/push/notify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userEmail: customerEmail, event, ...options }),
+        body: JSON.stringify({
+          userEmail: customerEmail,
+          userId: customerUserId,
+          event,
+          ...options,
+        }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
@@ -302,16 +310,10 @@ function LaundryDashboard() {
   const saveAllChanges = async (orderId: string) => {
     setSavingOrder((prev) => ({ ...prev, [orderId]: true }));
     try {
-      // 1. Save price if changed — and notify the customer
+      // 1. Save price if changed
       const priceVal = typedPrices[orderId];
       if (priceVal !== undefined && priceVal !== "") {
         await updateOrderPrice(orderId, Number(priceVal));
-        const priceOrder = orders.find((o) => o.id === orderId);
-        if (priceOrder?.user_email) {
-          await sendPushEvent(priceOrder.user_email, "price-updated", {
-            customBody: `נקבע מחיר להזמנה שלך: ₪${Number(priceVal)}`,
-          });
-        }
       }
 
       // 2. Save status if changed
@@ -319,33 +321,36 @@ function LaundryDashboard() {
       const currentOrder = orders.find((o) => o.id === orderId);
       if (newStatus && newStatus !== currentOrder?.status) {
         await updateOrderStatus(orderId, newStatus);
-        // Fire the matching push notification to the customer with a
-        // per-step Hebrew title + body so the notification is descriptive.
         const STATUS_PUSH_MAP: Record<string, { event: string; title: string; body: string }> = {
+          pending: {
+            event: "laundry-picked-up",
+            title: "ההזמנה התקבלה במכבסה 🧺",
+            body: "ההזמנה שלך התקבלה בהצלחה וממתינה לאיסוף",
+          },
           picked_up: {
             event: "laundry-picked-up",
-            title: "הכביסה נלקחה 🧺",
-            body: "הכביסה שלך נאספה בהצלחה ובדרכה למכבסה לניקוי",
+            title: "הכביסה נאספה 🧺",
+            body: "הכביסה שלך נאספה בהצלחה ובדרכה למכבסה",
           },
           in_progress: {
             event: "laundry-in-progress",
             title: "הכביסה בטיפול 🧼",
-            body: "הכביסה שלך בתהליך כביסה וניקוי כרגע — נעדכן אותך כשתהיה מוכנה",
+            body: "הכביסה שלך בתהליך כביסה וניקוי כרגע",
           },
           ready: {
             event: "laundry-ready",
-            title: "הכביסה מוכנה למשלוח ✨",
-            body: "הכביסה שלך מוכנה ותגיע אליך בקרוב! ניתן לעקוב אחר הסטטוס",
+            title: "הכביסה שלך מוכנה! 🧺",
+            body: "ההזמנה שלך מוכנה. ניתן לתאם איסוף או משלוח",
           },
           completed: {
             event: "laundry-delivered",
             title: "הכביסה נמסרה בהצלחה 🎉",
-            body: "הכביסה שלך נמסרה. תהנה! נשמח לשמוע את חוות דעתך",
+            body: "הכביסה שלך נמסרה בהצלחה",
           },
         };
         const pushSpec = STATUS_PUSH_MAP[newStatus];
         if (currentOrder?.user_email && pushSpec) {
-          await sendPushEvent(currentOrder.user_email, pushSpec.event, {
+          await sendPushEvent(currentOrder.user_email, currentOrder.userId || "", pushSpec.event, {
             customTitle: pushSpec.title,
             customBody: pushSpec.body,
           });
@@ -356,10 +361,9 @@ function LaundryDashboard() {
       const newMessage = typedMessages[orderId];
       if (newMessage !== undefined && newMessage.trim() !== "") {
         await updateOrderMessage(orderId, newMessage);
-        // Push the message text to the customer so they see it immediately
         const msgOrder = orders.find((o) => o.id === orderId);
         if (msgOrder?.user_email) {
-          await sendPushEvent(msgOrder.user_email, "chat-to-customer", {
+          await sendPushEvent(msgOrder.user_email, msgOrder.userId || "", "chat-to-customer", {
             customBody: `צוות המכבסה: ${newMessage.trim().substring(0, 60)}${newMessage.trim().length > 60 ? "..." : ""}`,
           });
         }
@@ -380,11 +384,10 @@ function LaundryDashboard() {
           delete n[orderId];
           return n;
         });
-        // Notify customer their invoice is ready with explicit Hebrew copy
         const invoiceOrder = orders.find((o) => o.id === orderId);
         if (invoiceOrder?.user_email) {
-          await sendPushEvent(invoiceOrder.user_email, "invoice-ready", {
-            customTitle: "החשבונית שלך מוכנה 🧾",
+          await sendPushEvent(invoiceOrder.user_email, invoiceOrder.userId || "", "invoice-ready", {
+            customTitle: "החשבונית שלך זמינה באפליקציה 📄",
             customBody: "החשבונית שלך הועלתה ומוכנה לצפייה ולהורדה בעמוד התשלומים",
           });
         }
@@ -395,9 +398,9 @@ function LaundryDashboard() {
       if (priceChanged) {
         const priceOrder = orders.find((o) => o.id === orderId);
         if (priceOrder?.user_email) {
-          await sendPushEvent(priceOrder.user_email, "price-updated", {
-            customTitle: "נקבע מחיר להזמנה שלך 💳",
-            customBody: `נקבע מחיר להזמנה שלך: ₪${Number(priceVal).toLocaleString("he-IL")} — ניתן לראות פרטים בעמוד התשלומים`,
+          await sendPushEvent(priceOrder.user_email, priceOrder.userId || "", "price-updated", {
+            customTitle: "עודכן מחיר סופי להזמנה שלך",
+            customBody: `נקבע מחיר סופי להזמנה שלך: ₪${Number(priceVal).toLocaleString("he-IL")} — ניתן לראות פרטים בעמוד התשלומים`,
           });
         }
       }

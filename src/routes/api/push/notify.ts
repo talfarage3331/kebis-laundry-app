@@ -36,6 +36,7 @@ export const Route = createFileRoute("/api/push/notify")({
         try {
           const body = (await request.json()) as {
             userEmail?: string;
+            userId?: string;
             token?: string;
             event?: string;
             customBody?: string;
@@ -80,17 +81,17 @@ export const Route = createFileRoute("/api/push/notify")({
             });
           }
 
-          // ─── Standard User Email Routing Mode ──────────────────────
-          if (!body?.userEmail || !body?.event) {
+          // ─── Standard User Routing Mode ──────────────────────
+          if ((!body?.userEmail && !body?.userId) || !body?.event) {
             return new Response(
-              JSON.stringify({ error: "Missing required fields: userEmail and event (or token)" }),
+              JSON.stringify({ error: "Missing required fields: userEmail/userId and event (or token)" }),
               { status: 400, headers: { "Content-Type": "application/json" } },
             );
           }
 
           if (
-            typeof body.userEmail !== "string" ||
-            body.userEmail.length > 255 ||
+            (body.userEmail && (typeof body.userEmail !== "string" || body.userEmail.length > 255)) ||
+            (body.userId && (typeof body.userId !== "string" || body.userId.length > 255)) ||
             !VALID_EVENTS.has(body.event)
           ) {
             return new Response(
@@ -116,7 +117,7 @@ export const Route = createFileRoute("/api/push/notify")({
 
           const { notifyUser } = await import("@/lib/push-service.server");
           const result = await notifyUser(
-            body.userEmail,
+            { userEmail: body.userEmail, userId: body.userId },
             body.event as import("@/lib/push-service.server").NotificationEvent,
             {
               customBody:
@@ -126,7 +127,7 @@ export const Route = createFileRoute("/api/push/notify")({
             },
           );
 
-          console.log("[push/notify]", body.event, "→", body.userEmail, JSON.stringify(result));
+          console.log("[push/notify]", body.event, "→", body.userId || body.userEmail, JSON.stringify(result));
           const success = result.sent > 0 && result.failed === 0;
           return new Response(JSON.stringify({ success, ...result }), {
             status: 200,
