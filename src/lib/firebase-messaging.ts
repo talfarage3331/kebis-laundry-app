@@ -45,6 +45,27 @@ export async function getMessagingIfSupported(): Promise<Messaging | null> {
   }
 }
 
+async function waitForRegistrationActive(reg: ServiceWorkerRegistration): Promise<ServiceWorkerRegistration> {
+  if (reg.active) {
+    return reg;
+  }
+  
+  const serviceWorker = reg.installing || reg.waiting;
+  if (!serviceWorker) {
+    return reg;
+  }
+  
+  return new Promise<ServiceWorkerRegistration>((resolve) => {
+    const stateChangeHandler = () => {
+      if (serviceWorker.state === "activated" || reg.active) {
+        serviceWorker.removeEventListener("statechange", stateChangeHandler);
+        resolve(reg);
+      }
+    };
+    serviceWorker.addEventListener("statechange", stateChangeHandler);
+  });
+}
+
 export async function registerFcmServiceWorker(): Promise<ServiceWorkerRegistration | null> {
   if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return null;
   try {
@@ -52,9 +73,9 @@ export async function registerFcmServiceWorker(): Promise<ServiceWorkerRegistrat
       scope: "/firebase-cloud-messaging-push-scope",
     });
     
-    // Wrap service worker readiness check with a strict 5-second timeout
+    // Wrap custom service worker readiness check with a strict 5-second timeout
     await Promise.race([
-      navigator.serviceWorker.ready,
+      waitForRegistrationActive(reg),
       new Promise((_, reject) => 
         setTimeout(() => reject(new Error("FCM_SW_READY_TIMEOUT")), 5000)
       )
