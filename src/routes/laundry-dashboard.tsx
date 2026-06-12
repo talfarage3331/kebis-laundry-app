@@ -248,10 +248,16 @@ function LaundryDashboard() {
   const saveAllChanges = async (orderId: string) => {
     setSavingOrder(prev => ({ ...prev, [orderId]: true }));
     try {
-      // 1. Save price if changed
+      // 1. Save price if changed — and notify the customer
       const priceVal = typedPrices[orderId];
       if (priceVal !== undefined && priceVal !== "") {
         await updateOrderPrice(orderId, Number(priceVal));
+        const priceOrder = orders.find(o => o.id === orderId);
+        if (priceOrder?.user_email) {
+          await sendPushEvent(priceOrder.user_email, "price-updated", {
+            customBody: `נקבע מחיר להזמנה שלך: ₪${Number(priceVal)}`,
+          });
+        }
       }
 
       // 2. Save status if changed
