@@ -5,12 +5,15 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useLocation,
+  useNavigate,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
 
 import appCss from "../styles.css?url";
-import { LaundryProvider } from "@/lib/laundry-store";
+import { LaundryProvider, useLaundry } from "@/lib/laundry-store";
+import { Loader2 } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 import { AccessibilityWidget } from "@/components/AccessibilityWidget";
 import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
@@ -228,13 +231,105 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <LaundryProvider>
         <AppBadgeBridge />
-        <Outlet />
+        <RoleRouteGuard>
+          <Outlet />
+        </RoleRouteGuard>
         <Toaster position="top-center" richColors />
         <AccessibilityWidget />
         <PushNotificationPrompt />
       </LaundryProvider>
     </QueryClientProvider>
   );
+}
+
+function RoleRouteGuard({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useLaundry();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (loading) return;
+
+    const path = location.pathname;
+
+    // Define customer-only paths
+    const isCustomerPath = ["/", "/chat", "/delivery", "/payments", "/tracking"].includes(path);
+    // Define laundry-only paths
+    const isLaundryPath = ["/laundry-dashboard", "/admin-chat"].includes(path);
+    // Define admin-only paths
+    const isAdminPath = ["/admin"].includes(path);
+
+    if (user) {
+      if (user.role === "laundry") {
+        if (isCustomerPath || isAdminPath) {
+          navigate({ to: "/laundry-dashboard", replace: true });
+        }
+      } else if (user.role === "admin") {
+        if (isCustomerPath) {
+          navigate({ to: "/admin", replace: true });
+        }
+      } else {
+        // Customer
+        if (isAdminPath || isLaundryPath) {
+          navigate({ to: "/", replace: true });
+        }
+      }
+    } else {
+      // Guest
+      const isPublicPath = ["/login", "/signup", "/"].includes(path);
+      if (!isPublicPath) {
+        navigate({ to: "/login", replace: true });
+      }
+    }
+  }, [user, loading, location.pathname, navigate]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="size-10 text-primary animate-spin" />
+      </div>
+    );
+  }
+
+  const path = location.pathname;
+  const isCustomerPath = ["/", "/chat", "/delivery", "/payments", "/tracking"].includes(path);
+  const isLaundryPath = ["/laundry-dashboard", "/admin-chat"].includes(path);
+  const isAdminPath = ["/admin"].includes(path);
+
+  if (user) {
+    if (user.role === "laundry" && (isCustomerPath || isAdminPath)) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-background">
+          <Loader2 className="size-10 text-primary animate-spin" />
+        </div>
+      );
+    }
+    if (user.role === "admin" && isCustomerPath) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-background">
+          <Loader2 className="size-10 text-primary animate-spin" />
+        </div>
+      );
+    }
+    if (user.role === "customer" && (isAdminPath || isLaundryPath)) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-background">
+          <Loader2 className="size-10 text-primary animate-spin" />
+        </div>
+      );
+    }
+  } else {
+    const isPublicPath = ["/login", "/signup", "/"].includes(path);
+    if (!isPublicPath) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-background">
+          <Loader2 className="size-10 text-primary animate-spin" />
+        </div>
+      );
+    }
+  }
+
+  return <>{children}</>;
 }
 
 function AppBadgeBridge() {
