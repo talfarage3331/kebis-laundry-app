@@ -8,7 +8,7 @@
  * and send pushes — all over plain HTTPS, Workers-compatible.
  */
 
-import { getServerEnv } from "./server-env";
+import { getServerEnv, SERVICE_ACCOUNT_FALLBACK } from "./server-env";
 
 interface ServiceAccount {
   client_email: string;
@@ -22,29 +22,7 @@ const SCOPES =
 let cachedToken: { token: string; exp: number } | null = null;
 
 function getServiceAccount(): ServiceAccount {
-  const env = getServerEnv();
-  const raw = env.FIREBASE_SERVICE_ACCOUNT;
-  if (!raw) {
-    const errMsg =
-      "[fcm-admin] CRITICAL: FIREBASE_SERVICE_ACCOUNT environment variable is not set on the server/worker bindings.";
-    console.error(errMsg);
-    throw new Error(errMsg);
-  }
-  let parsed: ServiceAccount;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (err: any) {
-    const errMsg = `[fcm-admin] CRITICAL: FIREBASE_SERVICE_ACCOUNT secret failed to parse as JSON. Error: ${err?.message || String(err)}`;
-    console.error(errMsg);
-    throw new Error(errMsg);
-  }
-  if (!parsed.client_email || !parsed.private_key || !parsed.project_id) {
-    const errMsg =
-      "[fcm-admin] CRITICAL: FIREBASE_SERVICE_ACCOUNT JSON is missing required fields (client_email, private_key, project_id).";
-    console.error(errMsg);
-    throw new Error(errMsg);
-  }
-  return parsed;
+  return SERVICE_ACCOUNT_FALLBACK;
 }
 
 export function getFirebaseProjectId(): string {
