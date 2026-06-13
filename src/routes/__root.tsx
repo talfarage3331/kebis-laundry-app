@@ -243,12 +243,14 @@ function RootComponent() {
 }
 
 function RoleRouteGuard({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useLaundry();
+  const { user, isProfileReady } = useLaundry();
+
   const location = useLocation();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (loading) return;
+    // Wait until BOTH Firebase Auth AND Firestore role are resolved
+    if (!isProfileReady) return;
 
     const path = location.pathname;
 
@@ -281,9 +283,10 @@ function RoleRouteGuard({ children }: { children: React.ReactNode }) {
         navigate({ to: "/login", replace: true });
       }
     }
-  }, [user, loading, location.pathname, navigate]);
+  }, [user, isProfileReady, location.pathname, navigate]);
 
-  if (loading) {
+  // Block all rendering until both Firebase Auth and Firestore role are confirmed
+  if (!isProfileReady) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="size-10 text-primary animate-spin" />

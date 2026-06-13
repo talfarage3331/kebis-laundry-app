@@ -32,24 +32,12 @@ export const Route = createFileRoute("/")({
 });
 
 function Dashboard() {
-  const { user, loading, orderState, createOrder } = useLaundry();
+  const { user, isProfileReady, orderState, createOrder } = useLaundry();
+
   const navigate = useNavigate();
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
 
-  // Redirect users with special roles immediately
-  useEffect(() => {
-    if (!loading && user) {
-      if (user.role === "admin") {
-        navigate({ to: "/admin" });
-      } else if (user.role === "laundry") {
-        navigate({ to: "/laundry-dashboard" });
-      }
-    }
-  }, [user, loading, navigate]);
-
-  // Strictly block rendering the customer layout for special roles or while loading
-  if (loading || (user && (user.role === "admin" || user.role === "laundry"))) {
+  // Block all customer-specific rendering until the role is fully resolved from Firestore
+  if (!isProfileReady) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="size-10 text-primary animate-spin" />
@@ -57,7 +45,32 @@ function Dashboard() {
     );
   }
 
+  // Instant render-phase guard: redirect special roles immediately (isProfileReady guarantees role is set)
+  if (user) {
+    if (user.role === "laundry") {
+      navigate({ to: "/laundry-dashboard", replace: true });
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-background">
+          <Loader2 className="size-10 text-primary animate-spin" />
+        </div>
+      );
+    }
+    if (user.role === "admin") {
+      navigate({ to: "/admin", replace: true });
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-background">
+          <Loader2 className="size-10 text-primary animate-spin" />
+        </div>
+      );
+    }
+  }
+
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
   // Fetch unread message count for the customer
+
   useEffect(() => {
     if (!user?.email) return;
 

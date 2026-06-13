@@ -38,6 +38,8 @@ export interface User {
 interface Store {
   user: User | null;
   loading: boolean;
+  /** True only after Firebase Auth AND the Firestore role look-up have both settled. */
+  isProfileReady: boolean;
   login: (u: User) => void;
   logout: () => void;
 
@@ -89,6 +91,8 @@ export const stateLabel: Record<OrderState, string> = {
 export function LaundryProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  // isProfileReady stays false until the Firestore role fetch completes (prevents role flash)
+  const [isProfileReady, setIsProfileReady] = useState(false);
   const [orderState, setOrderState] = useState<OrderState>("none");
   const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>("none");
   const [paymentState, setPaymentState] = useState<PaymentState>("unpaid");
@@ -115,9 +119,12 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     return [];
   });
 
-  // Auth listener
+  // Auth listener — setIsProfileReady(true) only after Firestore role resolves
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (sessionUser) => {
+      // Mark profile as NOT ready at the start of every auth-state change
+      setIsProfileReady(false);
+
       if (sessionUser && sessionUser.email) {
         setLoading(true);
         let role: "admin" | "laundry" | "customer" = "customer";
@@ -137,12 +144,16 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
             role = data.role || role;
           } else {
             // Document doesn't exist, create it
-            await setDoc(userDocRef, {
-              fullName: dbName,
-              email: sessionUser.email,
-              role: role,
-              createdAt: serverTimestamp(),
-            });
+            await setDoc(
+              userDocRef,
+              {
+                fullName: dbName,
+                email: sessionUser.email,
+                role: role,
+                createdAt: serverTimestamp(),
+              },
+              { merge: true },
+            );
           }
         } catch (err) {
           console.error("Error checking or creating user profile:", err);
@@ -162,10 +173,13 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
           email: sessionUser.email,
           role,
         });
+        // Both auth + Firestore are resolved — safe to render role-dependent UI
         setLoading(false);
+        setIsProfileReady(true);
       } else {
         setUser(null);
         setLoading(false);
+        setIsProfileReady(true); // No session — profile trivially resolved
       }
     });
 
@@ -451,6 +465,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         loading,
+        isProfileReady,
         login,
         logout,
         orderState,

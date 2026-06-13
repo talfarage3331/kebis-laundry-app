@@ -8,7 +8,8 @@
 //   3. notificationclick → open/focus the app
 // ============================================================
 
-const APP_CACHE = "kebisa-v2";
+const APP_CACHE = "kebisa-v3"; // Bumped 2026-06-13 — forces stale-asset eviction on next SW install
+
 const OFFLINE_URL = "/";
 
 // ─── Install ────────────────────────────────────────────────
