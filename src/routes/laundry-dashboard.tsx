@@ -24,7 +24,7 @@ export const Route = createFileRoute("/laundry-dashboard")({
 interface LaundryOrder {
   id: string;
   created_at: string;
-  status: "pending" | "picked_up" | "in_progress" | "ready" | "completed";
+  status: "pending" | "picked_up" | "in_progress" | "ready" | "completed" | "cancelled";
   delivery_method: string;
   payment_state: string;
   amount_due: number;

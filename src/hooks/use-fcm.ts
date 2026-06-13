@@ -32,14 +32,11 @@ async function persistToken(user: User, fcmToken: string) {
   }
 }
 
-interface BadgingNavigator extends Navigator {
-  setAppBadge?: (count: number) => Promise<void>;
-  clearAppBadge?: () => Promise<void>;
-}
-
 const setAppBadge = (count: number) => {
   if (typeof navigator === "undefined") return;
-  const nav = navigator as BadgingNavigator;
+  const nav = navigator as Navigator & {
+    setAppBadge?: (count: number) => Promise<void>;
+  };
   if (typeof nav.setAppBadge === "function") {
     nav.setAppBadge(count).catch(() => {});
   }
@@ -47,7 +44,9 @@ const setAppBadge = (count: number) => {
 
 const clearAppBadge = () => {
   if (typeof navigator === "undefined") return;
-  const nav = navigator as BadgingNavigator;
+  const nav = navigator as Navigator & {
+    clearAppBadge?: () => Promise<void>;
+  };
   if (typeof nav.clearAppBadge === "function") {
     nav.clearAppBadge().catch(() => {});
   }
