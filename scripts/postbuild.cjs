@@ -9,6 +9,18 @@ try {
   console.error("Failed to copy _worker.js:", e);
 }
 
+// Cloudflare Pages expects the worker entry point to be named index.js
+const workerServerPath = path.join("dist/client/_worker.js", "server.js");
+const workerIndexPath = path.join("dist/client/_worker.js", "index.js");
+try {
+  if (fs.existsSync(workerServerPath)) {
+    fs.renameSync(workerServerPath, workerIndexPath);
+    console.log("Renamed server.js to index.js in _worker.js");
+  }
+} catch (e) {
+  console.error("Failed to rename server.js to index.js:", e);
+}
+
 // 2. The @cloudflare/vite-plugin generates a wrangler.json with internal/Workers-only
 // fields that Cloudflare Pages rejects. Replace it with a clean, minimal config.
 const cleanConfig = {
