@@ -9,7 +9,8 @@ export const SERVICE_ACCOUNT_FALLBACK = {
   type: "service_account",
   project_id: "kevisa-5983b",
   private_key_id: "3881862ca1c2fa250e89a8b5e9344e8437567aca",
-  private_key: ("-----BEGIN PRIVATE KEY-----\n" +
+  private_key:
+    "-----BEGIN PRIVATE KEY-----\n" +
     "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCpo/vfEufvPROf\n" +
     "WKlB8pKxDtLNYXMvCiiDr3GPDlHS9Cp9ad/UcEH9Czmc53ka7CpkHwfp77T9q/Vs\n" +
     "z/29P3jP5bG4WGm8b8T9GWjcWnPUwooum0bQCGtPrOewTDj9DwBQIHN3TBO8+Bwq\n" +
@@ -36,7 +37,7 @@ export const SERVICE_ACCOUNT_FALLBACK = {
     "eQScFbpz69iolOTfQJeSMQDBwGNNfRRCzqjABtN+V5ESKzwE7O06IhOR2foww2ju\n" +
     "vqoWLdWv+Zvz0DTLb54MUtdFYh3QRp1kZ1tudDHjTuz7Ois7LJepMvRCVtkN92Fl\n" +
     "+nfxSf9Ns1YpbmEaDE+Km3g=\n" +
-    "-----END PRIVATE KEY-----\n").replace(/\\n/g, "\n"),
+    "-----END PRIVATE KEY-----\n",
   client_email: "firebase-adminsdk-fbsvc@kevisa-5983b.iam.gserviceaccount.com",
   client_id: "101947721606480397342",
   auth_uri: "https://accounts.google.com/o/oauth2/auth",

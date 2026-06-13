@@ -1,16 +1,17 @@
 const fs = require("fs");
 const path = require("path");
 
-// 1. Copy the server build into the Pages _worker.js directory
+// ── 1. Copy server build → _worker.js directory ──────────────────────────────
 try {
   fs.cpSync("dist/server", "dist/client/_worker.js", { recursive: true });
-  console.log("Copied dist/server to dist/client/_worker.js");
+  console.log("✔  Copied dist/server → dist/client/_worker.js");
 } catch (e) {
-  console.error("Failed to copy _worker.js:", e);
+  console.error("✘  Failed to copy _worker.js:", e);
+  process.exit(1);
 }
 
-// Cloudflare Pages expects the worker entry point to be named index.js
-// (not server.js or index.mjs). Rename whichever the build produced.
+// ── 2. Rename entry to index.js ───────────────────────────────────────────────
+// Cloudflare Pages expects the worker entry point to be named index.js.
 const workerDir = "dist/client/_worker.js";
 const workerIndexPath = path.join(workerDir, "index.js");
 for (const candidate of ["server.js", "index.mjs", "server.mjs"]) {
@@ -18,23 +19,51 @@ for (const candidate of ["server.js", "index.mjs", "server.mjs"]) {
   try {
     if (fs.existsSync(p) && !fs.existsSync(workerIndexPath)) {
       fs.renameSync(p, workerIndexPath);
-      console.log(`Renamed ${candidate} to index.js in _worker.js`);
+      console.log(`✔  Renamed ${candidate} → index.js in _worker.js`);
       break;
     }
   } catch (e) {
-    console.error(`Failed to rename ${candidate}:`, e);
+    console.error(`✘  Failed to rename ${candidate}:`, e);
   }
 }
 
-// 2. The @cloudflare/vite-plugin generates a wrangler.json with internal/Workers-only
-// fields that Cloudflare Pages rejects. Replace it with a clean, minimal config.
+// ── 3. Validate that the critical worker assets are present ───────────────────
+const assetsDir = path.join(workerDir, "assets");
+const requiredPatterns = [/^worker-entry-.+\.js$/, /^server-.+\.js$/];
+let missingCritical = false;
+for (const pattern of requiredPatterns) {
+  let found = false;
+  try {
+    const files = fs.readdirSync(assetsDir);
+    found = files.some((f) => pattern.test(f));
+  } catch (_) {
+    found = false;
+  }
+  if (!found) {
+    console.error(
+      `✘  CRITICAL: No file matching ${pattern} found in ${assetsDir}. ` +
+        "The worker bundle is incomplete — deploy will fail with a 500."
+    );
+    missingCritical = true;
+  }
+}
+if (missingCritical) {
+  process.exit(1);
+}
+// Log the final worker asset count so it's visible in CI logs
+try {
+  const assetCount = fs.readdirSync(assetsDir).length;
+  console.log(`✔  Worker assets validated (${assetCount} files in _worker.js/assets/)`);
+} catch (_) {}
+
+// ── 4. Replace generated wrangler.json with a clean Pages-compatible config ──
+// The @cloudflare/vite-plugin generates a wrangler.json with Workers-only
+// fields that Cloudflare Pages rejects. Replace it everywhere.
 const cleanConfig = {
   name: "kebis-laundry-app",
   compatibility_date: "2025-09-24",
   compatibility_flags: ["nodejs_compat"],
 };
-
-// Replace or delete in all locations where the plugin may have dropped it
 [
   "dist/client/wrangler.json",
   "dist/server/wrangler.json",
@@ -42,19 +71,22 @@ const cleanConfig = {
 ].forEach((f) => {
   try {
     fs.writeFileSync(f, JSON.stringify(cleanConfig, null, 2));
-    console.log(`Replaced ${f} with clean Pages config`);
-  } catch (e) {
+    console.log(`✔  Replaced ${f} with clean Pages config`);
+  } catch (_) {
     // File may not exist, that's fine
   }
 });
 
-// 3. Generate _routes.json so Cloudflare Pages serves static assets correctly
-// and doesn't route them through the SSR worker (which returns 404 for them).
+// ── 5. Generate _routes.json ──────────────────────────────────────────────────
+// Static assets are excluded so they bypass the SSR worker entirely.
+// _worker.js/* is also excluded so Cloudflare doesn't try to serve worker
+// internals as static files (which would cause a 500 on mis-matched paths).
 const routesConfig = {
   version: 1,
   include: ["/*"],
   exclude: [
     "/assets/*",
+    "/_worker.js/*",
     "/favicon.ico",
     "/sw.js",
     "/firebase-messaging-sw.js",
@@ -64,9 +96,9 @@ const routesConfig = {
   ],
 };
 fs.writeFileSync("dist/client/_routes.json", JSON.stringify(routesConfig, null, 2));
-console.log("Created dist/client/_routes.json for static asset routing");
+console.log("✔  Created dist/client/_routes.json");
 
-// 4. Generate _headers for custom static asset headers on Cloudflare Pages
+// ── 6. Generate _headers ──────────────────────────────────────────────────────
 const headersConfig = [
   "/sw.js",
   "  Content-Type: application/javascript",
@@ -80,4 +112,4 @@ const headersConfig = [
   "",
 ].join("\n");
 fs.writeFileSync("dist/client/_headers", headersConfig);
-console.log("Created dist/client/_headers for static headers");
+console.log("✔  Created dist/client/_headers");

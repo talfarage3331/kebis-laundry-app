@@ -22,7 +22,14 @@ const SCOPES =
 let cachedToken: { token: string; exp: number } | null = null;
 
 function getServiceAccount(): ServiceAccount {
-  return SERVICE_ACCOUNT_FALLBACK;
+  const sa = SERVICE_ACCOUNT_FALLBACK;
+  if (!sa.private_key || !sa.client_email || !sa.project_id) {
+    throw new Error(
+      `[fcm-admin] Service account is incomplete: ` +
+        `project_id=${!!sa.project_id} client_email=${!!sa.client_email} private_key=${!!sa.private_key}`,
+    );
+  }
+  return sa;
 }
 
 export function getFirebaseProjectId(): string {
@@ -85,8 +92,16 @@ export async function getGoogleAccessToken(): Promise<string> {
       ["sign"],
     );
   } catch (err) {
+    // Log enough detail to diagnose PEM corruption in Cloudflare logs
+    // without exposing the full key.
+    const keySnippet = sa.private_key
+      ? `len=${sa.private_key.length} starts=${sa.private_key.substring(0, 27)} ends=${sa.private_key.slice(-25)}`
+      : "(empty)";
+    console.error(`[fcm-admin] RS256 key import failed. Key info: ${keySnippet}`);
     throw new Error(
-      `FIREBASE_SERVICE_ACCOUNT private_key could not be parsed (RS256 import failed): ${err instanceof Error ? err.message : String(err)}`,
+      `[fcm-admin] private_key RS256 import failed (check Cloudflare logs for key details): ${
+        err instanceof Error ? err.message : String(err)
+      }`,
     );
   }
 
