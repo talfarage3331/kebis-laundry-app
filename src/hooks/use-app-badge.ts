@@ -10,7 +10,7 @@
 import { useEffect } from "react";
 import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
-import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { doc, onSnapshot, updateDoc } from "firebase/firestore";
 
 function setBadge(count: number) {
   if (typeof navigator === "undefined") return;
@@ -61,7 +61,7 @@ export async function clearAppBadgeAndUnread() {
   const u = auth.currentUser;
   if (!u) return;
   try {
-    await setDoc(doc(db, "users", u.uid), { unreadCount: 0 }, { merge: true });
+    await updateDoc(doc(db, "users", u.uid), { unreadCount: 0 });
   } catch (err) {
     console.warn("[badge] clear unread failed:", err);
   }

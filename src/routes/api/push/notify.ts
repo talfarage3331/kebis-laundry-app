@@ -135,11 +135,26 @@ export const Route = createFileRoute("/api/push/notify")({
           });
         } catch (err: any) {
           const message = err instanceof Error ? err.message : String(err);
-          console.error("[push/notify] Unhandled error:", message);
-          return new Response(JSON.stringify({ error: "Internal server error", detail: message }), {
-            status: 500,
-            headers: { "Content-Type": "application/json" },
-          });
+          console.error("[push/notify] Unhandled error:", err);
+          
+          const isExpectedError = 
+            message.includes("no tokens") || 
+            message.includes("no user") || 
+            message.includes("FCM tokens") || 
+            message.includes("not found");
+
+          return new Response(
+            JSON.stringify({
+              success: false,
+              sent: 0,
+              failed: 0,
+              error: message,
+            }),
+            {
+              status: isExpectedError ? 200 : 500,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
         }
       },
     },

@@ -479,18 +479,14 @@ function LaundryDashboard() {
                         </span>
                       </div>
 
-                      {/* Center: email + date */}
-                      <div className="flex-1 min-w-0 px-2 text-center hidden sm:block">
-                        <p className="text-xs font-bold truncate text-foreground" title={order.user_email}>
+                      {/* Center: email & date inline */}
+                      <div className="flex-1 min-w-0 px-3 flex items-center justify-between gap-3 text-right">
+                        <span className="text-xs font-extrabold truncate text-foreground" title={order.user_email}>
                           {order.user_email}
-                        </p>
-                        <p className="text-[10px] text-muted-foreground">
+                        </span>
+                        <span className="text-[10px] text-muted-foreground whitespace-nowrap hidden sm:inline-block">
                           {new Date(order.created_at).toLocaleDateString("he-IL")}
-                        </p>
-                      </div>
-                      {/* Mobile: email only */}
-                      <div className="flex-1 min-w-0 px-2 sm:hidden">
-                        <p className="text-[11px] font-bold truncate text-foreground">{order.user_email}</p>
+                        </span>
                       </div>
 
                       {/* Left: price */}
@@ -624,7 +620,7 @@ function LaundryDashboard() {
                                   value={typedPrices[order.id] !== undefined ? typedPrices[order.id] : String(displayPrice ?? "")}
                                   onChange={(e) => setTypedPrices((prev) => ({ ...prev, [order.id]: e.target.value }))}
                                   placeholder="סכום לתשלום"
-                                  className="h-9 w-full max-w-xs bg-background border border-muted-foreground/20 rounded-lg px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary"
+                                  className="h-10 w-full max-w-xs bg-background border border-muted-foreground/20 rounded-lg px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary"
                                 />
                               </div>
 
@@ -634,7 +630,7 @@ function LaundryDashboard() {
                                 <select
                                   value={pendingStatuses[order.id] || order.status}
                                   onChange={(e) => setPendingStatuses((prev) => ({ ...prev, [order.id]: e.target.value }))}
-                                  className="h-9 w-full max-w-xs bg-background border border-muted-foreground/20 rounded-lg px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary text-right"
+                                  className="h-10 w-full max-w-xs bg-background border border-muted-foreground/20 rounded-lg px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary text-right"
                                 >
                                   <option value="pending">התקבלה (ממתין)</option>
                                   <option value="picked_up">נאסף</option>
@@ -740,11 +736,11 @@ function LaundryDashboard() {
                           </div>{/* /grid */}
 
                           {/* ── Save button — pinned bottom-left (RTL = left side) ── */}
-                          <div className="mt-4 pt-3 border-t border-muted-foreground/10 flex justify-start">
+                          <div className="mt-4 pt-3 border-t border-muted-foreground/10 flex justify-end">
                             <button
                               onClick={() => saveAllChanges(order.id)}
                               disabled={savingOrder[order.id]}
-                              className="inline-flex items-center gap-2 px-5 py-2 bg-primary text-primary-foreground text-xs font-black rounded-xl hover:bg-primary/90 hover:shadow-md hover:shadow-primary/20 active:scale-[0.97] transition disabled:opacity-60 disabled:cursor-not-allowed"
+                              className="inline-flex items-center justify-center gap-2 px-6 bg-primary text-primary-foreground text-xs font-black rounded-full hover:bg-primary/90 hover:shadow-md hover:shadow-primary/20 active:scale-[0.97] transition disabled:opacity-60 disabled:cursor-not-allowed h-10"
                             >
                               {savingOrder[order.id] ? (
                                 <>

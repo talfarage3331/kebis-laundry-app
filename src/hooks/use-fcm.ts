@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged, type User } from "firebase/auth";
-import { doc, setDoc, arrayUnion, arrayRemove, serverTimestamp } from "firebase/firestore";
+import { doc, updateDoc, arrayUnion, arrayRemove, serverTimestamp } from "firebase/firestore";
 import { requestFcmToken, onForegroundMessage } from "@/lib/firebase-messaging";
 import { toast } from "sonner";
 import { useLocation } from "@tanstack/react-router";
@@ -18,14 +18,13 @@ export type FcmStatus = "idle" | "unsupported" | "denied" | "granted" | "loading
 
 async function persistToken(user: User, fcmToken: string) {
   try {
-    await setDoc(
+    await updateDoc(
       doc(db, "users", user.uid),
       {
         fcmTokens: arrayUnion(fcmToken),
         fcmTokensUpdatedAt: serverTimestamp(),
         email: user.email,
-      },
-      { merge: true },
+      }
     );
     console.log("[useFcm] token saved to users/" + user.uid);
   } catch (err) {
@@ -190,7 +189,7 @@ export function useFcm() {
     if (!token) return;
     const u = auth.currentUser;
     if (u) {
-      await setDoc(doc(db, "users", u.uid), { fcmTokens: arrayRemove(token) }, { merge: true });
+      await updateDoc(doc(db, "users", u.uid), { fcmTokens: arrayRemove(token) });
     }
     setToken(null);
     setStatus("idle");
