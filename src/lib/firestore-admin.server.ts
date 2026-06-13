@@ -61,49 +61,69 @@ export interface UserDoc {
 
 // ─── Queries ────────────────────────────────────────────────────
 async function runUsersQuery(where: any): Promise<UserDoc[]> {
-  const body = {
-    structuredQuery: {
-      from: [{ collectionId: "users" }],
-      where,
-      limit: 200,
-    },
-  };
-  const rows = (await fsRequest(":runQuery", body)) as any[];
-  return rows
-    .filter((r) => r?.document?.name)
-    .map((r) => ({ name: r.document.name, fields: r.document.fields || {} }));
+  try {
+    const body = {
+      structuredQuery: {
+        from: [{ collectionId: "users" }],
+        where,
+        limit: 200,
+      },
+    };
+    const rows = (await fsRequest(":runQuery", body)) as any[];
+    return (Array.isArray(rows) ? rows : [])
+      .filter((r) => r?.document?.name)
+      .map((r) => ({ name: r.document.name, fields: r.document.fields || {} }));
+  } catch (err) {
+    console.error("[firestore-admin] runUsersQuery failed:", err);
+    return [];
+  }
 }
 
 export async function findUsersByEmail(email: string): Promise<UserDoc[]> {
-  return runUsersQuery({
-    fieldFilter: {
-      field: { fieldPath: "email" },
-      op: "EQUAL",
-      value: { stringValue: email },
-    },
-  });
+  try {
+    return await runUsersQuery({
+      fieldFilter: {
+        field: { fieldPath: "email" },
+        op: "EQUAL",
+        value: { stringValue: email },
+      },
+    });
+  } catch (err) {
+    console.error("[firestore-admin] findUsersByEmail failed:", err);
+    return [];
+  }
 }
 
 export async function findUsersByRole(roles: string[]): Promise<UserDoc[]> {
-  return runUsersQuery({
-    fieldFilter: {
-      field: { fieldPath: "role" },
-      op: "IN",
-      value: {
-        arrayValue: { values: roles.map((r) => ({ stringValue: r })) },
+  try {
+    return await runUsersQuery({
+      fieldFilter: {
+        field: { fieldPath: "role" },
+        op: "IN",
+        value: {
+          arrayValue: { values: roles.map((r) => ({ stringValue: r })) },
+        },
       },
-    },
-  });
+    });
+  } catch (err) {
+    console.error("[firestore-admin] findUsersByRole failed:", err);
+    return [];
+  }
 }
 
 export async function findUsersWithToken(token: string): Promise<UserDoc[]> {
-  return runUsersQuery({
-    fieldFilter: {
-      field: { fieldPath: "fcmTokens" },
-      op: "ARRAY_CONTAINS",
-      value: { stringValue: token },
-    },
-  });
+  try {
+    return await runUsersQuery({
+      fieldFilter: {
+        field: { fieldPath: "fcmTokens" },
+        op: "ARRAY_CONTAINS",
+        value: { stringValue: token },
+      },
+    });
+  } catch (err) {
+    console.error("[firestore-admin] findUsersWithToken failed:", err);
+    return [];
+  }
 }
 
 export async function findUserById(userId: string): Promise<UserDoc | null> {

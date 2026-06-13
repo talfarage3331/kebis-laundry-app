@@ -263,7 +263,9 @@ export async function notifyUser(
     console.log(`[push] event=${event} target=${identifierStr} sent=${sent} failed=${failed}`);
     return { sent, failed, errors };
   } catch (error) {
+    const errMsg = error instanceof Error ? error.message : String(error);
     console.error("[push] error in notifyUser:", error);
-    throw error;
+    // Return a safe fallback instead of throwing — prevents hard 500 in the API route
+    return { sent: 0, failed: 0, errors: [errMsg] };
   }
 }

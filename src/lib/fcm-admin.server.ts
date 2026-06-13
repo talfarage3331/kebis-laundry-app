@@ -90,26 +90,45 @@ export async function getGoogleAccessToken(): Promise<string> {
     );
   }
 
-  const sig = await crypto.subtle.sign(
-    "RSASSA-PKCS1-v1_5",
-    cryptoKey,
-    new TextEncoder().encode(signingInput),
-  );
+  let sig: ArrayBuffer;
+  try {
+    sig = await crypto.subtle.sign(
+      "RSASSA-PKCS1-v1_5",
+      cryptoKey,
+      new TextEncoder().encode(signingInput),
+    );
+  } catch (err) {
+    throw new Error(
+      `JWT signing failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
   const jwt = `${signingInput}.${base64UrlEncode(sig)}`;
 
-  const res = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion: jwt,
-    }).toString(),
-  });
+  let res: Response;
+  try {
+    res = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        assertion: jwt,
+      }).toString(),
+    });
+  } catch (fetchErr) {
+    throw new Error(
+      `Google OAuth token fetch failed (network error): ${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`,
+    );
+  }
+
   if (!res.ok) {
-    const text = await res.text();
+    const text = await res.text().catch(() => "(unreadable)");
     throw new Error(`Google OAuth token exchange failed: ${res.status} ${text}`);
   }
   const json = (await res.json()) as { access_token: string; expires_in: number };
+  if (!json.access_token) {
+    throw new Error("Google OAuth token exchange returned empty access_token");
+  }
   cachedToken = {
     token: json.access_token,
     exp: Date.now() + json.expires_in * 1000,

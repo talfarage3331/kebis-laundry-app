@@ -62,6 +62,28 @@ function getStatusColor(status: string) {
   return map[status] ?? "bg-muted text-muted-foreground border-muted-foreground/10";
 }
 
+/* ─── safe date helper ──────────────────────────────────────────── */
+/**
+ * Converts a Firestore field value to a safe ISO string.
+ * Handles: ISO strings, Firestore Timestamp objects ({ seconds, nanoseconds }),
+ * and anything else (falls back to current time to avoid crashes).
+ */
+function safeIso(val: any): string {
+  if (!val) return new Date().toISOString();
+  // Firestore Timestamp object from the Web SDK (has .toDate())
+  if (val && typeof val === "object" && typeof val.toDate === "function") {
+    try { return val.toDate().toISOString(); } catch { return new Date().toISOString(); }
+  }
+  // Firestore Timestamp REST shape: { seconds: number, nanoseconds: number }
+  if (val && typeof val === "object" && typeof val.seconds === "number") {
+    return new Date(val.seconds * 1000).toISOString();
+  }
+  // Attempt to parse as-is
+  const d = new Date(val);
+  if (!isNaN(d.getTime())) return d.toISOString();
+  return new Date().toISOString();
+}
+
 /* ─── main component ─────────────────────────────────────────────── */
 function LaundryDashboard() {
   const { user, logout } = useLaundry();
@@ -94,12 +116,14 @@ function LaundryDashboard() {
     let oldestDate = new Date();
     if (orders.length > 0) {
       orders.forEach((o) => {
-        if (o.created_at) {
-          const d = new Date(o.created_at);
-          if (!isNaN(d.getTime()) && d < oldestDate) {
-            oldestDate = d;
+        try {
+          if (o?.created_at) {
+            const d = new Date(o.created_at);
+            if (!isNaN(d.getTime()) && d < oldestDate) {
+              oldestDate = d;
+            }
           }
-        }
+        } catch { /* skip malformed date */ }
       });
     }
 
@@ -130,26 +154,32 @@ function LaundryDashboard() {
     return options;
   };
 
-  const monthlyOrders = orders.filter((o) => o.created_at && o.created_at.startsWith(selectedMonth));
-  const completedMonthlyOrders = monthlyOrders.filter(o => o.status === "completed");
-  const totalMonthlyRevenue = completedMonthlyOrders.reduce((sum, o) => sum + (o.price || o.amount_due || 0), 0);
+  const monthlyOrders = orders.filter((o) => {
+    try { return o?.created_at && String(o.created_at).startsWith(selectedMonth); } catch { return false; }
+  });
+  const completedMonthlyOrders = monthlyOrders.filter((o) => o?.status === "completed");
+  const totalMonthlyRevenue = completedMonthlyOrders.reduce((sum, o) => sum + (Number(o?.price) || Number(o?.amount_due) || 0), 0);
   const totalMonthlyOrders = monthlyOrders.length;
   const avgMonthlyOrderValue = totalMonthlyOrders > 0
-    ? monthlyOrders.reduce((sum, o) => sum + (o.price || o.amount_due || 0), 0) / totalMonthlyOrders
+    ? monthlyOrders.reduce((sum, o) => sum + (Number(o?.price) || Number(o?.amount_due) || 0), 0) / totalMonthlyOrders
     : 0;
-  const canceledMonthlyOrdersCount = monthlyOrders.filter(o => o.status === "cancelled").length;
+  const canceledMonthlyOrdersCount = monthlyOrders.filter((o) => o?.status === "cancelled").length;
 
   const customerStatsMap: Record<string, { email: string; orderCount: number; totalPaid: number }> = {};
-  monthlyOrders.forEach((o) => {
-    const email = o.user_email || "אורח";
-    if (!customerStatsMap[email]) {
-      customerStatsMap[email] = { email, orderCount: 0, totalPaid: 0 };
-    }
-    customerStatsMap[email].orderCount += 1;
-    if (o.status === "completed") {
-      customerStatsMap[email].totalPaid += (o.price || o.amount_due || 0);
-    }
-  });
+  try {
+    monthlyOrders.forEach((o) => {
+      const email = o?.user_email || "אורח";
+      if (!customerStatsMap[email]) {
+        customerStatsMap[email] = { email, orderCount: 0, totalPaid: 0 };
+      }
+      customerStatsMap[email].orderCount += 1;
+      if (o?.status === "completed") {
+        customerStatsMap[email].totalPaid += (Number(o?.price) || Number(o?.amount_due) || 0);
+      }
+    });
+  } catch (statsErr) {
+    console.error("[laundry-dashboard] customer stats computation error:", statsErr);
+  }
   const activeCustomers = Object.values(customerStatsMap).sort((a, b) => b.orderCount - a.orderCount);
 
   /* unread chat count */
@@ -170,33 +200,46 @@ function LaundryDashboard() {
     const q = query(collection(db, "orders"));
     const unsub = onSnapshot(q, (snapshot) => {
       const realOrders = snapshot.docs.map((docSnap) => {
-        const o = docSnap.data();
-        let parsedImages = o.images || [];
-        if (typeof parsedImages === "string") {
-          try { parsedImages = JSON.parse(parsedImages); } catch (_) {}
+        try {
+          const o = docSnap.data() ?? {};
+          let parsedImages: string[] = [];
+          const rawImages = o.images;
+          if (Array.isArray(rawImages)) {
+            parsedImages = rawImages.filter((img: any) => typeof img === "string");
+          } else if (typeof rawImages === "string" && rawImages) {
+            try { const parsed = JSON.parse(rawImages); parsedImages = Array.isArray(parsed) ? parsed : []; } catch { parsedImages = []; }
+          }
+          const createdAt = safeIso(o.created_at ?? o.createdAt);
+          return {
+            id: docSnap.id,
+            created_at: createdAt,
+            status: o.status ?? "pending",
+            delivery_method: o.delivery_method ?? o.deliveryMethod ?? "none",
+            payment_state: o.payment_state ?? o.paymentState ?? "unpaid",
+            amount_due: Number(o.price ?? o.amount_due ?? o.amountDue ?? 0) || 0,
+            price:      Number(o.price ?? o.amount_due ?? o.amountDue ?? 0) || 0,
+            user_email: o.user_email ?? o.userEmail ?? "",
+            userId:     o.user_id  ?? o.userId  ?? "",
+            notes:            o.notes ?? "",
+            deliveryNotes:    o.deliveryNotes ?? o.delivery_notes ?? "",
+            images:           parsedImages,
+            requires_ironing:     !!(o.requires_ironing || o.requiresIroning),
+            requires_dry_cleaning:!!(o.requires_dry_cleaning || o.requiresDryCleaning),
+            invoices: o.invoiceUrl
+              ? [{ id: `inv-${docSnap.id}`, date: createdAt, name: o.invoiceName ?? "invoice.pdf", data: o.invoiceUrl }]
+              : [],
+          } as LaundryOrder;
+        } catch (docErr) {
+          console.error(`[laundry-dashboard] failed to parse order doc ${docSnap.id}:`, docErr);
+          return null;
         }
-        return {
-          id: docSnap.id,
-          created_at: o.created_at || o.createdAt || new Date().toISOString(),
-          status: o.status,
-          delivery_method: o.delivery_method || o.deliveryMethod || "none",
-          payment_state: o.payment_state || o.paymentState || "unpaid",
-          amount_due: o.price ?? o.amount_due ?? o.amountDue ?? 0,
-          price:      o.price ?? o.amount_due ?? o.amountDue ?? 0,
-          user_email: o.user_email || o.userEmail || "",
-          userId:     o.user_id  || o.userId  || "",
-          notes:            o.notes || "",
-          deliveryNotes:    o.deliveryNotes || o.delivery_notes || "",
-          images:           parsedImages || [],
-          requires_ironing:     !!(o.requires_ironing || o.requiresIroning),
-          requires_dry_cleaning:!!(o.requires_dry_cleaning || o.requiresDryCleaning),
-          invoices: o.invoiceUrl
-            ? [{ id: `inv-${docSnap.id}`, date: o.created_at || o.createdAt || new Date().toISOString(), name: o.invoiceName || "invoice.pdf", data: o.invoiceUrl }]
-            : [],
-        } as LaundryOrder;
-      }).filter((o) => o.delivery_method !== "placeholder" && !o.id.startsWith("placeholder"));
+      }).filter((o): o is LaundryOrder => o !== null && o.delivery_method !== "placeholder" && !o.id.startsWith("placeholder"));
 
-      realOrders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      realOrders.sort((a, b) => {
+        try {
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        } catch { return 0; }
+      });
       setOrders(realOrders as any);
       setIsLoading(false);
     }, (err) => {
@@ -205,14 +248,19 @@ function LaundryDashboard() {
     });
 
     const onStorage = () => {
-      const notifications = JSON.parse(localStorage.getItem("laundry_notifications") || "[]");
-      if (notifications.length > 0) {
-        const latest = notifications[0];
-        const seenId = sessionStorage.getItem("last_notified_id");
-        if (seenId !== latest.id) {
-          sessionStorage.setItem("last_notified_id", latest.id);
-          toast.info(`🔔 הזמנה חדשה התקבלה מ-${latest.user_email}!`, { description: latest.notes });
+      try {
+        const raw = localStorage.getItem("laundry_notifications") || "[]";
+        const notifications = JSON.parse(raw);
+        if (Array.isArray(notifications) && notifications.length > 0) {
+          const latest = notifications[0];
+          const seenId = sessionStorage.getItem("last_notified_id");
+          if (latest?.id && seenId !== latest.id) {
+            sessionStorage.setItem("last_notified_id", latest.id);
+            toast.info(`🔔 הזמנה חדשה התקבלה מ-${latest?.user_email ?? ""}!`, { description: latest?.notes ?? "" });
+          }
         }
+      } catch (storageErr) {
+        console.warn("[laundry-dashboard] onStorage parse error:", storageErr);
       }
     };
     window.addEventListener("storage", onStorage);
