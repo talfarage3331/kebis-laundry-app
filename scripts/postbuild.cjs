@@ -27,21 +27,21 @@ for (const candidate of ["server.js", "index.mjs", "server.mjs"]) {
   }
 }
 
-// ── 3. Validate that the critical worker assets are present ───────────────────
-const assetsDir = path.join(workerDir, "assets");
-const requiredPatterns = [/^worker-entry-.+\.js$/, /^server-.+\.js$/];
+// ── 3. Validate that the critical worker files are present ───────────────────
+// Nitro 3's Cloudflare output no longer uses the older assets/worker-entry-*.js
+// layout. The deployable Pages Worker is index.js plus the runtime chunks in
+// _ssr/, _libs/, and _chunks/. Validate the actual current bundle shape instead
+// of failing on a stale chunk-name expectation.
+const requiredWorkerFiles = [
+  workerIndexPath,
+  path.join(workerDir, "_ssr", "index.mjs"),
+  path.join(workerDir, "_chunks", "ssr-renderer.mjs"),
+];
 let missingCritical = false;
-for (const pattern of requiredPatterns) {
-  let found = false;
-  try {
-    const files = fs.readdirSync(assetsDir);
-    found = files.some((f) => pattern.test(f));
-  } catch (_) {
-    found = false;
-  }
-  if (!found) {
+for (const file of requiredWorkerFiles) {
+  if (!fs.existsSync(file)) {
     console.error(
-      `✘  CRITICAL: No file matching ${pattern} found in ${assetsDir}. ` +
+      `✘  CRITICAL: Missing ${file}. ` +
         "The worker bundle is incomplete — deploy will fail with a 500."
     );
     missingCritical = true;
@@ -50,10 +50,12 @@ for (const pattern of requiredPatterns) {
 if (missingCritical) {
   process.exit(1);
 }
-// Log the final worker asset count so it's visible in CI logs
 try {
-  const assetCount = fs.readdirSync(assetsDir).length;
-  console.log(`✔  Worker assets validated (${assetCount} files in _worker.js/assets/)`);
+  const workerFileCount = fs.readdirSync(workerDir, { recursive: true }).filter((entry) => {
+    const fullPath = path.join(workerDir, entry.toString());
+    return fs.statSync(fullPath).isFile();
+  }).length;
+  console.log(`✔  Worker bundle validated (${workerFileCount} files in _worker.js/)`);
 } catch (_) {}
 
 // ── 4. Replace generated wrangler.json with a clean Pages-compatible config ──
