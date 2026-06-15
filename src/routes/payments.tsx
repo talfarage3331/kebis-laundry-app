@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
-import { useLaundry } from "@/lib/laundry-store";
+import { useLaundry, normalizeStatus } from "@/lib/laundry-store";
 import {
   ArrowRight,
   FileText,
