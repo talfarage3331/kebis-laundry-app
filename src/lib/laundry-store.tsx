@@ -432,7 +432,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
   const advanceOrder = useCallback(async () => {
     if (!activeOrderId) return;
     let finalState: OrderState = orderState;
-    const steps: OrderState[] = ["pending", "picked_up", "in_progress", "ready", "completed"];
+    const steps: OrderState[] = ["pending", "accepted", "collected", "ready", "delivered"];
     const i = steps.indexOf(orderState);
     if (i < 0 || i === steps.length - 1) return;
     finalState = steps[i + 1];
