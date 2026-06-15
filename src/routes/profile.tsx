@@ -121,7 +121,7 @@ function Profile() {
             return {
               id: doc.id,
               created_at: data.created_at || data.createdAt || new Date().toISOString(),
-              status: data.status,
+              status: normalizeStatus(data.status),
               delivery_method: data.delivery_method || data.deliveryMethod || "none",
               payment_state: data.payment_state || data.paymentState || "unpaid",
               amount_due:
