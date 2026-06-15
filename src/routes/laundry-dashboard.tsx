@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
-import { useLaundry } from "@/lib/laundry-store";
+import { useLaundry, normalizeStatus, type OrderState } from "@/lib/laundry-store";
 import { db } from "@/lib/firebase";
 import { collection, query, onSnapshot, doc, updateDoc } from "firebase/firestore";
 import {
