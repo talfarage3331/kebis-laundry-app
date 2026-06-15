@@ -36,7 +36,7 @@ export const Route = createFileRoute("/laundry-dashboard")({
 interface LaundryOrder {
   id: string;
   created_at: string;
-  status: "pending" | "picked_up" | "in_progress" | "ready" | "completed" | "cancelled";
+  status: OrderState;
   delivery_method: string;
   payment_state: string;
   amount_due: number;
@@ -54,22 +54,24 @@ interface LaundryOrder {
 /* ─── status helpers ─────────────────────────────────────────────── */
 function getStatusLabel(status: string) {
   const map: Record<string, string> = {
-    pending: "התקבלה",
-    picked_up: "נאסף",
-    in_progress: "בטיפול",
+    pending: "ממתין",
+    accepted: "התקבל",
+    collected: "נאסף",
     ready: "מוכן",
-    completed: "נמסר",
+    delivered: "נמסר",
+    cancelled: "בוטלה",
   };
   return map[status] ?? status;
 }
 
 function getStatusColor(status: string) {
   const map: Record<string, string> = {
-    pending:    "bg-purple-100 text-purple-800 border-purple-200",
-    picked_up:  "bg-amber-100  text-amber-800  border-amber-200",
-    in_progress:"bg-blue-100   text-blue-800   border-blue-200",
-    ready:      "bg-lime/30    text-lime-foreground border-lime/40",
-    completed:  "bg-slate-100  text-slate-600  border-slate-200",
+    pending:   "bg-purple-100 text-purple-800 border-purple-200",
+    accepted:  "bg-blue-100   text-blue-800   border-blue-200",
+    collected: "bg-amber-100  text-amber-800  border-amber-200",
+    ready:     "bg-lime/30    text-lime-foreground border-lime/40",
+    delivered: "bg-slate-100  text-slate-600  border-slate-200",
+    cancelled: "bg-red-100    text-red-700    border-red-200",
   };
   return map[status] ?? "bg-muted text-muted-foreground border-muted-foreground/10";
 }
