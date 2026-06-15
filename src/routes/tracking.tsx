@@ -476,3 +476,52 @@ function Row({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+function CancelOrderButton({ orderId }: { orderId: string }) {
+  const { cancelOrder } = useLaundry();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="w-full rounded-3xl border-2 border-destructive/30 bg-destructive/5 text-destructive p-4 text-center font-bold hover:bg-destructive/10 active:scale-95 transition flex items-center justify-center gap-2"
+      >
+        <XCircle className="size-5" />
+        <span>ביטול הזמנה</span>
+      </button>
+      <AlertDialog open={open} onOpenChange={setOpen}>
+        <AlertDialogContent dir="rtl" className="text-right">
+          <AlertDialogHeader>
+            <AlertDialogTitle>לבטל את ההזמנה?</AlertDialogTitle>
+            <AlertDialogDescription>
+              ניתן לבטל רק כאשר הסטטוס הוא 'ממתין'. לאחר ביטול לא ניתן לשחזר את ההזמנה.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>חזור</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy}
+              onClick={async (e) => {
+                e.preventDefault();
+                setBusy(true);
+                const ok = await cancelOrder(orderId);
+                setBusy(false);
+                if (ok) {
+                  toast.success("ההזמנה בוטלה");
+                  setOpen(false);
+                } else {
+                  toast.error("שגיאה בביטול ההזמנה");
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {busy ? "מבטל..." : "בטל הזמנה"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
