@@ -403,6 +403,8 @@ function OrderCard({
               המשך לתשלום
             </Link>
           )}
+
+        {order.status === "pending" && <CancelOrderButton orderId={order.id} />}
       </div>
     );
   }
