@@ -288,7 +288,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       setInvoices(userInvoices);
 
       if (activeOrder) {
-        setOrderState(activeOrder.status as OrderState);
+        setOrderState(normalizeStatus(activeOrder.status));
         setDeliveryMethod(activeOrder.delivery_method as DeliveryMethod);
         setPaymentState(activeOrder.payment_state as PaymentState);
         setAmountDue(activeOrder.amount_due);
