@@ -840,3 +840,100 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
     </Dialog>
   );
 }
+
+interface OrderConfirmationModalProps {
+  data: {
+    orderId: string;
+    address: string;
+    notes: string;
+    requiresIroning: boolean;
+    requiresDryCleaning: boolean;
+    imageCount: number;
+  } | null;
+  onClose: () => void;
+}
+
+function OrderConfirmationModal({ data, onClose }: OrderConfirmationModalProps) {
+  return (
+    <Dialog open={!!data} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
+        className="max-w-md w-[95%] sm:w-[92%] max-h-[85vh] overflow-y-auto overflow-x-hidden rounded-2xl sm:rounded-3xl p-4 sm:p-6 text-right dir-rtl backdrop-blur-xl bg-background/95 border-none shadow-[0_20px_50px_rgba(0,0,0,0.15)] focus:outline-none"
+        dir="rtl"
+      >
+        <DialogHeader className="space-y-2 text-right">
+          <DialogTitle className="text-xl sm:text-2xl font-extrabold text-foreground flex items-center gap-2 justify-start">
+            <Check className="size-6 text-lime-foreground" />
+            <span>ההזמנה נוצרה בהצלחה!</span>
+          </DialogTitle>
+          <DialogDescription className="text-sm text-muted-foreground text-right">
+            סיכום פרטי ההזמנה שלך
+          </DialogDescription>
+        </DialogHeader>
+
+        {data && (
+          <div className="space-y-3 my-4 text-right">
+            <div className="rounded-2xl border border-muted-foreground/10 bg-muted/30 p-4 space-y-2">
+              <div>
+                <p className="text-[10px] font-black text-muted-foreground">מזהה הזמנה</p>
+                <p className="text-xs font-bold text-foreground font-mono">
+                  #{data.orderId.slice(0, 8)}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-muted-foreground">כתובת איסוף</p>
+                <p className="text-xs font-bold text-foreground whitespace-pre-wrap">
+                  {data.address}
+                </p>
+              </div>
+              {data.notes && (
+                <div>
+                  <p className="text-[10px] font-black text-muted-foreground">הערות</p>
+                  <p className="text-xs text-foreground whitespace-pre-wrap">{data.notes}</p>
+                </div>
+              )}
+              {(data.requiresIroning || data.requiresDryCleaning) && (
+                <div>
+                  <p className="text-[10px] font-black text-muted-foreground mb-1">שירותים נוספים</p>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {data.requiresIroning && (
+                      <span className="text-[10px] font-bold bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20">
+                        גיהוץ 🧺
+                      </span>
+                    )}
+                    {data.requiresDryCleaning && (
+                      <span className="text-[10px] font-bold bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20">
+                        ניקוי יבש ✨
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+              {data.imageCount > 0 && (
+                <div>
+                  <p className="text-[10px] font-black text-muted-foreground">תמונות שצורפו</p>
+                  <p className="text-xs font-bold text-foreground">{data.imageCount}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-2xl border-2 border-amber-200/60 bg-amber-50 text-amber-900 p-4">
+              <p className="text-xs font-bold leading-relaxed">
+                ניתן לבטל את ההזמנה כל עוד הסטטוס שלה הוא <span className="font-black">'ממתין'</span>.
+                ברגע שהסטטוס ישתנה ל-<span className="font-black">'התקבל'</span>, לא ניתן יהיה לבטל את ההזמנה.
+              </p>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-4">
+          <button
+            onClick={onClose}
+            className="w-full rounded-3xl bg-lime text-lime-foreground py-3.5 min-h-[48px] font-bold active:scale-[0.98] transition hover:shadow-lg hover:shadow-lime/20"
+          >
+            אישור
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
