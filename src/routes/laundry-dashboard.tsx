@@ -227,7 +227,7 @@ function LaundryDashboard() {
           return {
             id: docSnap.id,
             created_at: createdAt,
-            status: o.status ?? "pending",
+            status: normalizeStatus(o.status),
             delivery_method: o.delivery_method ?? o.deliveryMethod ?? "none",
             payment_state: o.payment_state ?? o.paymentState ?? "unpaid",
             amount_due: Number(o.price ?? o.amount_due ?? o.amountDue ?? 0) || 0,
