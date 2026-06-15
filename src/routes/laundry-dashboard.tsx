@@ -171,7 +171,7 @@ function LaundryDashboard() {
   const monthlyOrders = orders.filter((o) => {
     try { return o?.created_at && String(o.created_at).startsWith(selectedMonth); } catch { return false; }
   });
-  const completedMonthlyOrders = monthlyOrders.filter((o) => o?.status === "completed");
+  const completedMonthlyOrders = monthlyOrders.filter((o) => o?.status === "delivered");
   const totalMonthlyRevenue = completedMonthlyOrders.reduce((sum, o) => sum + (Number(o?.price) || Number(o?.amount_due) || 0), 0);
   const totalMonthlyOrders = monthlyOrders.length;
   const avgMonthlyOrderValue = totalMonthlyOrders > 0
@@ -187,7 +187,7 @@ function LaundryDashboard() {
         customerStatsMap[email] = { email, orderCount: 0, totalPaid: 0 };
       }
       customerStatsMap[email].orderCount += 1;
-      if (o?.status === "completed") {
+      if (o?.status === "delivered") {
         customerStatsMap[email].totalPaid += (Number(o?.price) || Number(o?.amount_due) || 0);
       }
     });
@@ -436,12 +436,12 @@ function LaundryDashboard() {
   /* ── filtering ──────────────────────────────────────────────────── */
   const filteredOrders = orders.filter((o) => {
     if (activeTab === "active") {
-      if (o.status === "completed") return false;
-      if (subFilter === "treatment") return ["in_progress","pending","picked_up"].includes(o.status);
+      if (o.status === "delivered") return false;
+      if (subFilter === "treatment") return ["accepted","pending","collected"].includes(o.status);
       if (subFilter === "ready")     return o.status === "ready";
       return true;
     }
-    return o.status === "completed";
+    return o.status === "delivered";
   });
 
   /* ── render ─────────────────────────────────────────────────────── */
@@ -572,10 +572,10 @@ function LaundryDashboard() {
               <section className="grid grid-cols-5 gap-1.5">
                 {[
                   { label: "ממתינים", count: orders.filter((o) => o.status === "pending").length,     color: "text-purple-600 bg-purple-50 border-purple-100" },
-                  { label: "נאספו",   count: orders.filter((o) => o.status === "picked_up").length,   color: "text-amber-600  bg-amber-50  border-amber-100"  },
-                  { label: "בטיפול",  count: orders.filter((o) => o.status === "in_progress").length, color: "text-blue-600   bg-blue-50   border-blue-100"   },
+                  { label: "נאספו",   count: orders.filter((o) => o.status === "collected").length,   color: "text-amber-600  bg-amber-50  border-amber-100"  },
+                  { label: "בטיפול",  count: orders.filter((o) => o.status === "accepted").length, color: "text-blue-600   bg-blue-50   border-blue-100"   },
                   { label: "מוכנים",  count: orders.filter((o) => o.status === "ready").length,       color: "text-lime-foreground bg-lime/10 border-lime/20" },
-                  { label: "הושלמו",  count: orders.filter((o) => o.status === "completed").length,   color: "text-slate-600  bg-slate-50  border-slate-100"  },
+                  { label: "הושלמו",  count: orders.filter((o) => o.status === "delivered").length,   color: "text-slate-600  bg-slate-50  border-slate-100"  },
                 ].map((stat, idx) => (
                   <div key={idx} className={`border rounded-xl p-2 flex flex-col items-center text-center ${stat.color}`}>
                     <span className="text-sm font-black leading-none">{stat.count}</span>
@@ -606,8 +606,8 @@ function LaundryDashboard() {
               {/* ── Tabs ─────────────────────────────────────────────────── */}
               <div className="flex gap-1.5">
                 {[
-                  { key: "active",    label: `פעילות (${orders.filter((o) => o.status !== "completed").length})` },
-                  { key: "completed", label: `הסטוריה (${orders.filter((o) => o.status === "completed").length})` },
+                  { key: "active",    label: `פעילות (${orders.filter((o) => o.status !== "delivered").length})` },
+                  { key: "delivered", label: `הסטוריה (${orders.filter((o) => o.status === "delivered").length})` },
                 ].map((t) => (
                   <button
                     key={t.key}
@@ -865,10 +865,10 @@ function LaundryDashboard() {
                                       className="h-10 w-full max-w-xs bg-background border border-muted-foreground/20 rounded-lg px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary text-right"
                                     >
                                       <option value="pending">התקבלה (ממתין)</option>
-                                      <option value="picked_up">נאסף</option>
-                                      <option value="in_progress">בטיפול</option>
+                                      <option value="collected">נאסף</option>
+                                      <option value="accepted">בטיפול</option>
                                       <option value="ready">מוכן למשלוח</option>
-                                      <option value="completed">נמסר (הושלם)</option>
+                                      <option value="delivered">נמסר (הושלם)</option>
                                     </select>
                                   </div>
 
