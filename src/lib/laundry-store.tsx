@@ -16,7 +16,14 @@ import {
   getDocs,
 } from "firebase/firestore";
 
-export type OrderState = "none" | "pending" | "picked_up" | "in_progress" | "ready" | "completed";
+export type OrderState =
+  | "none"
+  | "pending"
+  | "accepted"
+  | "collected"
+  | "ready"
+  | "delivered"
+  | "cancelled";
 export type DeliveryMethod = "none" | "self_pickup" | "home_delivery";
 export type PaymentState = "unpaid" | "paid";
 
@@ -65,27 +72,57 @@ interface Store {
   advanceOrder: () => void;
   setDelivery: (m: DeliveryMethod) => void;
   payAndInvoice: () => void;
+  cancelOrder: (orderId: string) => Promise<boolean>;
   reset: () => void;
   refreshActiveOrder: () => Promise<void>;
 }
 
 const Ctx = createContext<Store | null>(null);
 
+/**
+ * Normalizes legacy/raw Firestore status strings to the canonical OrderState.
+ * Old workflow used: picked_up, in_progress, completed. Migrate at read time.
+ */
+export function normalizeStatus(raw: any): OrderState {
+  const s = String(raw ?? "").trim();
+  switch (s) {
+    case "pending":
+      return "pending";
+    case "accepted":
+      return "accepted";
+    case "picked_up":
+    case "in_progress":
+    case "collected":
+      return "collected";
+    case "ready":
+      return "ready";
+    case "completed":
+    case "delivered":
+      return "delivered";
+    case "cancelled":
+    case "canceled":
+      return "cancelled";
+    default:
+      return "pending";
+  }
+}
+
 export const ORDER_STEPS: { key: OrderState; label: string }[] = [
-  { key: "pending", label: "ממתין לאיסוף" },
-  { key: "picked_up", label: "נאסף" },
-  { key: "in_progress", label: "בטיפול" },
+  { key: "pending", label: "ממתין" },
+  { key: "accepted", label: "התקבל" },
+  { key: "collected", label: "נאסף" },
   { key: "ready", label: "מוכן" },
-  { key: "completed", label: "נמסר" },
+  { key: "delivered", label: "נמסר" },
 ];
 
 export const stateLabel: Record<OrderState, string> = {
   none: "אין הזמנה פעילה",
-  pending: "ההזמנה התקבלה, ממתינים לאיסוף",
-  picked_up: "הכביסה נאספה",
-  in_progress: "בטיפול / בעיבוד",
+  pending: "ממתין",
+  accepted: "התקבל",
+  collected: "נאסף",
   ready: "מוכן",
-  completed: "הושלם",
+  delivered: "נמסר",
+  cancelled: "בוטלה",
 };
 
 export function LaundryProvider({ children }: { children: ReactNode }) {
