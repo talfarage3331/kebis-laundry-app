@@ -532,6 +532,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         advanceOrder,
         setDelivery,
         payAndInvoice,
+        cancelOrder,
         reset,
         refreshActiveOrder,
       }}
