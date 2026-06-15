@@ -409,9 +409,9 @@ function Profile() {
 
                   {/* Visual Status Steps Progress Bar */}
                   <div className="grid grid-cols-5 gap-1.5 pt-2">
-                    {["pending", "picked_up", "in_progress", "ready", "completed"].map(
+                    {["pending", "accepted", "collected", "ready", "delivered"].map(
                       (step, idx) => {
-                        const steps = ["pending", "picked_up", "in_progress", "ready", "completed"];
+                        const steps = ["pending", "accepted", "collected", "ready", "delivered"];
                         const currentIdx = steps.indexOf(selectedOrder.status);
                         const isCompleted = idx <= currentIdx;
                         const isActive = step === selectedOrder.status;
@@ -433,14 +433,14 @@ function Profile() {
                               }`}
                             >
                               {step === "pending"
-                                ? "התקבלה"
-                                : step === "picked_up"
-                                  ? "נאספה"
-                                  : step === "in_progress"
-                                    ? "בטיפול"
+                                ? "ממתין"
+                                : step === "accepted"
+                                  ? "התקבל"
+                                  : step === "collected"
+                                    ? "נאסף"
                                     : step === "ready"
-                                      ? "מוכנה"
-                                      : "נמסרה"}
+                                      ? "מוכן"
+                                      : "נמסר"}
                             </span>
                           </div>
                         );
