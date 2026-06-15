@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { AppHeader } from "@/components/AppHeader";
-import { useLaundry, stateLabel } from "@/lib/laundry-store";
+import { useLaundry, stateLabel, normalizeStatus } from "@/lib/laundry-store";
 import { LogOut, User as UserIcon, Mail, Loader2, ShoppingBasket, ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
@@ -22,14 +22,16 @@ const getStatusBadgeStyle = (status: string) => {
   switch (status) {
     case "pending":
       return "bg-amber-50 text-amber-700 border border-amber-200/50";
-    case "picked_up":
+    case "accepted":
       return "bg-blue-50 text-blue-700 border border-blue-200/50";
-    case "in_progress":
+    case "collected":
       return "bg-indigo-50 text-indigo-700 border border-indigo-200/50";
     case "ready":
       return "bg-green-50 text-green-700 border border-green-200/50";
-    case "completed":
+    case "delivered":
       return "bg-emerald-50 text-emerald-700 border border-emerald-200/50";
+    case "cancelled":
+      return "bg-red-50 text-red-700 border border-red-200/50";
     default:
       return "bg-muted text-muted-foreground";
   }
@@ -119,7 +121,7 @@ function Profile() {
             return {
               id: doc.id,
               created_at: data.created_at || data.createdAt || new Date().toISOString(),
-              status: data.status,
+              status: normalizeStatus(data.status),
               delivery_method: data.delivery_method || data.deliveryMethod || "none",
               payment_state: data.payment_state || data.paymentState || "unpaid",
               amount_due:
@@ -407,9 +409,9 @@ function Profile() {
 
                   {/* Visual Status Steps Progress Bar */}
                   <div className="grid grid-cols-5 gap-1.5 pt-2">
-                    {["pending", "picked_up", "in_progress", "ready", "completed"].map(
+                    {["pending", "accepted", "collected", "ready", "delivered"].map(
                       (step, idx) => {
-                        const steps = ["pending", "picked_up", "in_progress", "ready", "completed"];
+                        const steps = ["pending", "accepted", "collected", "ready", "delivered"];
                         const currentIdx = steps.indexOf(selectedOrder.status);
                         const isCompleted = idx <= currentIdx;
                         const isActive = step === selectedOrder.status;
@@ -431,14 +433,14 @@ function Profile() {
                               }`}
                             >
                               {step === "pending"
-                                ? "התקבלה"
-                                : step === "picked_up"
-                                  ? "נאספה"
-                                  : step === "in_progress"
-                                    ? "בטיפול"
+                                ? "ממתין"
+                                : step === "accepted"
+                                  ? "התקבל"
+                                  : step === "collected"
+                                    ? "נאסף"
                                     : step === "ready"
-                                      ? "מוכנה"
-                                      : "נמסרה"}
+                                      ? "מוכן"
+                                      : "נמסר"}
                             </span>
                           </div>
                         );

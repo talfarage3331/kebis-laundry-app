@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
-import { useLaundry } from "@/lib/laundry-store";
+import { useLaundry, normalizeStatus, type OrderState } from "@/lib/laundry-store";
 import { db } from "@/lib/firebase";
 import { collection, query, onSnapshot, doc, updateDoc } from "firebase/firestore";
 import {
@@ -14,8 +14,20 @@ import {
   X,
   MessageSquareText,
   ArrowRight,
+  XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 export const Route = createFileRoute("/laundry-dashboard")({
   component: LaundryDashboard,
@@ -24,7 +36,7 @@ export const Route = createFileRoute("/laundry-dashboard")({
 interface LaundryOrder {
   id: string;
   created_at: string;
-  status: "pending" | "picked_up" | "in_progress" | "ready" | "completed" | "cancelled";
+  status: OrderState;
   delivery_method: string;
   payment_state: string;
   amount_due: number;
@@ -42,22 +54,24 @@ interface LaundryOrder {
 /* ─── status helpers ─────────────────────────────────────────────── */
 function getStatusLabel(status: string) {
   const map: Record<string, string> = {
-    pending: "התקבלה",
-    picked_up: "נאסף",
-    in_progress: "בטיפול",
+    pending: "ממתין",
+    accepted: "התקבל",
+    collected: "נאסף",
     ready: "מוכן",
-    completed: "נמסר",
+    delivered: "נמסר",
+    cancelled: "בוטלה",
   };
   return map[status] ?? status;
 }
 
 function getStatusColor(status: string) {
   const map: Record<string, string> = {
-    pending:    "bg-purple-100 text-purple-800 border-purple-200",
-    picked_up:  "bg-amber-100  text-amber-800  border-amber-200",
-    in_progress:"bg-blue-100   text-blue-800   border-blue-200",
-    ready:      "bg-lime/30    text-lime-foreground border-lime/40",
-    completed:  "bg-slate-100  text-slate-600  border-slate-200",
+    pending:   "bg-purple-100 text-purple-800 border-purple-200",
+    accepted:  "bg-blue-100   text-blue-800   border-blue-200",
+    collected: "bg-amber-100  text-amber-800  border-amber-200",
+    ready:     "bg-lime/30    text-lime-foreground border-lime/40",
+    delivered: "bg-slate-100  text-slate-600  border-slate-200",
+    cancelled: "bg-red-100    text-red-700    border-red-200",
   };
   return map[status] ?? "bg-muted text-muted-foreground border-muted-foreground/10";
 }
@@ -157,7 +171,7 @@ function LaundryDashboard() {
   const monthlyOrders = orders.filter((o) => {
     try { return o?.created_at && String(o.created_at).startsWith(selectedMonth); } catch { return false; }
   });
-  const completedMonthlyOrders = monthlyOrders.filter((o) => o?.status === "completed");
+  const completedMonthlyOrders = monthlyOrders.filter((o) => o?.status === "delivered");
   const totalMonthlyRevenue = completedMonthlyOrders.reduce((sum, o) => sum + (Number(o?.price) || Number(o?.amount_due) || 0), 0);
   const totalMonthlyOrders = monthlyOrders.length;
   const avgMonthlyOrderValue = totalMonthlyOrders > 0
@@ -173,7 +187,7 @@ function LaundryDashboard() {
         customerStatsMap[email] = { email, orderCount: 0, totalPaid: 0 };
       }
       customerStatsMap[email].orderCount += 1;
-      if (o?.status === "completed") {
+      if (o?.status === "delivered") {
         customerStatsMap[email].totalPaid += (Number(o?.price) || Number(o?.amount_due) || 0);
       }
     });
@@ -213,7 +227,7 @@ function LaundryDashboard() {
           return {
             id: docSnap.id,
             created_at: createdAt,
-            status: o.status ?? "pending",
+            status: normalizeStatus(o.status),
             delivery_method: o.delivery_method ?? o.deliveryMethod ?? "none",
             payment_state: o.payment_state ?? o.paymentState ?? "unpaid",
             amount_due: Number(o.price ?? o.amount_due ?? o.amountDue ?? 0) || 0,
@@ -346,11 +360,12 @@ function LaundryDashboard() {
       if (newStatus && newStatus !== currentOrder?.status) {
         await updateOrderStatus(orderId, newStatus);
         const STATUS_PUSH_MAP: Record<string, { event: string; title: string; body: string }> = {
-          pending:     { event: "laundry-picked-up",   title: "ההזמנה התקבלה במכבסה 🧺",   body: "ההזמנה שלך התקבלה בהצלחה וממתינה לאיסוף" },
-          picked_up:   { event: "laundry-picked-up",   title: "הכביסה נאספה 🧺",            body: "הכביסה שלך נאספה בהצלחה ובדרכה למכבסה" },
-          in_progress: { event: "laundry-in-progress", title: "הכביסה בטיפול 🧼",           body: "הכביסה שלך בתהליך כביסה וניקוי כרגע" },
-          ready:       { event: "laundry-ready",       title: "הכביסה שלך מוכנה! 🧺",      body: "ההזמנה שלך מוכנה. ניתן לתאם איסוף או משלוח" },
-          completed:   { event: "laundry-delivered",   title: "הכביסה נמסרה בהצלחה 🎉",    body: "הכביסה שלך נמסרה בהצלחה" },
+          pending:   { event: "laundry-picked-up",   title: "ההזמנה ממתינה 🧺",          body: "ההזמנה שלך נמצאת בסטטוס ממתין" },
+          accepted:  { event: "laundry-picked-up",   title: "ההזמנה התקבלה במכבסה 🧺",  body: "ההזמנה שלך התקבלה ע״י המכבסה" },
+          collected: { event: "laundry-picked-up",   title: "הכביסה נאספה 🧺",           body: "הכביסה שלך נאספה בהצלחה" },
+          ready:     { event: "laundry-ready",       title: "הכביסה שלך מוכנה! 🧺",     body: "ההזמנה שלך מוכנה. ניתן לתאם איסוף או משלוח" },
+          delivered: { event: "laundry-delivered",   title: "הכביסה נמסרה בהצלחה 🎉",   body: "הכביסה שלך נמסרה בהצלחה" },
+          cancelled: { event: "laundry-delivered",   title: "ההזמנה בוטלה",              body: "ההזמנה שלך בוטלה" },
         };
         const pushSpec = STATUS_PUSH_MAP[newStatus];
         if (currentOrder?.user_email && pushSpec) {
@@ -422,12 +437,12 @@ function LaundryDashboard() {
   /* ── filtering ──────────────────────────────────────────────────── */
   const filteredOrders = orders.filter((o) => {
     if (activeTab === "active") {
-      if (o.status === "completed") return false;
-      if (subFilter === "treatment") return ["in_progress","pending","picked_up"].includes(o.status);
+      if (o.status === "delivered") return false;
+      if (subFilter === "treatment") return ["accepted","pending","collected"].includes(o.status);
       if (subFilter === "ready")     return o.status === "ready";
       return true;
     }
-    return o.status === "completed";
+    return o.status === "delivered";
   });
 
   /* ── render ─────────────────────────────────────────────────────── */
@@ -557,11 +572,13 @@ function LaundryDashboard() {
               {/* ── Stats strip ──────────────────────────────────────────── */}
               <section className="grid grid-cols-5 gap-1.5">
                 {[
-                  { label: "ממתינים", count: orders.filter((o) => o.status === "pending").length,     color: "text-purple-600 bg-purple-50 border-purple-100" },
-                  { label: "נאספו",   count: orders.filter((o) => o.status === "picked_up").length,   color: "text-amber-600  bg-amber-50  border-amber-100"  },
-                  { label: "בטיפול",  count: orders.filter((o) => o.status === "in_progress").length, color: "text-blue-600   bg-blue-50   border-blue-100"   },
+                  { label: "ממתינים", count: orders.filter((o) => o.status === "pending").length,   color: "text-purple-600 bg-purple-50 border-purple-100" },
+                  { label: "התקבלו",  count: orders.filter((o) => o.status === "accepted").length,  color: "text-blue-600   bg-blue-50   border-blue-100"   },
+                  { label: "נאספו",   count: orders.filter((o) => o.status === "collected").length, color: "text-amber-600  bg-amber-50  border-amber-100"  },
+                  { label: "מוכנים",  count: orders.filter((o) => o.status === "ready").length,     color: "text-lime-foreground bg-lime/10 border-lime/20" },
+                  { label: "נמסרו",   count: orders.filter((o) => o.status === "delivered").length, color: "text-slate-600  bg-slate-50  border-slate-100"  },
                   { label: "מוכנים",  count: orders.filter((o) => o.status === "ready").length,       color: "text-lime-foreground bg-lime/10 border-lime/20" },
-                  { label: "הושלמו",  count: orders.filter((o) => o.status === "completed").length,   color: "text-slate-600  bg-slate-50  border-slate-100"  },
+                  { label: "הושלמו",  count: orders.filter((o) => o.status === "delivered").length,   color: "text-slate-600  bg-slate-50  border-slate-100"  },
                 ].map((stat, idx) => (
                   <div key={idx} className={`border rounded-xl p-2 flex flex-col items-center text-center ${stat.color}`}>
                     <span className="text-sm font-black leading-none">{stat.count}</span>
@@ -592,8 +609,8 @@ function LaundryDashboard() {
               {/* ── Tabs ─────────────────────────────────────────────────── */}
               <div className="flex gap-1.5">
                 {[
-                  { key: "active",    label: `פעילות (${orders.filter((o) => o.status !== "completed").length})` },
-                  { key: "completed", label: `הסטוריה (${orders.filter((o) => o.status === "completed").length})` },
+                  { key: "active",    label: `פעילות (${orders.filter((o) => o.status !== "delivered").length})` },
+                  { key: "delivered", label: `הסטוריה (${orders.filter((o) => o.status === "delivered").length})` },
                 ].map((t) => (
                   <button
                     key={t.key}
@@ -850,11 +867,12 @@ function LaundryDashboard() {
                                       onChange={(e) => setPendingStatuses((prev) => ({ ...prev, [order.id]: e.target.value }))}
                                       className="h-10 w-full max-w-xs bg-background border border-muted-foreground/20 rounded-lg px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary text-right"
                                     >
-                                      <option value="pending">התקבלה (ממתין)</option>
-                                      <option value="picked_up">נאסף</option>
-                                      <option value="in_progress">בטיפול</option>
-                                      <option value="ready">מוכן למשלוח</option>
-                                      <option value="completed">נמסר (הושלם)</option>
+                                      <option value="pending">ממתין</option>
+                                      <option value="accepted">התקבל</option>
+                                      <option value="collected">נאסף</option>
+                                      <option value="ready">מוכן</option>
+                                      <option value="delivered">נמסר</option>
+                                      <option value="cancelled">בוטלה</option>
                                     </select>
                                   </div>
 
@@ -953,8 +971,41 @@ function LaundryDashboard() {
                                 </div>
                               </div>{/* /grid */}
 
-                              {/* ── Save button — pinned bottom-left (RTL = left side) ── */}
-                              <div className="mt-4 pt-3 border-t border-muted-foreground/10 flex justify-end">
+                              {/* ── Action buttons (admin) ── */}
+                              <div className="mt-4 pt-3 border-t border-muted-foreground/10 flex justify-between items-center gap-2">
+                                {order.status !== "cancelled" ? (
+                                  <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                      <button
+                                        className="inline-flex items-center justify-center gap-1.5 px-4 text-[11px] font-black rounded-full border-2 border-destructive/40 text-destructive bg-destructive/5 hover:bg-destructive/10 active:scale-[0.97] transition h-10"
+                                      >
+                                        <XCircle className="size-3.5" />
+                                        <span>בטל הזמנה</span>
+                                      </button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent dir="rtl" className="text-right">
+                                      <AlertDialogHeader>
+                                        <AlertDialogTitle>לבטל הזמנה זו?</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                          ביטול הזמנה ע״י המכבסה תקף בכל סטטוס. הפעולה אינה הפיכה.
+                                        </AlertDialogDescription>
+                                      </AlertDialogHeader>
+                                      <AlertDialogFooter>
+                                        <AlertDialogCancel>חזור</AlertDialogCancel>
+                                        <AlertDialogAction
+                                          onClick={async () => {
+                                            await updateOrderStatus(order.id, "cancelled");
+                                          }}
+                                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                        >
+                                          בטל הזמנה
+                                        </AlertDialogAction>
+                                      </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                  </AlertDialog>
+                                ) : (
+                                  <span className="text-[11px] font-bold text-destructive">הזמנה זו בוטלה</span>
+                                )}
                                 <button
                                   onClick={() => saveAllChanges(order.id)}
                                   disabled={savingOrder[order.id]}

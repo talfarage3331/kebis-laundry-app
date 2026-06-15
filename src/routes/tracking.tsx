@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { AppHeader } from "@/components/AppHeader";
-import { useLaundry, stateLabel, ORDER_STEPS } from "@/lib/laundry-store";
+import { useLaundry, stateLabel, ORDER_STEPS, normalizeStatus } from "@/lib/laundry-store";
 import {
   PackageOpen,
   Check,
@@ -12,10 +12,21 @@ import {
   ChevronUp,
   FileText,
   Download,
+  XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 // ── Route with typed search params ──────────────────────────────────────────
 export const Route = createFileRoute("/tracking")({
@@ -55,7 +66,7 @@ function Tracking() {
           return {
             id: doc.id,
             created_at: data.created_at || data.createdAt || new Date().toISOString(),
-            status: data.status,
+            status: normalizeStatus(data.status),
             delivery_method: data.delivery_method || data.deliveryMethod || "none",
             payment_state: data.payment_state || data.paymentState || "unpaid",
             amount_due:
@@ -171,15 +182,17 @@ function OrderCard({
   const getStatusLabel = (status: string) => {
     switch (status) {
       case "pending":
-        return "ממתין לאיסוף";
-      case "picked_up":
+        return "ממתין";
+      case "accepted":
+        return "התקבל";
+      case "collected":
         return "נאסף";
-      case "in_progress":
-        return "בטיפול";
       case "ready":
         return "מוכן";
-      case "completed":
-        return "הושלם";
+      case "delivered":
+        return "נמסר";
+      case "cancelled":
+        return "בוטלה";
       default:
         return "טרם נקבע";
     }
@@ -189,14 +202,16 @@ function OrderCard({
     switch (status) {
       case "pending":
         return "bg-purple-50 text-purple-700 border-purple-200/50";
-      case "picked_up":
+      case "accepted":
         return "bg-blue-50 text-blue-700 border-blue-200/50";
-      case "in_progress":
+      case "collected":
         return "bg-amber-50 text-amber-700 border-amber-200/50";
       case "ready":
         return "bg-emerald-50 text-emerald-700 border-emerald-200/50";
-      case "completed":
+      case "delivered":
         return "bg-gray-100 text-gray-700 border-gray-200";
+      case "cancelled":
+        return "bg-red-50 text-red-700 border-red-200/50";
       default:
         return "bg-slate-50 text-slate-600 border-slate-200";
     }
@@ -219,7 +234,7 @@ function OrderCard({
       <div className="space-y-4 animate-fade-in">
         <div
           className={`rounded-3xl p-5 relative cursor-pointer ${
-            order.status === "completed"
+            order.status === "delivered"
               ? "bg-slate-100 text-slate-700 border border-slate-200"
               : "bg-lime text-lime-foreground shadow-[0_15px_40px_-15px_oklch(0.92_0.18_125/0.6)]"
           }`}
@@ -244,7 +259,7 @@ function OrderCard({
                   <span
                     className={`size-6 rounded-full grid place-items-center text-[11px] ${
                       done
-                        ? order.status === "completed"
+                        ? order.status === "delivered"
                           ? "bg-slate-700 text-slate-100"
                           : "bg-primary text-primary-foreground"
                         : "bg-background/60 text-muted-foreground"
@@ -370,7 +385,7 @@ function OrderCard({
           <Row label="סכום" value={`₪${(order.amount_due || 0).toFixed(2)}`} />
         </div>
 
-        {order.delivery_method === "none" && order.status !== "completed" && (
+        {order.delivery_method === "none" && order.status !== "delivered" && order.status !== "cancelled" && (
           <Link
             to="/delivery"
             className="block rounded-3xl bg-primary text-primary-foreground p-4 text-center font-bold shadow-md shadow-primary/20 hover:scale-[1.01] active:scale-95 transition"
@@ -380,7 +395,7 @@ function OrderCard({
         )}
         {order.delivery_method !== "none" &&
           order.payment_state === "unpaid" &&
-          order.status !== "completed" && (
+          order.status !== "delivered" && order.status !== "cancelled" && (
             <Link
               to="/payments"
               className="block rounded-3xl bg-primary text-primary-foreground p-4 text-center font-bold shadow-md shadow-primary/20 hover:scale-[1.01] active:scale-95 transition"
@@ -388,6 +403,8 @@ function OrderCard({
               המשך לתשלום
             </Link>
           )}
+
+        {order.status === "pending" && <CancelOrderButton orderId={order.id} />}
       </div>
     );
   }
@@ -457,5 +474,54 @@ function Row({ label, value }: { label: string; value: string }) {
       <span className="opacity-70">{label}</span>
       <span className="font-bold">{value}</span>
     </div>
+  );
+}
+
+function CancelOrderButton({ orderId }: { orderId: string }) {
+  const { cancelOrder } = useLaundry();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="w-full rounded-3xl border-2 border-destructive/30 bg-destructive/5 text-destructive p-4 text-center font-bold hover:bg-destructive/10 active:scale-95 transition flex items-center justify-center gap-2"
+      >
+        <XCircle className="size-5" />
+        <span>ביטול הזמנה</span>
+      </button>
+      <AlertDialog open={open} onOpenChange={setOpen}>
+        <AlertDialogContent dir="rtl" className="text-right">
+          <AlertDialogHeader>
+            <AlertDialogTitle>לבטל את ההזמנה?</AlertDialogTitle>
+            <AlertDialogDescription>
+              ניתן לבטל רק כאשר הסטטוס הוא 'ממתין'. לאחר ביטול לא ניתן לשחזר את ההזמנה.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>חזור</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy}
+              onClick={async (e) => {
+                e.preventDefault();
+                setBusy(true);
+                const ok = await cancelOrder(orderId);
+                setBusy(false);
+                if (ok) {
+                  toast.success("ההזמנה בוטלה");
+                  setOpen(false);
+                } else {
+                  toast.error("שגיאה בביטול ההזמנה");
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {busy ? "מבטל..." : "בטל הזמנה"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
