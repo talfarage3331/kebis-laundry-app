@@ -865,11 +865,12 @@ function LaundryDashboard() {
                                       onChange={(e) => setPendingStatuses((prev) => ({ ...prev, [order.id]: e.target.value }))}
                                       className="h-10 w-full max-w-xs bg-background border border-muted-foreground/20 rounded-lg px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary text-right"
                                     >
-                                      <option value="pending">התקבלה (ממתין)</option>
+                                      <option value="pending">ממתין</option>
+                                      <option value="accepted">התקבל</option>
                                       <option value="collected">נאסף</option>
-                                      <option value="accepted">בטיפול</option>
-                                      <option value="ready">מוכן למשלוח</option>
-                                      <option value="delivered">נמסר (הושלם)</option>
+                                      <option value="ready">מוכן</option>
+                                      <option value="delivered">נמסר</option>
+                                      <option value="cancelled">בוטלה</option>
                                     </select>
                                   </div>
 
