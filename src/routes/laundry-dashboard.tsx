@@ -971,8 +971,41 @@ function LaundryDashboard() {
                                 </div>
                               </div>{/* /grid */}
 
-                              {/* ── Save button — pinned bottom-left (RTL = left side) ── */}
-                              <div className="mt-4 pt-3 border-t border-muted-foreground/10 flex justify-end">
+                              {/* ── Action buttons (admin) ── */}
+                              <div className="mt-4 pt-3 border-t border-muted-foreground/10 flex justify-between items-center gap-2">
+                                {order.status !== "cancelled" ? (
+                                  <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                      <button
+                                        className="inline-flex items-center justify-center gap-1.5 px-4 text-[11px] font-black rounded-full border-2 border-destructive/40 text-destructive bg-destructive/5 hover:bg-destructive/10 active:scale-[0.97] transition h-10"
+                                      >
+                                        <XCircle className="size-3.5" />
+                                        <span>בטל הזמנה</span>
+                                      </button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent dir="rtl" className="text-right">
+                                      <AlertDialogHeader>
+                                        <AlertDialogTitle>לבטל הזמנה זו?</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                          ביטול הזמנה ע״י המכבסה תקף בכל סטטוס. הפעולה אינה הפיכה.
+                                        </AlertDialogDescription>
+                                      </AlertDialogHeader>
+                                      <AlertDialogFooter>
+                                        <AlertDialogCancel>חזור</AlertDialogCancel>
+                                        <AlertDialogAction
+                                          onClick={async () => {
+                                            await updateOrderStatus(order.id, "cancelled");
+                                          }}
+                                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                        >
+                                          בטל הזמנה
+                                        </AlertDialogAction>
+                                      </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                  </AlertDialog>
+                                ) : (
+                                  <span className="text-[11px] font-bold text-destructive">הזמנה זו בוטלה</span>
+                                )}
                                 <button
                                   onClick={() => saveAllChanges(order.id)}
                                   disabled={savingOrder[order.id]}
