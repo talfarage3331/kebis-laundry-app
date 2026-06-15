@@ -572,9 +572,11 @@ function LaundryDashboard() {
               {/* ── Stats strip ──────────────────────────────────────────── */}
               <section className="grid grid-cols-5 gap-1.5">
                 {[
-                  { label: "ממתינים", count: orders.filter((o) => o.status === "pending").length,     color: "text-purple-600 bg-purple-50 border-purple-100" },
-                  { label: "נאספו",   count: orders.filter((o) => o.status === "collected").length,   color: "text-amber-600  bg-amber-50  border-amber-100"  },
-                  { label: "בטיפול",  count: orders.filter((o) => o.status === "accepted").length, color: "text-blue-600   bg-blue-50   border-blue-100"   },
+                  { label: "ממתינים", count: orders.filter((o) => o.status === "pending").length,   color: "text-purple-600 bg-purple-50 border-purple-100" },
+                  { label: "התקבלו",  count: orders.filter((o) => o.status === "accepted").length,  color: "text-blue-600   bg-blue-50   border-blue-100"   },
+                  { label: "נאספו",   count: orders.filter((o) => o.status === "collected").length, color: "text-amber-600  bg-amber-50  border-amber-100"  },
+                  { label: "מוכנים",  count: orders.filter((o) => o.status === "ready").length,     color: "text-lime-foreground bg-lime/10 border-lime/20" },
+                  { label: "נמסרו",   count: orders.filter((o) => o.status === "delivered").length, color: "text-slate-600  bg-slate-50  border-slate-100"  },
                   { label: "מוכנים",  count: orders.filter((o) => o.status === "ready").length,       color: "text-lime-foreground bg-lime/10 border-lime/20" },
                   { label: "הושלמו",  count: orders.filter((o) => o.status === "delivered").length,   color: "text-slate-600  bg-slate-50  border-slate-100"  },
                 ].map((stat, idx) => (
