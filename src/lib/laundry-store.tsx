@@ -481,6 +481,18 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     }
   }, [activeOrderId]);
 
+  const cancelOrder = useCallback(async (orderId: string): Promise<boolean> => {
+    try {
+      await updateDoc(doc(db, "orders", orderId), { status: "cancelled" });
+      if (orderId === activeOrderId) setOrderState("cancelled");
+      window.dispatchEvent(new CustomEvent("laundry-order-updated"));
+      return true;
+    } catch (err) {
+      console.error("Failed to cancel order:", err);
+      return false;
+    }
+  }, [activeOrderId]);
+
   const reset = useCallback(() => {
     setOrderState("none");
     setDeliveryMethod("none");
