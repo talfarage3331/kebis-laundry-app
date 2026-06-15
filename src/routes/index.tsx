@@ -151,10 +151,26 @@ function Dashboard() {
           setIsModalOpen(false);
           if (orderId) {
             toast.success("הזמנת האיסוף נוצרה בהצלחה!");
-            navigate({ to: "/tracking", search: { orderId } });
+            setConfirmationData({
+              orderId,
+              address,
+              notes,
+              requiresIroning,
+              requiresDryCleaning,
+              imageCount: images.length,
+            });
           } else {
             toast.error("שגיאה ביצירת ההזמנה. אנא נסה שוב.");
           }
+        }}
+      />
+
+      <OrderConfirmationModal
+        data={confirmationData}
+        onClose={() => {
+          const orderId = confirmationData?.orderId;
+          setConfirmationData(null);
+          if (orderId) navigate({ to: "/tracking", search: { orderId } });
         }}
       />
 
