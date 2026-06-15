@@ -234,7 +234,7 @@ function OrderCard({
       <div className="space-y-4 animate-fade-in">
         <div
           className={`rounded-3xl p-5 relative cursor-pointer ${
-            order.status === "completed"
+            order.status === "delivered"
               ? "bg-slate-100 text-slate-700 border border-slate-200"
               : "bg-lime text-lime-foreground shadow-[0_15px_40px_-15px_oklch(0.92_0.18_125/0.6)]"
           }`}
@@ -259,7 +259,7 @@ function OrderCard({
                   <span
                     className={`size-6 rounded-full grid place-items-center text-[11px] ${
                       done
-                        ? order.status === "completed"
+                        ? order.status === "delivered"
                           ? "bg-slate-700 text-slate-100"
                           : "bg-primary text-primary-foreground"
                         : "bg-background/60 text-muted-foreground"
@@ -385,7 +385,7 @@ function OrderCard({
           <Row label="סכום" value={`₪${(order.amount_due || 0).toFixed(2)}`} />
         </div>
 
-        {order.delivery_method === "none" && order.status !== "completed" && (
+        {order.delivery_method === "none" && order.status !== "delivered" && order.status !== "cancelled" && (
           <Link
             to="/delivery"
             className="block rounded-3xl bg-primary text-primary-foreground p-4 text-center font-bold shadow-md shadow-primary/20 hover:scale-[1.01] active:scale-95 transition"
@@ -395,7 +395,7 @@ function OrderCard({
         )}
         {order.delivery_method !== "none" &&
           order.payment_state === "unpaid" &&
-          order.status !== "completed" && (
+          order.status !== "delivered" && order.status !== "cancelled" && (
             <Link
               to="/payments"
               className="block rounded-3xl bg-primary text-primary-foreground p-4 text-center font-bold shadow-md shadow-primary/20 hover:scale-[1.01] active:scale-95 transition"
