@@ -68,6 +68,14 @@ function Dashboard() {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [confirmationData, setConfirmationData] = useState<{
+    orderId: string;
+    address: string;
+    notes: string;
+    requiresIroning: boolean;
+    requiresDryCleaning: boolean;
+    imageCount: number;
+  } | null>(null);
 
   // Fetch unread message count for the customer
 
