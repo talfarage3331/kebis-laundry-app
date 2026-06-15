@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { AppHeader } from "@/components/AppHeader";
-import { useLaundry, stateLabel, ORDER_STEPS, normalizeStatus, type OrderState } from "@/lib/laundry-store";
+import { useLaundry, stateLabel, ORDER_STEPS, normalizeStatus } from "@/lib/laundry-store";
 import {
   PackageOpen,
   Check,
