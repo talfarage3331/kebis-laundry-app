@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { AppHeader } from "@/components/AppHeader";
-import { useLaundry, stateLabel } from "@/lib/laundry-store";
+import { useLaundry, stateLabel, normalizeStatus } from "@/lib/laundry-store";
 import { LogOut, User as UserIcon, Mail, Loader2, ShoppingBasket, ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
