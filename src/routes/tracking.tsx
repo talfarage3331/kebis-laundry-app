@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { AppHeader } from "@/components/AppHeader";
-import { useLaundry, stateLabel, ORDER_STEPS } from "@/lib/laundry-store";
+import { useLaundry, stateLabel, ORDER_STEPS, normalizeStatus, type OrderState } from "@/lib/laundry-store";
 import {
   PackageOpen,
   Check,
@@ -12,10 +12,21 @@ import {
   ChevronUp,
   FileText,
   Download,
+  XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 // ── Route with typed search params ──────────────────────────────────────────
 export const Route = createFileRoute("/tracking")({
