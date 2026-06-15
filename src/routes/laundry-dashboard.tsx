@@ -360,11 +360,12 @@ function LaundryDashboard() {
       if (newStatus && newStatus !== currentOrder?.status) {
         await updateOrderStatus(orderId, newStatus);
         const STATUS_PUSH_MAP: Record<string, { event: string; title: string; body: string }> = {
-          pending:     { event: "laundry-picked-up",   title: "ההזמנה התקבלה במכבסה 🧺",   body: "ההזמנה שלך התקבלה בהצלחה וממתינה לאיסוף" },
-          picked_up:   { event: "laundry-picked-up",   title: "הכביסה נאספה 🧺",            body: "הכביסה שלך נאספה בהצלחה ובדרכה למכבסה" },
-          in_progress: { event: "laundry-in-progress", title: "הכביסה בטיפול 🧼",           body: "הכביסה שלך בתהליך כביסה וניקוי כרגע" },
-          ready:       { event: "laundry-ready",       title: "הכביסה שלך מוכנה! 🧺",      body: "ההזמנה שלך מוכנה. ניתן לתאם איסוף או משלוח" },
-          completed:   { event: "laundry-delivered",   title: "הכביסה נמסרה בהצלחה 🎉",    body: "הכביסה שלך נמסרה בהצלחה" },
+          pending:   { event: "laundry-picked-up",   title: "ההזמנה ממתינה 🧺",          body: "ההזמנה שלך נמצאת בסטטוס ממתין" },
+          accepted:  { event: "laundry-picked-up",   title: "ההזמנה התקבלה במכבסה 🧺",  body: "ההזמנה שלך התקבלה ע״י המכבסה" },
+          collected: { event: "laundry-picked-up",   title: "הכביסה נאספה 🧺",           body: "הכביסה שלך נאספה בהצלחה" },
+          ready:     { event: "laundry-ready",       title: "הכביסה שלך מוכנה! 🧺",     body: "ההזמנה שלך מוכנה. ניתן לתאם איסוף או משלוח" },
+          delivered: { event: "laundry-delivered",   title: "הכביסה נמסרה בהצלחה 🎉",   body: "הכביסה שלך נמסרה בהצלחה" },
+          cancelled: { event: "laundry-delivered",   title: "ההזמנה בוטלה",              body: "ההזמנה שלך בוטלה" },
         };
         const pushSpec = STATUS_PUSH_MAP[newStatus];
         if (currentOrder?.user_email && pushSpec) {
