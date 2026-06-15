@@ -182,15 +182,17 @@ function OrderCard({
   const getStatusLabel = (status: string) => {
     switch (status) {
       case "pending":
-        return "ממתין לאיסוף";
-      case "picked_up":
+        return "ממתין";
+      case "accepted":
+        return "התקבל";
+      case "collected":
         return "נאסף";
-      case "in_progress":
-        return "בטיפול";
       case "ready":
         return "מוכן";
-      case "completed":
-        return "הושלם";
+      case "delivered":
+        return "נמסר";
+      case "cancelled":
+        return "בוטלה";
       default:
         return "טרם נקבע";
     }
@@ -200,14 +202,16 @@ function OrderCard({
     switch (status) {
       case "pending":
         return "bg-purple-50 text-purple-700 border-purple-200/50";
-      case "picked_up":
+      case "accepted":
         return "bg-blue-50 text-blue-700 border-blue-200/50";
-      case "in_progress":
+      case "collected":
         return "bg-amber-50 text-amber-700 border-amber-200/50";
       case "ready":
         return "bg-emerald-50 text-emerald-700 border-emerald-200/50";
-      case "completed":
+      case "delivered":
         return "bg-gray-100 text-gray-700 border-gray-200";
+      case "cancelled":
+        return "bg-red-50 text-red-700 border-red-200/50";
       default:
         return "bg-slate-50 text-slate-600 border-slate-200";
     }
