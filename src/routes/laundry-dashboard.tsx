@@ -678,14 +678,17 @@ function LaundryDashboard() {
                     const isExpanded = expandedOrderId === order.id;
                     const [custNotes, laundryMsg] = (order.notes || "").split(" ||LAUNDRY_MSG|| ");
                     const displayPrice = order.price !== undefined ? order.price : order.amount_due;
+                    const isCancelled = order.status === "cancelled";
 
                     return (
                       <div
                         key={order.id}
                         className={`bg-card border rounded-xl transition-all duration-200 overflow-hidden ${
-                          isExpanded
-                            ? "border-primary/30 shadow-md ring-1 ring-primary/10"
-                            : "border-muted-foreground/10 hover:border-muted-foreground/25 hover:shadow-sm cursor-pointer"
+                          isCancelled
+                            ? "border-destructive/30 ring-1 ring-destructive/10 bg-muted/30 opacity-80"
+                            : isExpanded
+                              ? "border-primary/30 shadow-md ring-1 ring-primary/10"
+                              : "border-muted-foreground/10 hover:border-muted-foreground/25 hover:shadow-sm cursor-pointer"
                         }`}
                         onClick={() => { if (!isExpanded) setExpandedOrderId(order.id); }}
                       >
@@ -747,6 +750,17 @@ function LaundryDashboard() {
                           <div className="overflow-hidden">
                             <div className="border-t border-muted-foreground/10 mx-4" />
                             <div className="px-4 pt-3 pb-4">
+
+                              {isCancelled && (
+                                <div className="mb-3 rounded-xl border-2 border-destructive/40 bg-destructive/10 text-destructive px-4 py-3 flex items-center gap-2">
+                                  <XCircle className="size-5 shrink-0" />
+                                  <div className="text-right">
+                                    <p className="text-xs font-black">הזמנה זו בוטלה</p>
+                                    <p className="text-[10px] font-semibold opacity-80">לא ניתן לערוך פרטים, סטטוס או חשבונית.</p>
+                                  </div>
+                                </div>
+                              )}
+
 
                               {/* 3-column grid */}
                               <div className="grid grid-cols-1 md:grid-cols-3 gap-4" dir="rtl">
@@ -852,10 +866,11 @@ function LaundryDashboard() {
                                     </label>
                                     <input
                                       type="number"
+                                      disabled={isCancelled}
                                       value={typedPrices[order.id] !== undefined ? typedPrices[order.id] : String(displayPrice ?? "")}
                                       onChange={(e) => setTypedPrices((prev) => ({ ...prev, [order.id]: e.target.value }))}
                                       placeholder="סכום לתשלום"
-                                      className="h-10 w-full max-w-xs bg-background border border-muted-foreground/20 rounded-lg px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary"
+                                      className="h-10 w-full max-w-xs bg-background border border-muted-foreground/20 rounded-lg px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
                                     />
                                   </div>
 
@@ -863,9 +878,10 @@ function LaundryDashboard() {
                                   <div className="space-y-1">
                                     <label className="text-[10px] font-black text-foreground block">סטטוס טיפול</label>
                                     <select
+                                      disabled={isCancelled}
                                       value={pendingStatuses[order.id] || order.status}
                                       onChange={(e) => setPendingStatuses((prev) => ({ ...prev, [order.id]: e.target.value }))}
-                                      className="h-10 w-full max-w-xs bg-background border border-muted-foreground/20 rounded-lg px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary text-right"
+                                      className="h-10 w-full max-w-xs bg-background border border-muted-foreground/20 rounded-lg px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary text-right disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                       <option value="pending">ממתין</option>
                                       <option value="accepted">התקבל</option>
@@ -881,10 +897,11 @@ function LaundryDashboard() {
                                     <label className="text-[10px] font-black text-foreground block">הערות לשליח</label>
                                     <textarea
                                       rows={3}
+                                      disabled={isCancelled}
                                       value={typedDeliveryNotes[order.id] !== undefined ? typedDeliveryNotes[order.id] : order.deliveryNotes || ""}
                                       onChange={(e) => setTypedDeliveryNotes((prev) => ({ ...prev, [order.id]: e.target.value }))}
                                       placeholder="כתובת מפורטת, קוד כניסה..."
-                                      className="w-full max-w-xs bg-background border border-muted-foreground/20 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary resize-none leading-relaxed"
+                                      className="w-full max-w-xs bg-background border border-muted-foreground/20 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary resize-none leading-relaxed disabled:opacity-50 disabled:cursor-not-allowed"
                                     />
                                   </div>
                                 </div>
@@ -900,6 +917,7 @@ function LaundryDashboard() {
                                     <label className="text-[10px] font-black text-foreground block">הודעה ללקוח</label>
                                     <textarea
                                       rows={3}
+                                      disabled={isCancelled}
                                       value={
                                         typedMessages[order.id] !== undefined
                                           ? typedMessages[order.id]
@@ -907,7 +925,7 @@ function LaundryDashboard() {
                                       }
                                       onChange={(e) => setTypedMessages((prev) => ({ ...prev, [order.id]: e.target.value }))}
                                       placeholder="הקלד הודעה ללקוח..."
-                                      className="w-full bg-background border border-muted-foreground/20 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary resize-none leading-relaxed"
+                                      className="w-full bg-background border border-muted-foreground/20 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary resize-none leading-relaxed disabled:opacity-50 disabled:cursor-not-allowed"
                                     />
                                   </div>
 
@@ -941,11 +959,12 @@ function LaundryDashboard() {
                                     {/* File input */}
                                     <input
                                       type="file"
+                                      disabled={isCancelled}
                                       accept="application/pdf,image/*"
                                       className="text-[10px] block w-full text-muted-foreground
                                         file:ml-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0
                                         file:text-[10px] file:font-bold file:bg-primary file:text-primary-foreground
-                                        hover:file:bg-primary/90 file:cursor-pointer cursor-pointer transition"
+                                        hover:file:bg-primary/90 file:cursor-pointer cursor-pointer transition disabled:opacity-50 disabled:cursor-not-allowed"
                                       onChange={(e) => {
                                         if (e.target.files && e.target.files[0]) {
                                           setPendingInvoices((prev) => ({ ...prev, [order.id]: e.target.files![0] }));
@@ -1006,23 +1025,25 @@ function LaundryDashboard() {
                                 ) : (
                                   <span className="text-[11px] font-bold text-destructive">הזמנה זו בוטלה</span>
                                 )}
-                                <button
-                                  onClick={() => saveAllChanges(order.id)}
-                                  disabled={savingOrder[order.id]}
-                                  className="inline-flex items-center justify-center gap-2 px-6 bg-primary text-primary-foreground text-xs font-black rounded-full hover:bg-primary/90 hover:shadow-md hover:shadow-primary/20 active:scale-[0.97] transition disabled:opacity-60 disabled:cursor-not-allowed h-10"
-                                >
-                                  {savingOrder[order.id] ? (
-                                    <>
-                                      <div className="animate-spin rounded-full size-3.5 border-2 border-primary-foreground border-t-transparent" />
-                                      <span>שומר...</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Save className="size-3.5" />
-                                      <span>שמור שינויים</span>
-                                    </>
-                                  )}
-                                </button>
+                                {!isCancelled && (
+                                  <button
+                                    onClick={() => saveAllChanges(order.id)}
+                                    disabled={savingOrder[order.id]}
+                                    className="inline-flex items-center justify-center gap-2 px-6 bg-primary text-primary-foreground text-xs font-black rounded-full hover:bg-primary/90 hover:shadow-md hover:shadow-primary/20 active:scale-[0.97] transition disabled:opacity-60 disabled:cursor-not-allowed h-10"
+                                  >
+                                    {savingOrder[order.id] ? (
+                                      <>
+                                        <div className="animate-spin rounded-full size-3.5 border-2 border-primary-foreground border-t-transparent" />
+                                        <span>שומר...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Save className="size-3.5" />
+                                        <span>שמור שינויים</span>
+                                      </>
+                                    )}
+                                  </button>
+                                )}
                               </div>
 
                             </div>{/* /inner */}

@@ -16,6 +16,8 @@ import {
   Shirt,
   MapPin,
   MessageCircle,
+  Store,
+  Truck,
 } from "lucide-react";
 import {
   Dialog,
@@ -75,6 +77,7 @@ function Dashboard() {
     requiresIroning: boolean;
     requiresDryCleaning: boolean;
     imageCount: number;
+    deliveryMethod: "self_pickup" | "home_delivery";
   } | null>(null);
 
   // Fetch unread message count for the customer
@@ -119,13 +122,6 @@ function Dashboard() {
               </button>
             </div>
 
-            <button
-              onClick={() => navigate({ to: "/delivery" })}
-              className="w-full rounded-3xl border-2 border-primary text-primary px-4 sm:px-5 py-3.5 sm:py-4 min-h-[44px] font-semibold active:scale-[0.98] transition"
-            >
-              המשך לבחירת מסירה
-            </button>
-
             <div className="pt-6 border-t border-border/60 flex flex-col items-center gap-2">
               <span className="text-sm font-bold text-muted-foreground">
                 רוצה לבצע הזמנה נוספת?
@@ -139,7 +135,7 @@ function Dashboard() {
       <PickupModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        onSubmit={async (address, notes, images, requiresIroning, requiresDryCleaning) => {
+        onSubmit={async (address, notes, images, requiresIroning, requiresDryCleaning, deliveryMethod) => {
           // Combine address + optional user notes into a single notes string stored in the DB
           const combinedNotes = [address, notes].filter(Boolean).join("\n\n");
           const orderId = await createOrder(
@@ -147,6 +143,7 @@ function Dashboard() {
             images,
             requiresIroning,
             requiresDryCleaning,
+            deliveryMethod,
           );
           setIsModalOpen(false);
           if (orderId) {
@@ -158,6 +155,7 @@ function Dashboard() {
               requiresIroning,
               requiresDryCleaning,
               imageCount: images.length,
+              deliveryMethod,
             });
           } else {
             toast.error("שגיאה ביצירת ההזמנה. אנא נסה שוב.");
@@ -217,6 +215,7 @@ interface PickupModalProps {
     images: string[],
     requiresIroning: boolean,
     requiresDryCleaning: boolean,
+    deliveryMethod: "self_pickup" | "home_delivery",
   ) => Promise<void>;
 }
 
@@ -235,6 +234,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
   const [images, setImages] = useState<string[]>([]);
   const [requiresIroning, setRequiresIroning] = useState(false);
   const [requiresDryCleaning, setRequiresDryCleaning] = useState(false);
+  const [deliveryMethod, setDeliveryMethod] = useState<"self_pickup" | "home_delivery" | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [recentAddresses, setRecentAddresses] = useState<any[]>([]);
@@ -254,6 +254,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
       setImages([]);
       setRequiresIroning(false);
       setRequiresDryCleaning(false);
+      setDeliveryMethod(null);
 
       // Load recent addresses
       try {
@@ -458,6 +459,10 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
       toast.error("אנא הזן מספר דירה");
       return;
     }
+    if (!deliveryMethod) {
+      toast.error("אנא בחר שיטת מסירה");
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -483,7 +488,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
 
       localStorage.setItem("recent_laundry_addresses", JSON.stringify(updatedRecents));
 
-      await onSubmit(fullAddressString, notes, images, requiresIroning, requiresDryCleaning);
+      await onSubmit(fullAddressString, notes, images, requiresIroning, requiresDryCleaning, deliveryMethod);
 
       setAddressSearchQuery("");
       setSelectedAddress(null);
@@ -495,6 +500,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
       setImages([]);
       setRequiresIroning(false);
       setRequiresDryCleaning(false);
+      setDeliveryMethod(null);
     } catch (e) {
       toast.error("שגיאה ביצירת ההזמנה");
     } finally {
@@ -767,6 +773,55 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
             </div>
           </div>
 
+          {/* Delivery Method Selection */}
+          <div className="space-y-2.5">
+            <label className="text-sm font-bold text-foreground block">
+              שיטת מסירה <span className="text-destructive font-black">*</span>
+            </label>
+            <div className="grid grid-cols-2 gap-3" dir="rtl">
+              <div
+                onClick={() => setDeliveryMethod("self_pickup")}
+                className={`relative overflow-hidden rounded-2xl p-3 sm:p-4 min-h-[44px] flex flex-col items-center justify-center gap-2 text-center cursor-pointer transition-all duration-300 border select-none ${
+                  deliveryMethod === "self_pickup"
+                    ? "border-2 border-primary bg-lavender shadow-[0_8px_30px_rgba(124,58,237,0.15)] scale-[1.02]"
+                    : "border-muted-foreground/10 bg-lavender/40 hover:bg-lavender/60"
+                }`}
+              >
+                {deliveryMethod === "self_pickup" && (
+                  <span className="absolute top-2.5 right-2.5 size-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-sm">
+                    <Check className="size-3 stroke-[3]" />
+                  </span>
+                )}
+                <Store className="size-6 text-lavender-foreground" />
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-sm font-black text-lavender-foreground">איסוף עצמי</span>
+                  <span className="text-[10px] font-medium text-muted-foreground">איסוף מהחנות</span>
+                </div>
+              </div>
+              <div
+                onClick={() => setDeliveryMethod("home_delivery")}
+                className={`relative overflow-hidden rounded-2xl p-3 sm:p-4 min-h-[44px] flex flex-col items-center justify-center gap-2 text-center cursor-pointer transition-all duration-300 border select-none ${
+                  deliveryMethod === "home_delivery"
+                    ? "border-2 border-primary bg-lime shadow-[0_8px_30px_rgba(124,58,237,0.15)] scale-[1.02]"
+                    : "border-muted-foreground/10 bg-lime/40 hover:bg-lime/60"
+                }`}
+              >
+                {deliveryMethod === "home_delivery" && (
+                  <span className="absolute top-2.5 right-2.5 size-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-sm">
+                    <Check className="size-3 stroke-[3]" />
+                  </span>
+                )}
+                <Truck className="size-6 text-lime-foreground" />
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-sm font-black text-lime-foreground">משלוח הביתה</span>
+                  <span className="text-[10px] font-medium text-muted-foreground">עד פתח הדלת</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+
+
           <div className="space-y-2">
             <label className="text-sm font-bold text-foreground block">
               צילום כתמים או פריטים עדינים (אופציונלי)
@@ -849,6 +904,7 @@ interface OrderConfirmationModalProps {
     requiresIroning: boolean;
     requiresDryCleaning: boolean;
     imageCount: number;
+    deliveryMethod: "self_pickup" | "home_delivery";
   } | null;
   onClose: () => void;
 }
@@ -883,6 +939,12 @@ function OrderConfirmationModal({ data, onClose }: OrderConfirmationModalProps) 
                 <p className="text-[10px] font-black text-muted-foreground">כתובת איסוף</p>
                 <p className="text-xs font-bold text-foreground whitespace-pre-wrap">
                   {data.address}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-muted-foreground">שיטת מסירה</p>
+                <p className="text-xs font-bold text-foreground">
+                  {data.deliveryMethod === "self_pickup" ? "איסוף עצמי" : "משלוח הביתה"}
                 </p>
               </div>
               {data.notes && (

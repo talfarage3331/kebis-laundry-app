@@ -44,6 +44,10 @@ function Tracking() {
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
 
   // ── Initial fetch + real-time subscriptions ──────────────────────────────
   useEffect(() => {
@@ -130,6 +134,43 @@ function Tracking() {
     };
   }, [user, orderId]);
 
+  const HEBREW_MONTHS = [
+    "ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני",
+    "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר",
+  ];
+  const now = new Date();
+  const currentMonthVal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+  const availableMonths = (() => {
+    const set = new Set<string>([currentMonthVal]);
+    orders.forEach((o) => {
+      try {
+        const d = new Date(o.created_at);
+        if (!isNaN(d.getTime())) {
+          set.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+        }
+      } catch {}
+    });
+    return Array.from(set)
+      .sort((a, b) => (a < b ? 1 : -1))
+      .map((v) => {
+        const [y, m] = v.split("-");
+        const label = v === currentMonthVal
+          ? "החודש הנוכחי"
+          : `${HEBREW_MONTHS[parseInt(m, 10) - 1]} ${y}`;
+        return { value: v, label };
+      });
+  })();
+
+  const visibleOrders = orders.filter((o) => {
+    try {
+      const d = new Date(o.created_at);
+      if (isNaN(d.getTime())) return false;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      return key === selectedMonth;
+    } catch { return false; }
+  });
+
   return (
     <AppLayout>
       <AppHeader subtitle="מעקב" />
@@ -153,14 +194,33 @@ function Tracking() {
           </div>
         ) : (
           <div className="space-y-4">
-            {orders.map((order) => (
-              <OrderCard
-                key={order.id}
-                order={order}
-                isExpanded={expandedId === order.id}
-                onToggle={() => setExpandedId(expandedId === order.id ? null : order.id)}
-              />
-            ))}
+            <div className="flex items-center justify-between gap-3 bg-card/80 border border-muted-foreground/15 rounded-2xl p-3">
+              <label className="text-xs font-black text-foreground">סינון לפי חודש</label>
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="h-9 bg-background border border-muted-foreground/20 rounded-lg px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary text-right"
+              >
+                {availableMonths.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {visibleOrders.length === 0 ? (
+              <div className="rounded-2xl bg-muted/40 p-8 text-center text-sm text-muted-foreground border border-muted-foreground/10">
+                אין הזמנות בחודש שנבחר
+              </div>
+            ) : (
+              visibleOrders.map((order) => (
+                <OrderCard
+                  key={order.id}
+                  order={order}
+                  isExpanded={expandedId === order.id}
+                  onToggle={() => setExpandedId(expandedId === order.id ? null : order.id)}
+                />
+              ))
+            )}
           </div>
         )}
       </main>
@@ -211,7 +271,7 @@ function OrderCard({
       case "delivered":
         return "bg-gray-100 text-gray-700 border-gray-200";
       case "cancelled":
-        return "bg-red-50 text-red-700 border-red-200/50";
+        return "bg-gray-200 text-gray-600 border-gray-300";
       default:
         return "bg-slate-50 text-slate-600 border-slate-200";
     }
@@ -234,9 +294,11 @@ function OrderCard({
       <div className="space-y-4 animate-fade-in">
         <div
           className={`rounded-3xl p-5 relative cursor-pointer ${
-            order.status === "delivered"
-              ? "bg-slate-100 text-slate-700 border border-slate-200"
-              : "bg-lime text-lime-foreground shadow-[0_15px_40px_-15px_oklch(0.92_0.18_125/0.6)]"
+            order.status === "cancelled"
+              ? "bg-gray-200 text-gray-700 border border-gray-300 opacity-90"
+              : order.status === "delivered"
+                ? "bg-slate-100 text-slate-700 border border-slate-200"
+                : "bg-lime text-lime-foreground shadow-[0_15px_40px_-15px_oklch(0.92_0.18_125/0.6)]"
           }`}
           onClick={onToggle}
         >
@@ -385,14 +447,7 @@ function OrderCard({
           <Row label="סכום" value={`₪${(order.amount_due || 0).toFixed(2)}`} />
         </div>
 
-        {order.delivery_method === "none" && order.status !== "delivered" && order.status !== "cancelled" && (
-          <Link
-            to="/delivery"
-            className="block rounded-3xl bg-primary text-primary-foreground p-4 text-center font-bold shadow-md shadow-primary/20 hover:scale-[1.01] active:scale-95 transition"
-          >
-            בחר שיטת מסירה
-          </Link>
-        )}
+        {/* Delivery method is now selected during order creation — no post-order picker */}
         {order.delivery_method !== "none" &&
           order.payment_state === "unpaid" &&
           order.status !== "delivered" && order.status !== "cancelled" && (
@@ -412,7 +467,11 @@ function OrderCard({
   return (
     <div
       onClick={onToggle}
-      className="bg-card/80 backdrop-blur-xl border border-muted-foreground/20 rounded-2xl p-4 shadow-md space-y-3 cursor-pointer hover:bg-muted/20 transition active:scale-[0.98]"
+      className={`backdrop-blur-xl border rounded-2xl p-4 shadow-md space-y-3 cursor-pointer transition active:scale-[0.98] ${
+        order.status === "cancelled"
+          ? "bg-gray-100/80 border-gray-300 opacity-80 hover:bg-gray-100"
+          : "bg-card/80 border-muted-foreground/20 hover:bg-muted/20"
+      }`}
     >
       <div className="flex items-center justify-between">
         <div>
@@ -421,7 +480,7 @@ function OrderCard({
         </div>
         <div className="flex items-center gap-2">
           <span
-            className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getStatusBadgeClass(order.status)}`}
+            className={`px-4 py-1.5 rounded-full text-sm font-black border-2 shadow-sm ${getStatusBadgeClass(order.status)}`}
           >
             {getStatusLabel(order.status)}
           </span>

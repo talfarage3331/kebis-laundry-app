@@ -68,6 +68,7 @@ interface Store {
     images?: string[],
     requiresIroning?: boolean,
     requiresDryCleaning?: boolean,
+    deliveryMethod?: DeliveryMethod,
   ) => Promise<string | null>;
   advanceOrder: () => void;
   setDelivery: (m: DeliveryMethod) => void;
@@ -329,13 +330,14 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       images?: string[],
       ironing: boolean = false,
       dryCleaning: boolean = false,
+      delivery: DeliveryMethod = "none",
     ): Promise<string | null> => {
       if (!user) return null;
       const newState: OrderState = "pending";
       const amount = 0;
 
       setOrderState(newState);
-      setDeliveryMethod("none");
+      setDeliveryMethod(delivery);
       setPaymentState("unpaid");
       setAmountDue(amount);
       setRequiresIroning(ironing);
@@ -382,8 +384,8 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
           user_id: auth.currentUser?.uid || "",
           userId: auth.currentUser?.uid || "",
           status: newState,
-          delivery_method: "none",
-          deliveryMethod: "none",
+          delivery_method: delivery,
+          deliveryMethod: delivery,
           payment_state: "unpaid",
           paymentState: "unpaid",
           amount_due: amount,
