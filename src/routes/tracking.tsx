@@ -134,6 +134,43 @@ function Tracking() {
     };
   }, [user, orderId]);
 
+  const HEBREW_MONTHS = [
+    "ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני",
+    "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר",
+  ];
+  const now = new Date();
+  const currentMonthVal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+  const availableMonths = (() => {
+    const set = new Set<string>([currentMonthVal]);
+    orders.forEach((o) => {
+      try {
+        const d = new Date(o.created_at);
+        if (!isNaN(d.getTime())) {
+          set.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+        }
+      } catch {}
+    });
+    return Array.from(set)
+      .sort((a, b) => (a < b ? 1 : -1))
+      .map((v) => {
+        const [y, m] = v.split("-");
+        const label = v === currentMonthVal
+          ? "החודש הנוכחי"
+          : `${HEBREW_MONTHS[parseInt(m, 10) - 1]} ${y}`;
+        return { value: v, label };
+      });
+  })();
+
+  const visibleOrders = orders.filter((o) => {
+    try {
+      const d = new Date(o.created_at);
+      if (isNaN(d.getTime())) return false;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      return key === selectedMonth;
+    } catch { return false; }
+  });
+
   return (
     <AppLayout>
       <AppHeader subtitle="מעקב" />
@@ -157,14 +194,33 @@ function Tracking() {
           </div>
         ) : (
           <div className="space-y-4">
-            {orders.map((order) => (
-              <OrderCard
-                key={order.id}
-                order={order}
-                isExpanded={expandedId === order.id}
-                onToggle={() => setExpandedId(expandedId === order.id ? null : order.id)}
-              />
-            ))}
+            <div className="flex items-center justify-between gap-3 bg-card/80 border border-muted-foreground/15 rounded-2xl p-3">
+              <label className="text-xs font-black text-foreground">סינון לפי חודש</label>
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="h-9 bg-background border border-muted-foreground/20 rounded-lg px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary text-right"
+              >
+                {availableMonths.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {visibleOrders.length === 0 ? (
+              <div className="rounded-2xl bg-muted/40 p-8 text-center text-sm text-muted-foreground border border-muted-foreground/10">
+                אין הזמנות בחודש שנבחר
+              </div>
+            ) : (
+              visibleOrders.map((order) => (
+                <OrderCard
+                  key={order.id}
+                  order={order}
+                  isExpanded={expandedId === order.id}
+                  onToggle={() => setExpandedId(expandedId === order.id ? null : order.id)}
+                />
+              ))
+            )}
           </div>
         )}
       </main>
