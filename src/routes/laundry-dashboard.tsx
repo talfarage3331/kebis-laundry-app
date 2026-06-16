@@ -751,6 +751,17 @@ function LaundryDashboard() {
                             <div className="border-t border-muted-foreground/10 mx-4" />
                             <div className="px-4 pt-3 pb-4">
 
+                              {isCancelled && (
+                                <div className="mb-3 rounded-xl border-2 border-destructive/40 bg-destructive/10 text-destructive px-4 py-3 flex items-center gap-2">
+                                  <XCircle className="size-5 shrink-0" />
+                                  <div className="text-right">
+                                    <p className="text-xs font-black">הזמנה זו בוטלה</p>
+                                    <p className="text-[10px] font-semibold opacity-80">לא ניתן לערוך פרטים, סטטוס או חשבונית.</p>
+                                  </div>
+                                </div>
+                              )}
+
+
                               {/* 3-column grid */}
                               <div className="grid grid-cols-1 md:grid-cols-3 gap-4" dir="rtl">
 
