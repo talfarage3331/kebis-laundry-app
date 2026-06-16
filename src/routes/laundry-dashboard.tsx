@@ -878,9 +878,10 @@ function LaundryDashboard() {
                                   <div className="space-y-1">
                                     <label className="text-[10px] font-black text-foreground block">סטטוס טיפול</label>
                                     <select
+                                      disabled={isCancelled}
                                       value={pendingStatuses[order.id] || order.status}
                                       onChange={(e) => setPendingStatuses((prev) => ({ ...prev, [order.id]: e.target.value }))}
-                                      className="h-10 w-full max-w-xs bg-background border border-muted-foreground/20 rounded-lg px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary text-right"
+                                      className="h-10 w-full max-w-xs bg-background border border-muted-foreground/20 rounded-lg px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary text-right disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                       <option value="pending">ממתין</option>
                                       <option value="accepted">התקבל</option>
