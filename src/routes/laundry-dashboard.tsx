@@ -959,11 +959,12 @@ function LaundryDashboard() {
                                     {/* File input */}
                                     <input
                                       type="file"
+                                      disabled={isCancelled}
                                       accept="application/pdf,image/*"
                                       className="text-[10px] block w-full text-muted-foreground
                                         file:ml-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0
                                         file:text-[10px] file:font-bold file:bg-primary file:text-primary-foreground
-                                        hover:file:bg-primary/90 file:cursor-pointer cursor-pointer transition"
+                                        hover:file:bg-primary/90 file:cursor-pointer cursor-pointer transition disabled:opacity-50 disabled:cursor-not-allowed"
                                       onChange={(e) => {
                                         if (e.target.files && e.target.files[0]) {
                                           setPendingInvoices((prev) => ({ ...prev, [order.id]: e.target.files![0] }));
