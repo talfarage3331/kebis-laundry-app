@@ -330,13 +330,14 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       images?: string[],
       ironing: boolean = false,
       dryCleaning: boolean = false,
+      delivery: DeliveryMethod = "none",
     ): Promise<string | null> => {
       if (!user) return null;
       const newState: OrderState = "pending";
       const amount = 0;
 
       setOrderState(newState);
-      setDeliveryMethod("none");
+      setDeliveryMethod(delivery);
       setPaymentState("unpaid");
       setAmountDue(amount);
       setRequiresIroning(ironing);
