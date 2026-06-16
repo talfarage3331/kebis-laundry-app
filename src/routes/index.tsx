@@ -941,6 +941,12 @@ function OrderConfirmationModal({ data, onClose }: OrderConfirmationModalProps) 
                   {data.address}
                 </p>
               </div>
+              <div>
+                <p className="text-[10px] font-black text-muted-foreground">שיטת מסירה</p>
+                <p className="text-xs font-bold text-foreground">
+                  {data.deliveryMethod === "self_pickup" ? "איסוף עצמי" : "משלוח הביתה"}
+                </p>
+              </div>
               {data.notes && (
                 <div>
                   <p className="text-[10px] font-black text-muted-foreground">הערות</p>
