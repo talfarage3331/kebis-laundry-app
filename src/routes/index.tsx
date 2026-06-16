@@ -904,6 +904,7 @@ interface OrderConfirmationModalProps {
     requiresIroning: boolean;
     requiresDryCleaning: boolean;
     imageCount: number;
+    deliveryMethod: "self_pickup" | "home_delivery";
   } | null;
   onClose: () => void;
 }
