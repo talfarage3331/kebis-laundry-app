@@ -459,6 +459,10 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
       toast.error("אנא הזן מספר דירה");
       return;
     }
+    if (!deliveryMethod) {
+      toast.error("אנא בחר שיטת מסירה");
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -484,7 +488,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
 
       localStorage.setItem("recent_laundry_addresses", JSON.stringify(updatedRecents));
 
-      await onSubmit(fullAddressString, notes, images, requiresIroning, requiresDryCleaning);
+      await onSubmit(fullAddressString, notes, images, requiresIroning, requiresDryCleaning, deliveryMethod);
 
       setAddressSearchQuery("");
       setSelectedAddress(null);
@@ -496,6 +500,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
       setImages([]);
       setRequiresIroning(false);
       setRequiresDryCleaning(false);
+      setDeliveryMethod(null);
     } catch (e) {
       toast.error("שגיאה ביצירת ההזמנה");
     } finally {
