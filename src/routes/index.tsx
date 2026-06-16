@@ -215,6 +215,7 @@ interface PickupModalProps {
     images: string[],
     requiresIroning: boolean,
     requiresDryCleaning: boolean,
+    deliveryMethod: "self_pickup" | "home_delivery",
   ) => Promise<void>;
 }
 
