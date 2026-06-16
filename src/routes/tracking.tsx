@@ -211,7 +211,7 @@ function OrderCard({
       case "delivered":
         return "bg-gray-100 text-gray-700 border-gray-200";
       case "cancelled":
-        return "bg-red-50 text-red-700 border-red-200/50";
+        return "bg-gray-200 text-gray-600 border-gray-300";
       default:
         return "bg-slate-50 text-slate-600 border-slate-200";
     }
