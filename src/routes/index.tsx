@@ -254,6 +254,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
       setImages([]);
       setRequiresIroning(false);
       setRequiresDryCleaning(false);
+      setDeliveryMethod(null);
 
       // Load recent addresses
       try {
