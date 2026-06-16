@@ -27,7 +27,7 @@ function Delivery() {
         >
           <Store className="size-10" strokeWidth={1.5} />
           <h3 className="mt-4 text-xl font-extrabold">איסוף עצמי</h3>
-          <p className="text-sm opacity-75 mt-1">אסוף מהחנות (החרושת 12)</p>
+          <p className="text-sm opacity-75 mt-1">איסוף מהחנות</p>
         </button>
         <button
           onClick={() => choose("home_delivery")}
@@ -35,7 +35,7 @@ function Delivery() {
         >
           <Truck className="size-10" strokeWidth={1.5} />
           <h3 className="mt-4 text-xl font-extrabold">משלוח הביתה</h3>
-          <p className="text-sm opacity-75 mt-1">עד פתח הדלת (שנקין 24)</p>
+          <p className="text-sm opacity-75 mt-1">עד פתח הדלת</p>
         </button>
       </main>
     </AppLayout>
