@@ -16,6 +16,8 @@ import {
   Shirt,
   MapPin,
   MessageCircle,
+  Store,
+  Truck,
 } from "lucide-react";
 import {
   Dialog,
