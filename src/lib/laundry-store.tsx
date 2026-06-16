@@ -68,6 +68,7 @@ interface Store {
     images?: string[],
     requiresIroning?: boolean,
     requiresDryCleaning?: boolean,
+    deliveryMethod?: DeliveryMethod,
   ) => Promise<string | null>;
   advanceOrder: () => void;
   setDelivery: (m: DeliveryMethod) => void;
