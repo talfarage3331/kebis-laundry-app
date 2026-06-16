@@ -77,6 +77,7 @@ function Dashboard() {
     requiresIroning: boolean;
     requiresDryCleaning: boolean;
     imageCount: number;
+    deliveryMethod: "self_pickup" | "home_delivery";
   } | null>(null);
 
   // Fetch unread message count for the customer
