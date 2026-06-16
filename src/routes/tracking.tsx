@@ -234,9 +234,11 @@ function OrderCard({
       <div className="space-y-4 animate-fade-in">
         <div
           className={`rounded-3xl p-5 relative cursor-pointer ${
-            order.status === "delivered"
-              ? "bg-slate-100 text-slate-700 border border-slate-200"
-              : "bg-lime text-lime-foreground shadow-[0_15px_40px_-15px_oklch(0.92_0.18_125/0.6)]"
+            order.status === "cancelled"
+              ? "bg-gray-200 text-gray-700 border border-gray-300 opacity-90"
+              : order.status === "delivered"
+                ? "bg-slate-100 text-slate-700 border border-slate-200"
+                : "bg-lime text-lime-foreground shadow-[0_15px_40px_-15px_oklch(0.92_0.18_125/0.6)]"
           }`}
           onClick={onToggle}
         >
