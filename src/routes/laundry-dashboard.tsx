@@ -1025,23 +1025,25 @@ function LaundryDashboard() {
                                 ) : (
                                   <span className="text-[11px] font-bold text-destructive">הזמנה זו בוטלה</span>
                                 )}
-                                <button
-                                  onClick={() => saveAllChanges(order.id)}
-                                  disabled={savingOrder[order.id]}
-                                  className="inline-flex items-center justify-center gap-2 px-6 bg-primary text-primary-foreground text-xs font-black rounded-full hover:bg-primary/90 hover:shadow-md hover:shadow-primary/20 active:scale-[0.97] transition disabled:opacity-60 disabled:cursor-not-allowed h-10"
-                                >
-                                  {savingOrder[order.id] ? (
-                                    <>
-                                      <div className="animate-spin rounded-full size-3.5 border-2 border-primary-foreground border-t-transparent" />
-                                      <span>שומר...</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Save className="size-3.5" />
-                                      <span>שמור שינויים</span>
-                                    </>
-                                  )}
-                                </button>
+                                {!isCancelled && (
+                                  <button
+                                    onClick={() => saveAllChanges(order.id)}
+                                    disabled={savingOrder[order.id]}
+                                    className="inline-flex items-center justify-center gap-2 px-6 bg-primary text-primary-foreground text-xs font-black rounded-full hover:bg-primary/90 hover:shadow-md hover:shadow-primary/20 active:scale-[0.97] transition disabled:opacity-60 disabled:cursor-not-allowed h-10"
+                                  >
+                                    {savingOrder[order.id] ? (
+                                      <>
+                                        <div className="animate-spin rounded-full size-3.5 border-2 border-primary-foreground border-t-transparent" />
+                                        <span>שומר...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Save className="size-3.5" />
+                                        <span>שמור שינויים</span>
+                                      </>
+                                    )}
+                                  </button>
+                                )}
                               </div>
 
                             </div>{/* /inner */}
