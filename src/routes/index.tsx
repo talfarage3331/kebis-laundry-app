@@ -122,12 +122,10 @@ function Dashboard() {
               </button>
             </div>
 
-            <button
-              onClick={() => navigate({ to: "/delivery" })}
-              className="w-full rounded-3xl border-2 border-primary text-primary px-4 sm:px-5 py-3.5 sm:py-4 min-h-[44px] font-semibold active:scale-[0.98] transition"
-            >
-              המשך לבחירת מסירה
-            </button>
+          </div>
+        )}
+      </main>
+
 
             <div className="pt-6 border-t border-border/60 flex flex-col items-center gap-2">
               <span className="text-sm font-bold text-muted-foreground">
