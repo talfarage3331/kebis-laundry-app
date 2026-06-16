@@ -385,14 +385,7 @@ function OrderCard({
           <Row label="סכום" value={`₪${(order.amount_due || 0).toFixed(2)}`} />
         </div>
 
-        {order.delivery_method === "none" && order.status !== "delivered" && order.status !== "cancelled" && (
-          <Link
-            to="/delivery"
-            className="block rounded-3xl bg-primary text-primary-foreground p-4 text-center font-bold shadow-md shadow-primary/20 hover:scale-[1.01] active:scale-95 transition"
-          >
-            בחר שיטת מסירה
-          </Link>
-        )}
+        {/* Delivery method is now selected during order creation — no post-order picker */}
         {order.delivery_method !== "none" &&
           order.payment_state === "unpaid" &&
           order.status !== "delivered" && order.status !== "cancelled" && (
