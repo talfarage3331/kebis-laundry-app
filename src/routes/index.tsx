@@ -773,6 +773,55 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
             </div>
           </div>
 
+          {/* Delivery Method Selection */}
+          <div className="space-y-2.5">
+            <label className="text-sm font-bold text-foreground block">
+              שיטת מסירה <span className="text-destructive font-black">*</span>
+            </label>
+            <div className="grid grid-cols-2 gap-3" dir="rtl">
+              <div
+                onClick={() => setDeliveryMethod("self_pickup")}
+                className={`relative overflow-hidden rounded-2xl p-3 sm:p-4 min-h-[44px] flex flex-col items-center justify-center gap-2 text-center cursor-pointer transition-all duration-300 border select-none ${
+                  deliveryMethod === "self_pickup"
+                    ? "border-2 border-primary bg-lavender shadow-[0_8px_30px_rgba(124,58,237,0.15)] scale-[1.02]"
+                    : "border-muted-foreground/10 bg-lavender/40 hover:bg-lavender/60"
+                }`}
+              >
+                {deliveryMethod === "self_pickup" && (
+                  <span className="absolute top-2.5 right-2.5 size-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-sm">
+                    <Check className="size-3 stroke-[3]" />
+                  </span>
+                )}
+                <Store className="size-6 text-lavender-foreground" />
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-sm font-black text-lavender-foreground">איסוף עצמי</span>
+                  <span className="text-[10px] font-medium text-muted-foreground">איסוף מהחנות</span>
+                </div>
+              </div>
+              <div
+                onClick={() => setDeliveryMethod("home_delivery")}
+                className={`relative overflow-hidden rounded-2xl p-3 sm:p-4 min-h-[44px] flex flex-col items-center justify-center gap-2 text-center cursor-pointer transition-all duration-300 border select-none ${
+                  deliveryMethod === "home_delivery"
+                    ? "border-2 border-primary bg-lime shadow-[0_8px_30px_rgba(124,58,237,0.15)] scale-[1.02]"
+                    : "border-muted-foreground/10 bg-lime/40 hover:bg-lime/60"
+                }`}
+              >
+                {deliveryMethod === "home_delivery" && (
+                  <span className="absolute top-2.5 right-2.5 size-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-sm">
+                    <Check className="size-3 stroke-[3]" />
+                  </span>
+                )}
+                <Truck className="size-6 text-lime-foreground" />
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-sm font-black text-lime-foreground">משלוח הביתה</span>
+                  <span className="text-[10px] font-medium text-muted-foreground">עד פתח הדלת</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+
+
           <div className="space-y-2">
             <label className="text-sm font-bold text-foreground block">
               צילום כתמים או פריטים עדינים (אופציונלי)
