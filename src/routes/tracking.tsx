@@ -407,7 +407,11 @@ function OrderCard({
   return (
     <div
       onClick={onToggle}
-      className="bg-card/80 backdrop-blur-xl border border-muted-foreground/20 rounded-2xl p-4 shadow-md space-y-3 cursor-pointer hover:bg-muted/20 transition active:scale-[0.98]"
+      className={`backdrop-blur-xl border rounded-2xl p-4 shadow-md space-y-3 cursor-pointer transition active:scale-[0.98] ${
+        order.status === "cancelled"
+          ? "bg-gray-100/80 border-gray-300 opacity-80 hover:bg-gray-100"
+          : "bg-card/80 border-muted-foreground/20 hover:bg-muted/20"
+      }`}
     >
       <div className="flex items-center justify-between">
         <div>
@@ -416,7 +420,7 @@ function OrderCard({
         </div>
         <div className="flex items-center gap-2">
           <span
-            className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getStatusBadgeClass(order.status)}`}
+            className={`px-4 py-1.5 rounded-full text-sm font-black border-2 shadow-sm ${getStatusBadgeClass(order.status)}`}
           >
             {getStatusLabel(order.status)}
           </span>
