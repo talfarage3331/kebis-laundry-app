@@ -866,10 +866,11 @@ function LaundryDashboard() {
                                     </label>
                                     <input
                                       type="number"
+                                      disabled={isCancelled}
                                       value={typedPrices[order.id] !== undefined ? typedPrices[order.id] : String(displayPrice ?? "")}
                                       onChange={(e) => setTypedPrices((prev) => ({ ...prev, [order.id]: e.target.value }))}
                                       placeholder="סכום לתשלום"
-                                      className="h-10 w-full max-w-xs bg-background border border-muted-foreground/20 rounded-lg px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary"
+                                      className="h-10 w-full max-w-xs bg-background border border-muted-foreground/20 rounded-lg px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
                                     />
                                   </div>
 
