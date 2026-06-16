@@ -122,11 +122,6 @@ function Dashboard() {
               </button>
             </div>
 
-          </div>
-        )}
-      </main>
-
-
             <div className="pt-6 border-t border-border/60 flex flex-col items-center gap-2">
               <span className="text-sm font-bold text-muted-foreground">
                 רוצה לבצע הזמנה נוספת?
@@ -140,7 +135,7 @@ function Dashboard() {
       <PickupModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        onSubmit={async (address, notes, images, requiresIroning, requiresDryCleaning) => {
+        onSubmit={async (address, notes, images, requiresIroning, requiresDryCleaning, deliveryMethod) => {
           // Combine address + optional user notes into a single notes string stored in the DB
           const combinedNotes = [address, notes].filter(Boolean).join("\n\n");
           const orderId = await createOrder(
