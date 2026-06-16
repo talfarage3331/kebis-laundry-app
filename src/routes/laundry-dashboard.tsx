@@ -678,14 +678,17 @@ function LaundryDashboard() {
                     const isExpanded = expandedOrderId === order.id;
                     const [custNotes, laundryMsg] = (order.notes || "").split(" ||LAUNDRY_MSG|| ");
                     const displayPrice = order.price !== undefined ? order.price : order.amount_due;
+                    const isCancelled = order.status === "cancelled";
 
                     return (
                       <div
                         key={order.id}
                         className={`bg-card border rounded-xl transition-all duration-200 overflow-hidden ${
-                          isExpanded
-                            ? "border-primary/30 shadow-md ring-1 ring-primary/10"
-                            : "border-muted-foreground/10 hover:border-muted-foreground/25 hover:shadow-sm cursor-pointer"
+                          isCancelled
+                            ? "border-destructive/30 ring-1 ring-destructive/10 bg-muted/30 opacity-80"
+                            : isExpanded
+                              ? "border-primary/30 shadow-md ring-1 ring-primary/10"
+                              : "border-muted-foreground/10 hover:border-muted-foreground/25 hover:shadow-sm cursor-pointer"
                         }`}
                         onClick={() => { if (!isExpanded) setExpandedOrderId(order.id); }}
                       >
