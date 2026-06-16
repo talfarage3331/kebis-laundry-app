@@ -143,6 +143,7 @@ function Dashboard() {
             images,
             requiresIroning,
             requiresDryCleaning,
+            deliveryMethod,
           );
           setIsModalOpen(false);
           if (orderId) {
@@ -154,6 +155,7 @@ function Dashboard() {
               requiresIroning,
               requiresDryCleaning,
               imageCount: images.length,
+              deliveryMethod,
             });
           } else {
             toast.error("שגיאה ביצירת ההזמנה. אנא נסה שוב.");
