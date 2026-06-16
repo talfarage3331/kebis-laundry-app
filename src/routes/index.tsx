@@ -234,6 +234,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
   const [images, setImages] = useState<string[]>([]);
   const [requiresIroning, setRequiresIroning] = useState(false);
   const [requiresDryCleaning, setRequiresDryCleaning] = useState(false);
+  const [deliveryMethod, setDeliveryMethod] = useState<"self_pickup" | "home_delivery" | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [recentAddresses, setRecentAddresses] = useState<any[]>([]);
