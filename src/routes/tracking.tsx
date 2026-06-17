@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { AppHeader } from "@/components/AppHeader";
-import { useLaundry, stateLabel, ORDER_STEPS, normalizeStatus } from "@/lib/laundry-store";
+import { useLaundry, stateLabel, getOrderSteps, normalizeStatus } from "@/lib/laundry-store";
 import {
   PackageOpen,
   Check,
@@ -13,10 +13,13 @@ import {
   FileText,
   Download,
   XCircle,
+  Pencil,
+  X,
+  Lock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
-import { collection, query, where, onSnapshot } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, updateDoc } from "firebase/firestore";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -237,7 +240,18 @@ function OrderCard({
   isExpanded: boolean;
   onToggle: () => void;
 }) {
-  const currentIdx = ORDER_STEPS.findIndex((s) => s.key === order.status);
+  // Delivery-aware steps
+  const steps = getOrderSteps(order.delivery_method);
+  const currentIdx = steps.findIndex((s) => s.key === order.status);
+
+  // ── Edit state (only active when status === "pending") ────────────────────
+  const isLocked = order.status !== "pending";
+  const [isEditing, setIsEditing] = useState(false);
+  const [editNotes, setEditNotes] = useState("");
+  const [editDelivery, setEditDelivery] = useState(order.delivery_method);
+  const [editIroning, setEditIroning] = useState<boolean>(order.requires_ironing);
+  const [editDryCleaning, setEditDryCleaning] = useState<boolean>(order.requires_dry_cleaning);
+  const [isSaving, setIsSaving] = useState(false);
 
   const getStatusLabel = (status: string) => {
     switch (status) {
@@ -289,6 +303,32 @@ function OrderCard({
   const hasImages = parsedImages && parsedImages.length > 0;
   const hasLaundryMsg = laundryMsg && laundryMsg.trim().length > 0;
 
+  // ── Save edits to Firestore ──────────────────────────────────────────────
+  const handleSaveEdit = async () => {
+    if (isLocked) return;
+    setIsSaving(true);
+    try {
+      const [, laundryMsgPart] = (order.notes || "").split(" ||LAUNDRY_MSG|| ");
+      const laundryPart = laundryMsgPart ? ` ||LAUNDRY_MSG|| ${laundryMsgPart}` : "";
+      await updateDoc(doc(db, "orders", order.id), {
+        notes: editNotes.trim() + laundryPart,
+        delivery_method: editDelivery,
+        deliveryMethod: editDelivery,
+        requires_ironing: editIroning,
+        requiresIroning: editIroning,
+        requires_dry_cleaning: editDryCleaning,
+        requiresDryCleaning: editDryCleaning,
+      });
+      toast.success("פרטי ההזמנה עודכנו בהצלחה!");
+      setIsEditing(false);
+    } catch (err) {
+      toast.error("שגיאה בעדכון ההזמנה");
+      console.error(err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   if (isExpanded) {
     return (
       <div className="space-y-4 animate-fade-in">
@@ -313,8 +353,9 @@ function OrderCard({
           <h2 className="text-xl font-extrabold mt-1">
             {stateLabel[order.status as keyof typeof stateLabel] || getStatusLabel(order.status)}
           </h2>
+          {/* Delivery-method-aware progress steps */}
           <ol className="mt-4 space-y-2">
-            {ORDER_STEPS.map((s, i) => {
+            {steps.map((s, i) => {
               const done = i <= currentIdx;
               return (
                 <li key={s.key} className="flex items-center gap-3 text-sm font-semibold">
@@ -334,7 +375,135 @@ function OrderCard({
               );
             })}
           </ol>
+          {/* Delivery-method badge */}
+          <div className="mt-3 inline-flex items-center gap-1.5 bg-black/10 rounded-full px-3 py-1 text-[10px] font-bold">
+            {order.delivery_method === "self_pickup" ? "🏠 איסוף עצמי" : order.delivery_method === "home_delivery" ? "🚗 משלוח הביתה" : "⏳ טרם נבחר"}
+          </div>
         </div>
+
+        {/* ── Lock notice or Edit controls ───────────────────────────── */}
+        {order.status !== "cancelled" && (isLocked ? (
+          <div className="rounded-2xl bg-muted/60 border border-muted-foreground/15 p-3.5 flex items-center gap-2.5 text-muted-foreground">
+            <Lock className="size-4 shrink-0 opacity-60" />
+            <div>
+              <p className="text-xs font-black text-foreground">ההזמנה נעולה לעריכה</p>
+              <p className="text-[10px] mt-0.5 opacity-80">
+                לאחר קבלת ההזמנה על ידי המכבסה לא ניתן לבצע שינויים. לסיוע, פנה/י אלינו בצ׳אט.
+              </p>
+            </div>
+          </div>
+        ) : isEditing ? (
+          /* ── Inline edit form ─────────────────────────────────────── */
+          <div
+            className="rounded-3xl bg-lavender text-lavender-foreground p-5 space-y-4 shadow-sm border border-lavender-foreground/5 animate-fade-in"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="font-extrabold text-sm text-foreground">✏️ עריכת פרטי הזמנה</h3>
+              <button
+                onClick={() => setIsEditing(false)}
+                className="size-7 rounded-full bg-muted/40 hover:bg-muted flex items-center justify-center transition"
+              >
+                <X className="size-4 text-muted-foreground" />
+              </button>
+            </div>
+            {/* Notes / address */}
+            <div>
+              <label className="text-[10px] font-black text-foreground mb-1 block">כתובת / הערות לכביסה</label>
+              <textarea
+                rows={4}
+                value={editNotes}
+                onChange={(e) => setEditNotes(e.target.value)}
+                placeholder="כתובת מפורטת, דגשים מיוחדים..."
+                className="w-full bg-background border border-muted-foreground/20 rounded-xl px-3 py-2.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary resize-none leading-relaxed text-foreground"
+              />
+            </div>
+            {/* Delivery method */}
+            <div>
+              <label className="text-[10px] font-black text-foreground mb-1 block">שיטת מסירה</label>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { value: "home_delivery", label: "🚗 משלוח הביתה" },
+                  { value: "self_pickup", label: "🏠 איסוף עצמי" },
+                ].map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setEditDelivery(opt.value)}
+                    className={`py-2.5 rounded-xl text-xs font-bold border transition active:scale-95 ${
+                      editDelivery === opt.value
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-background text-foreground border-muted-foreground/20 hover:border-primary/40"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Services */}
+            <div>
+              <label className="text-[10px] font-black text-foreground mb-1.5 block">שירותים נוספים</label>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setEditIroning((v) => !v)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-bold border transition active:scale-95 ${
+                    editIroning
+                      ? "bg-primary/20 text-primary border-primary/30"
+                      : "bg-background text-muted-foreground border-muted-foreground/20"
+                  }`}
+                >
+                  🧺 גיהוץ
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditDryCleaning((v) => !v)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-bold border transition active:scale-95 ${
+                    editDryCleaning
+                      ? "bg-primary/20 text-primary border-primary/30"
+                      : "bg-background text-muted-foreground border-muted-foreground/20"
+                  }`}
+                >
+                  ✨ ניקוי יבש
+                </button>
+              </div>
+            </div>
+            {/* Action buttons */}
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={handleSaveEdit}
+                disabled={isSaving}
+                className="flex-1 bg-primary text-primary-foreground rounded-2xl py-3 text-xs font-black active:scale-95 transition disabled:opacity-60 flex items-center justify-center gap-1.5"
+              >
+                {isSaving ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" strokeWidth={3} />}
+                שמור שינויים
+              </button>
+              <button
+                onClick={() => setIsEditing(false)}
+                className="px-4 bg-muted text-muted-foreground rounded-2xl py-3 text-xs font-bold active:scale-95 transition"
+              >
+                ביטול
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* ── Edit button for pending orders ─────────────────────── */
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setEditNotes(custNotes || "");
+              setEditDelivery(order.delivery_method);
+              setEditIroning(order.requires_ironing);
+              setEditDryCleaning(order.requires_dry_cleaning);
+              setIsEditing(true);
+            }}
+            className="w-full flex items-center justify-center gap-1.5 bg-primary/10 text-primary border border-primary/20 rounded-2xl py-3 text-xs font-black hover:bg-primary/20 active:scale-95 transition"
+          >
+            <Pencil className="size-3.5" />
+            עריכת ההזמנה
+          </button>
+        ))}
 
         {(hasNotes || hasImages || hasLaundryMsg) && (
           <div className="space-y-4 animate-fade-in">
@@ -523,6 +692,14 @@ function OrderCard({
           </span>
         </div>
       </div>
+
+      {/* Compact pending indicator on collapsed card */}
+      {!isLocked && order.status !== "cancelled" && (
+        <div className="flex items-center gap-1.5 text-[10px] text-primary font-bold bg-primary/5 rounded-xl px-2.5 py-1.5 border border-primary/10">
+          <Pencil className="size-3" />
+          <span>ניתן לעריכה — לחץ לפתיחה</span>
+        </div>
+      )}
     </div>
   );
 }

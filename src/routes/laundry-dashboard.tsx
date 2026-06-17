@@ -874,7 +874,7 @@ function LaundryDashboard() {
                                     />
                                   </div>
 
-                                  {/* Status dropdown */}
+                                  {/* Status dropdown — options conditional on delivery method */}
                                   <div className="space-y-1">
                                     <label className="text-[10px] font-black text-foreground block">סטטוס טיפול</label>
                                     <select
@@ -887,9 +887,18 @@ function LaundryDashboard() {
                                       <option value="accepted">התקבל</option>
                                       <option value="collected">נאסף</option>
                                       <option value="ready">מוכן</option>
-                                      <option value="delivered">נמסר</option>
+                                      {/* "delivered" only relevant for home delivery */}
+                                      {order.delivery_method !== "self_pickup" && (
+                                        <option value="delivered">נמסר</option>
+                                      )}
                                       <option value="cancelled">בוטלה</option>
                                     </select>
+                                    {/* Visual hint for self-pickup */}
+                                    {order.delivery_method === "self_pickup" && (
+                                      <p className="text-[9px] text-muted-foreground mt-0.5">
+                                        איסוף עצמי — המסלול מסתיים במצב מוכן
+                                      </p>
+                                    )}
                                   </div>
 
                                   {/* Delivery notes */}

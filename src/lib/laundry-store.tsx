@@ -108,13 +108,33 @@ export function normalizeStatus(raw: any): OrderState {
   }
 }
 
-export const ORDER_STEPS: { key: OrderState; label: string }[] = [
-  { key: "pending", label: "ממתין" },
-  { key: "accepted", label: "התקבל" },
+/** Full 5-step lifecycle for Home Delivery orders */
+export const HOME_DELIVERY_STEPS: { key: OrderState; label: string }[] = [
+  { key: "pending",   label: "ממתין" },
+  { key: "accepted",  label: "התקבל" },
   { key: "collected", label: "נאסף" },
-  { key: "ready", label: "מוכן" },
+  { key: "ready",     label: "מוכן" },
   { key: "delivered", label: "נמסר" },
 ];
+
+/** Shortened 4-step lifecycle for Self-Pickup orders (ends at ready) */
+export const SELF_PICKUP_STEPS: { key: OrderState; label: string }[] = [
+  { key: "pending",   label: "ממתין" },
+  { key: "accepted",  label: "התקבל" },
+  { key: "collected", label: "נאסף" },
+  { key: "ready",     label: "מוכן" },
+];
+
+/**
+ * Returns the correct step array based on the order's delivery method.
+ * Falls back to HOME_DELIVERY_STEPS for any unknown value.
+ */
+export function getOrderSteps(deliveryMethod: string) {
+  return deliveryMethod === "self_pickup" ? SELF_PICKUP_STEPS : HOME_DELIVERY_STEPS;
+}
+
+/** @deprecated Use HOME_DELIVERY_STEPS / SELF_PICKUP_STEPS via getOrderSteps() */
+export const ORDER_STEPS = HOME_DELIVERY_STEPS;
 
 export const stateLabel: Record<OrderState, string> = {
   none: "אין הזמנה פעילה",
