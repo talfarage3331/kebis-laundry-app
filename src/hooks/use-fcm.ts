@@ -194,12 +194,27 @@ export function useFcm() {
     setStatus("idle");
   }, [token]);
 
-  // Auto-refresh token on login if permission was previously granted
+  // Auto-refresh token on login or permission grant in the background silently
   useEffect(() => {
     if (typeof Notification === "undefined") return;
-    if (authUser && Notification.permission === "granted" && !token) {
-      enable();
-    }
+
+    const checkAndEnable = () => {
+      const currentPerm = Notification.permission;
+      setPermission(currentPerm);
+      if (authUser && currentPerm === "granted" && !token) {
+        enable();
+      }
+    };
+
+    checkAndEnable();
+
+    window.addEventListener("focus", checkAndEnable);
+    document.addEventListener("visibilitychange", checkAndEnable);
+
+    return () => {
+      window.removeEventListener("focus", checkAndEnable);
+      document.removeEventListener("visibilitychange", checkAndEnable);
+    };
   }, [enable, token, authUser]);
 
   return {
