@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
+import { AdminPricingPanel } from "@/components/AdminPricingPanel";
 import { useLaundry, normalizeStatus, type OrderState } from "@/lib/laundry-store";
 import { db } from "@/lib/firebase";
 import { collection, query, onSnapshot, doc, updateDoc } from "firebase/firestore";
@@ -605,6 +606,9 @@ function LaundryDashboard() {
                 </div>
                 <ArrowRight className="size-4 rotate-180 opacity-50 group-hover:opacity-100 group-hover:-translate-x-1 transition-all" />
               </button>
+
+              {/* Pricing management panel */}
+              <AdminPricingPanel />
 
               {/* ── Tabs ─────────────────────────────────────────────────── */}
               <div className="flex gap-1.5">
