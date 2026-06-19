@@ -36,7 +36,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { usePricing, getCategoryMeta, CATEGORY_META, type PricingItem } from "@/hooks/use-pricing";
+import { usePricing, resolveCategoryMeta, type PricingItem } from "@/hooks/use-pricing";
+import { useCategories } from "@/hooks/use-categories";
 
 // ─── Empty item template ──────────────────────────────────────────────────────
 
@@ -87,6 +88,7 @@ interface ItemFormProps {
 function ItemFormModal({ open, initial, editingId, onClose }: ItemFormProps) {
   const [form, setForm] = useState<Omit<PricingItem, "id">>(initial ?? EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const { categories } = useCategories();
 
   // Sync form when dialog opens with new initial data
   // (we rely on parent resetting modal by changing key / open prop)
@@ -170,9 +172,9 @@ function ItemFormModal({ open, initial, editingId, onClose }: ItemFormProps) {
               className="w-full h-11 px-3 rounded-xl border border-muted-foreground/20 bg-background text-foreground text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary text-right appearance-none"
               dir="rtl"
             >
-              {Object.entries(CATEGORY_META).map(([key, meta]) => (
-                <option key={key} value={key}>
-                  {meta.emoji} {meta.label_he}
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.emoji} {c.label_he}
                 </option>
               ))}
             </select>
@@ -259,6 +261,32 @@ function ItemFormModal({ open, initial, editingId, onClose }: ItemFormProps) {
 export function AdminPricingPanel() {
   const { items, loading, error } = usePricing();
   const [expanded, setExpanded] = useState(false);
+
+  // Category management state
+  const { categories, addCategory } = useCategories();
+  const [newCatLabel, setNewCatLabel] = useState("");
+  const [newCatEmoji, setNewCatEmoji] = useState("👕");
+  const [isAddingCat, setIsAddingCat] = useState(false);
+
+  const handleCreateCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCatLabel.trim()) {
+      toast.error("נא להזין שם קטגוריה");
+      return;
+    }
+    setIsAddingCat(true);
+    try {
+      await addCategory(newCatLabel, newCatEmoji);
+      toast.success("הקטגוריה נוספה בהצלחה");
+      setNewCatLabel("");
+      setNewCatEmoji("👕");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error("שגיאה בהוספת קטגוריה: " + msg);
+    } finally {
+      setIsAddingCat(false);
+    }
+  };
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -382,6 +410,41 @@ export function AdminPricingPanel() {
             </button>
           </div>
 
+          {/* Quick Category Manager */}
+          <div className="px-4 py-3 border-b border-border bg-muted/10 flex flex-col gap-2 text-right dir-rtl" dir="rtl">
+            <span className="text-xs font-bold text-muted-foreground block">ניהול קטגוריות מהיר</span>
+            <form onSubmit={handleCreateCategory} className="flex gap-2 items-center">
+              <div className="flex-1 flex gap-2">
+                <Input
+                  value={newCatLabel}
+                  onChange={(e) => setNewCatLabel(e.target.value)}
+                  placeholder="שם קטגוריה חדשה (לדוגמה: נעליים)"
+                  className="text-right text-xs bg-background"
+                  disabled={isAddingCat}
+                />
+                <Input
+                  value={newCatEmoji}
+                  onChange={(e) => setNewCatEmoji(e.target.value)}
+                  placeholder="אימוג׳י (👕)"
+                  className="w-16 text-center text-xs bg-background"
+                  disabled={isAddingCat}
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isAddingCat}
+                className="h-10 px-3 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition text-xs font-bold shrink-0 flex items-center gap-1 cursor-pointer"
+              >
+                {isAddingCat ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : (
+                  <Plus className="size-3" />
+                )}
+                <span>+ הוסף קטגוריה חדשה</span>
+              </button>
+            </form>
+          </div>
+
           {/* Loading */}
           {loading && (
             <div className="py-12 flex justify-center">
@@ -406,7 +469,7 @@ export function AdminPricingPanel() {
           {!loading && !error && items.length > 0 && (
             <div className="divide-y divide-border">
               {items.map((item) => {
-                const meta = getCategoryMeta(item.category);
+                const meta = resolveCategoryMeta(item.category, categories);
                 const draftPrice = draftPrices[item.id];
                 const displayPrice =
                   draftPrice !== undefined ? draftPrice : String(item.price);

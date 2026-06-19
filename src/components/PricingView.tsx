@@ -8,7 +8,8 @@
 
 import { useMemo } from "react";
 import { X, Tag } from "lucide-react";
-import { usePricing, getCategoryMeta, type PricingItem } from "@/hooks/use-pricing";
+import { usePricing, resolveCategoryMeta, type PricingItem } from "@/hooks/use-pricing";
+import { useCategories, type Category } from "@/hooks/use-categories";
 
 // ─── Skeleton loader ──────────────────────────────────────────────────────────
 
@@ -24,8 +25,8 @@ function SkeletonCard() {
 
 // ─── Single price card ────────────────────────────────────────────────────────
 
-function PriceCard({ item }: { item: PricingItem }) {
-  const meta = getCategoryMeta(item.category);
+function PriceCard({ item, categories }: { item: PricingItem; categories: Category[] }) {
+  const meta = resolveCategoryMeta(item.category, categories);
   return (
     <div
       className={`relative flex flex-col rounded-2xl border p-4 shadow-sm transition-all ${
@@ -74,8 +75,16 @@ function PriceCard({ item }: { item: PricingItem }) {
 
 // ─── Category section ─────────────────────────────────────────────────────────
 
-function CategorySection({ category, items }: { category: string; items: PricingItem[] }) {
-  const meta = getCategoryMeta(category);
+function CategorySection({
+  category,
+  items,
+  categories,
+}: {
+  category: string;
+  items: PricingItem[];
+  categories: Category[];
+}) {
+  const meta = resolveCategoryMeta(category, categories);
   return (
     <section>
       <div className="flex items-center gap-2 mb-3">
@@ -89,7 +98,7 @@ function CategorySection({ category, items }: { category: string; items: Pricing
       </div>
       <div className="grid grid-cols-2 gap-3">
         {items.map((item) => (
-          <PriceCard key={item.id} item={item} />
+          <PriceCard key={item.id} item={item} categories={categories} />
         ))}
       </div>
     </section>
@@ -103,7 +112,10 @@ interface PricingViewProps {
 }
 
 export function PricingView({ onClose }: PricingViewProps) {
-  const { items, loading, error } = usePricing();
+  const { items, loading: pricingLoading, error } = usePricing();
+  const { categories, loading: categoriesLoading } = useCategories();
+
+  const loading = pricingLoading || categoriesLoading;
 
   // Group available + unavailable items by category, preserving sort
   const grouped = useMemo(() => {
@@ -183,7 +195,12 @@ export function PricingView({ onClose }: PricingViewProps) {
         {!loading &&
           !error &&
           Array.from(grouped.entries()).map(([category, catItems]) => (
-            <CategorySection key={category} category={category} items={catItems} />
+            <CategorySection
+              key={category}
+              category={category}
+              items={catItems}
+              categories={categories}
+            />
           ))}
 
         {/* Footer note */}

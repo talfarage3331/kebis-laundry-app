@@ -9,6 +9,7 @@
 import { useEffect, useState } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { type Category } from "./use-categories";
 
 // ─── Firestore schema ─────────────────────────────────────────────────────────
 
@@ -38,18 +39,39 @@ export interface CategoryMeta {
   emoji: string;
 }
 
-export const CATEGORY_META: Record<string, CategoryMeta> = {
-  washing: { label_he: "כביסה", colorClass: "bg-blue-100 text-blue-700", emoji: "🫧" },
+export const STATIC_CATEGORY_META: Record<string, CategoryMeta> = {
+  washing: { label_he: "כביסה", colorClass: "bg-blue-100 text-blue-700", emoji: "👕" },
   ironing: { label_he: "גיהוץ", colorClass: "bg-amber-100 text-amber-700", emoji: "♨️" },
   dry_cleaning: { label_he: "ניקוי יבש", colorClass: "bg-purple-100 text-purple-700", emoji: "✨" },
-  bedding: { label_he: "מצעים ומגבות", colorClass: "bg-cyan-100 text-cyan-700", emoji: "🛏️" },
   special: { label_he: "שירותים מיוחדים", colorClass: "bg-rose-100 text-rose-700", emoji: "⭐" },
 };
+
+export const CATEGORY_META = STATIC_CATEGORY_META;
+
+/** Dynamic and fallback resolver for category metadata */
+export function resolveCategoryMeta(categoryKey: string, categories: Category[]): CategoryMeta {
+  const found = categories.find((c) => c.id === categoryKey || c.label_he === categoryKey);
+  if (found) {
+    return {
+      label_he: found.label_he,
+      emoji: found.emoji,
+      colorClass: found.colorClass,
+    };
+  }
+
+  return (
+    STATIC_CATEGORY_META[categoryKey] ?? {
+      label_he: categoryKey,
+      colorClass: "bg-slate-100 text-slate-700",
+      emoji: "🏷️",
+    }
+  );
+}
 
 /** Fallback meta for unknown categories */
 export function getCategoryMeta(category: string): CategoryMeta {
   return (
-    CATEGORY_META[category] ?? {
+    STATIC_CATEGORY_META[category] ?? {
       label_he: category,
       colorClass: "bg-slate-100 text-slate-700",
       emoji: "🏷️",
@@ -117,7 +139,7 @@ const DEFAULT_PRICING_ITEMS: PricingItem[] = [
   {
     id: "default-bed-double",
     name_he: "סט מצעים זוגי מלא",
-    category: "bedding",
+    category: "washing",
     price: 45,
     description_he: "סדין, ציפה ו-2 ציפיות. כביסה ריחנית במיוחד וגיהוץ.",
     unit: "לסט",
@@ -126,7 +148,7 @@ const DEFAULT_PRICING_ITEMS: PricingItem[] = [
   {
     id: "default-bed-duvet",
     name_he: "שמיכת פוך זוגית",
-    category: "bedding",
+    category: "washing",
     price: 80,
     description_he: "שמיכת נוצות או סינתטית. חיטוי ורענון יסודי.",
     unit: "לפריט",
@@ -135,7 +157,7 @@ const DEFAULT_PRICING_ITEMS: PricingItem[] = [
   {
     id: "default-bed-towel",
     name_he: "מגבת רחצה ענקית",
-    category: "bedding",
+    category: "washing",
     price: 8,
     description_he: "כביסה וייבוש בטמפרטורה השומרת על רכות ומגע נעים.",
     unit: "לפריט",
