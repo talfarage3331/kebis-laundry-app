@@ -95,7 +95,11 @@ export function usePricing(): UsePricingResult {
         });
         setItems(data);
         setLoading(false);
-        setError(null);
+        if (data.length === 0) {
+          setError("המחירון ריק, הוסף פריט חדש");
+        } else {
+          setError(null);
+        }
       },
       (err) => {
         console.error("[usePricing] Firestore error:", err);
