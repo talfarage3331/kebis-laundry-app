@@ -36,12 +36,12 @@ export const Route = createFileRoute("/")({
 });
 
 function Dashboard() {
-  const { user, isProfileReady, orderState, createOrder } = useLaundry();
+  const { user, isProfileReady, role, isRoleLoading, orderState, createOrder } = useLaundry();
 
   const navigate = useNavigate();
 
   // Block all customer-specific rendering until the role is fully resolved from Firestore
-  if (!isProfileReady) {
+  if (!isProfileReady || isRoleLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="size-10 text-primary animate-spin" />
@@ -51,7 +51,8 @@ function Dashboard() {
 
   // Instant render-phase guard: redirect special roles immediately (isProfileReady guarantees role is set)
   if (user) {
-    if (user.role === "laundry") {
+    const currentRole = user.role || role || "customer";
+    if (currentRole === "laundry") {
       navigate({ to: "/laundry-dashboard", replace: true });
       return (
         <div className="min-h-screen flex items-center justify-center bg-background">
@@ -59,7 +60,7 @@ function Dashboard() {
         </div>
       );
     }
-    if (user.role === "admin") {
+    if (currentRole === "admin") {
       navigate({ to: "/admin", replace: true });
       return (
         <div className="min-h-screen flex items-center justify-center bg-background">

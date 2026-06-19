@@ -47,6 +47,8 @@ interface Store {
   loading: boolean;
   /** True only after Firebase Auth AND the Firestore role look-up have both settled. */
   isProfileReady: boolean;
+  role: "admin" | "laundry" | "customer";
+  isRoleLoading: boolean;
   login: (u: User) => void;
   logout: () => void;
 
@@ -151,6 +153,8 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   // isProfileReady stays false until the Firestore role fetch completes (prevents role flash)
   const [isProfileReady, setIsProfileReady] = useState(false);
+  const [role, setRole] = useState<"admin" | "laundry" | "customer">("customer");
+  const [isRoleLoading, setIsRoleLoading] = useState(true);
   const [orderState, setOrderState] = useState<OrderState>("none");
   const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>("none");
   const [paymentState, setPaymentState] = useState<PaymentState>("unpaid");
@@ -177,71 +181,121 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     return [];
   });
 
-  // Auth listener — setIsProfileReady(true) only after Firestore role resolves
+  // Auth listener — real-time role sync using onSnapshot with robust error callbacks and defaulting
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (sessionUser) => {
-      // Mark profile as NOT ready at the start of every auth-state change
-      setIsProfileReady(false);
+    let unsubscribeSnapshot: (() => void) | null = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, (sessionUser) => {
+      // Cleanup any existing snapshot listener
+      if (unsubscribeSnapshot) {
+        unsubscribeSnapshot();
+        unsubscribeSnapshot = null;
+      }
 
       if (sessionUser && sessionUser.email) {
+        const email: string = sessionUser.email;
+        const uid: string = sessionUser.uid;
+        const defaultName: string = sessionUser.displayName || email.split("@")[0] || "משתמש";
+
+        setIsRoleLoading(true);
+        setIsProfileReady(false);
         setLoading(true);
-        let role: "admin" | "laundry" | "customer" = "customer";
-        let dbName = sessionUser.displayName || sessionUser.email.split("@")[0] || "משתמש";
 
-        if (sessionUser.email === "talfarage3331@gmail.com") {
-          role = "admin";
-        }
+        const userDocRef = doc(db, "users", uid);
 
-        try {
-          const userDocRef = doc(db, "users", sessionUser.uid);
-          const userDocSnap = await getDoc(userDocRef);
+        unsubscribeSnapshot = onSnapshot(
+          userDocRef,
+          (userDocSnap) => {
+            let userRole: "admin" | "laundry" | "customer" = "customer";
+            let dbName = defaultName;
 
-          if (userDocSnap.exists()) {
-            const data = userDocSnap.data();
-            dbName = data.fullName || data.name || dbName;
-            role = data.role || role;
-          } else {
-            // Document doesn't exist, create it
-            await setDoc(
-              userDocRef,
-              {
-                fullName: dbName,
-                email: sessionUser.email,
-                role: role,
-                createdAt: serverTimestamp(),
-              },
-              { merge: true },
-            );
+            if (email === "talfarage3331@gmail.com") {
+              userRole = "admin";
+            }
+
+            if (userDocSnap.exists()) {
+              const data = userDocSnap.data();
+              dbName = data.fullName || data.name || dbName;
+              userRole = data.role || userRole;
+            } else {
+              // Create user profile document in background
+              setDoc(
+                userDocRef,
+                {
+                  fullName: dbName,
+                  email: email,
+                  role: userRole,
+                  createdAt: serverTimestamp(),
+                },
+                { merge: true }
+              ).catch((err) => {
+                console.error("Error creating user profile in background:", err);
+              });
+            }
+
+            // Apply overrides
+            const storedOverride = localStorage.getItem(`role_override_${email}`);
+            if (storedOverride) {
+              userRole = storedOverride as any;
+            }
+            const storedName = localStorage.getItem(`name_override_${email}`);
+            const resolvedDisplayName = storedName || dbName;
+
+            setRole(userRole);
+            setUser({
+              uid: uid,
+              name: resolvedDisplayName,
+              email: email,
+              role: userRole,
+            });
+            setIsRoleLoading(false);
+            setIsProfileReady(true);
+            setLoading(false);
+          },
+          (error) => {
+            console.error("Firestore onSnapshot error for user profile:", error);
+            // Defensive defaulting: fallback to customer on error
+            let fallbackRole: "admin" | "laundry" | "customer" = "customer";
+            if (email === "talfarage3331@gmail.com") {
+              fallbackRole = "admin";
+            }
+
+            const storedOverride = localStorage.getItem(`role_override_${email}`);
+            if (storedOverride) {
+              fallbackRole = storedOverride as any;
+            }
+
+            const dbName = defaultName;
+            const storedName = localStorage.getItem(`name_override_${email}`);
+            const resolvedDisplayName = storedName || dbName;
+
+            setRole(fallbackRole);
+            setUser({
+              uid: uid,
+              name: resolvedDisplayName,
+              email: email,
+              role: fallbackRole,
+            });
+            setIsRoleLoading(false);
+            setIsProfileReady(true);
+            setLoading(false);
           }
-        } catch (err) {
-          console.error("Error checking or creating user profile:", err);
-        }
-
-        // Apply local storage overrides if present (e.g. set by admin for testing)
-        const storedOverride = localStorage.getItem(`role_override_${sessionUser.email}`);
-        if (storedOverride) {
-          role = storedOverride as any;
-        }
-        const storedName = localStorage.getItem(`name_override_${sessionUser.email}`);
-        const displayName = storedName || dbName;
-
-        setUser({
-          uid: sessionUser.uid,
-          name: displayName,
-          email: sessionUser.email,
-          role,
-        });
-        // Both auth + Firestore are resolved — safe to render role-dependent UI
-        setLoading(false);
-        setIsProfileReady(true);
+        );
       } else {
         setUser(null);
+        setRole("customer");
         setLoading(false);
-        setIsProfileReady(true); // No session — profile trivially resolved
+        setIsRoleLoading(false);
+        setIsProfileReady(true);
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeSnapshot) {
+        unsubscribeSnapshot();
+      }
+    };
   }, []);
 
   // Fetch or listen to active order and invoices
@@ -329,10 +383,16 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     return () => unsubscribe();
   }, [user]);
 
-  const login = useCallback((u: User) => setUser(u), []);
+  const login = useCallback((u: User) => {
+    setUser(u);
+    if (u.role) setRole(u.role);
+    setIsRoleLoading(false);
+  }, []);
   const logout = useCallback(async () => {
     await signOut(auth);
     setUser(null);
+    setRole("customer");
+    setIsRoleLoading(false);
     setOrderState("none");
     setDeliveryMethod("none");
     setPaymentState("unpaid");
@@ -537,6 +597,8 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         user,
         loading,
         isProfileReady,
+        role,
+        isRoleLoading,
         login,
         logout,
         orderState,

@@ -4,12 +4,14 @@ import { useLaundry } from "@/lib/laundry-store";
 import { BottomNav } from "./BottomNav";
 
 export function AppLayout({ children }: { children: ReactNode }) {
-  const { user, loading } = useLaundry();
+  const { user, loading, isProfileReady, role, isRoleLoading } = useLaundry();
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
+  const isFullyLoaded = !loading && isProfileReady && !isRoleLoading;
+
   useEffect(() => {
-    if (loading) return;
+    if (!isFullyLoaded) return;
 
     if (!user) {
       if (!["/login", "/signup"].includes(pathname)) {
@@ -18,12 +20,14 @@ export function AppLayout({ children }: { children: ReactNode }) {
       return;
     }
 
+    const currentRole = user.role || role || "customer";
+
     // Role-Based Access Control Redirection
-    if (user.role === "admin") {
+    if (currentRole === "admin") {
       if (pathname !== "/admin" && !pathname.startsWith("/admin/") && pathname !== "/admin-chat") {
         navigate({ to: "/admin" });
       }
-    } else if (user.role === "laundry") {
+    } else if (currentRole === "laundry") {
       if (pathname !== "/laundry-dashboard" && pathname !== "/admin-chat") {
         navigate({ to: "/laundry-dashboard" });
       }
@@ -38,9 +42,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
         navigate({ to: "/" });
       }
     }
-  }, [user, loading, pathname, navigate]);
+  }, [user, isFullyLoaded, role, pathname, navigate]);
 
-  if (loading) {
+  if (!isFullyLoaded) {
     return (
       <div className="min-h-screen bg-background grid place-items-center">
         <div className="animate-spin rounded-full h-10 w-10 border-4 border-primary border-t-transparent" />
@@ -50,10 +54,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   if (!user) return null;
 
+  const currentRole = user.role || role || "customer";
   const isSpecialDashboard =
     ["/admin", "/laundry-dashboard", "/admin-chat"].includes(pathname) ||
-    user?.role === "admin" ||
-    user?.role === "laundry";
+    currentRole === "admin" ||
+    currentRole === "laundry";
   const hideBottomNav = isSpecialDashboard || pathname === "/chat";
 
   return (

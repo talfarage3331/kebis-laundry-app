@@ -245,14 +245,14 @@ function RootComponent() {
 }
 
 function RoleRouteGuard({ children }: { children: React.ReactNode }) {
-  const { user, isProfileReady } = useLaundry();
+  const { user, isProfileReady, role, isRoleLoading } = useLaundry();
 
   const location = useLocation();
   const navigate = useNavigate();
 
   useEffect(() => {
     // Wait until BOTH Firebase Auth AND Firestore role are resolved
-    if (!isProfileReady) return;
+    if (!isProfileReady || isRoleLoading) return;
 
     const path = location.pathname;
 
@@ -264,11 +264,13 @@ function RoleRouteGuard({ children }: { children: React.ReactNode }) {
     const isAdminPath = ["/admin"].includes(path);
 
     if (user) {
-      if (user.role === "laundry") {
+      const currentRole = user.role || role || "customer";
+
+      if (currentRole === "laundry") {
         if (isCustomerPath || isAdminPath) {
           navigate({ to: "/laundry-dashboard", replace: true });
         }
-      } else if (user.role === "admin") {
+      } else if (currentRole === "admin") {
         if (isCustomerPath) {
           navigate({ to: "/admin", replace: true });
         }
@@ -285,10 +287,10 @@ function RoleRouteGuard({ children }: { children: React.ReactNode }) {
         navigate({ to: "/login", replace: true });
       }
     }
-  }, [user, isProfileReady, location.pathname, navigate]);
+  }, [user, isProfileReady, role, isRoleLoading, location.pathname, navigate]);
 
   // Block all rendering until both Firebase Auth and Firestore role are confirmed
-  if (!isProfileReady) {
+  if (!isProfileReady || isRoleLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="size-10 text-primary animate-spin" />
@@ -302,21 +304,22 @@ function RoleRouteGuard({ children }: { children: React.ReactNode }) {
   const isAdminPath = ["/admin"].includes(path);
 
   if (user) {
-    if (user.role === "laundry" && (isCustomerPath || isAdminPath)) {
+    const currentRole = user.role || role || "customer";
+    if (currentRole === "laundry" && (isCustomerPath || isAdminPath)) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-background">
           <Loader2 className="size-10 text-primary animate-spin" />
         </div>
       );
     }
-    if (user.role === "admin" && isCustomerPath) {
+    if (currentRole === "admin" && isCustomerPath) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-background">
           <Loader2 className="size-10 text-primary animate-spin" />
         </div>
       );
     }
-    if (user.role === "customer" && (isAdminPath || isLaundryPath)) {
+    if (currentRole === "customer" && (isAdminPath || isLaundryPath)) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-background">
           <Loader2 className="size-10 text-primary animate-spin" />

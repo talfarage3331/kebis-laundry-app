@@ -10,7 +10,7 @@ import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 export const Route = createFileRoute("/signup")({ component: Signup });
 
 function Signup() {
-  const { user, loading: authLoading } = useLaundry();
+  const { user, loading: authLoading, isProfileReady, role, isRoleLoading } = useLaundry();
   const navigate = useNavigate();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -18,16 +18,17 @@ function Signup() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (user && !authLoading) {
-      if (user.role === "admin") {
+    if (user && !authLoading && isProfileReady && !isRoleLoading) {
+      const currentRole = user.role || role || "customer";
+      if (currentRole === "admin") {
         navigate({ to: "/admin" });
-      } else if (user.role === "laundry") {
+      } else if (currentRole === "laundry") {
         navigate({ to: "/laundry-dashboard" });
       } else {
         navigate({ to: "/" });
       }
     }
-  }, [user, authLoading, navigate]);
+  }, [user, authLoading, isProfileReady, isRoleLoading, role, navigate]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
