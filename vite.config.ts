@@ -7,6 +7,7 @@ export default defineConfig({
   // Force Nitro to run outside the Lovable sandbox (Cloudflare Pages builds do
   // not set Lovable context). Without this, vite build only emits the static
   // client bundle and postbuild has no complete Worker/SSR bundle to copy.
+  // @ts-ignore – nitro is valid at runtime; not yet reflected in LovableViteTanstackOptions types
   nitro: {
     preset: "cloudflare-module",
     output: {

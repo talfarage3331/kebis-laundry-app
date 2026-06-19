@@ -17,6 +17,7 @@ import { Loader2 } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 import { AccessibilityWidget } from "@/components/AccessibilityWidget";
 import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
+import { InstallAppPrompt } from "@/components/InstallAppPrompt";
 import { useAppBadge } from "@/hooks/use-app-badge";
 import { PwaTopSpacer } from "@/components/PwaTopSpacer";
 
@@ -237,6 +238,7 @@ function RootComponent() {
         <Toaster position="top-center" richColors />
         <AccessibilityWidget />
         <PushNotificationPrompt />
+        <InstallAppPrompt />
       </LaundryProvider>
     </QueryClientProvider>
   );
