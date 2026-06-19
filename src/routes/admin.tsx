@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { useLaundry } from "@/lib/laundry-store";
 import { db } from "@/lib/firebase";
+import { AdminPricingPanel } from "@/components/AdminPricingPanel";
 import {
   collection,
   collectionGroup,
@@ -283,6 +284,9 @@ function AdminDashboard() {
             </div>
             <ArrowRight className="size-5 shrink-0 rotate-180 opacity-50 group-hover:opacity-100 group-hover:-translate-x-1 transition-all" />
           </button>
+
+          {/* Pricing management panel */}
+          <AdminPricingPanel />
 
           {/* Filter and search bar */}
           <div className="space-y-3">

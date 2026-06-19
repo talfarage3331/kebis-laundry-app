@@ -18,6 +18,7 @@ import {
   MessageCircle,
   Store,
   Truck,
+  Tag,
 } from "lucide-react";
 import {
   Dialog,
@@ -28,6 +29,7 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import { PricingView } from "@/components/PricingView";
 
 export const Route = createFileRoute("/")({
   component: Dashboard,
@@ -69,6 +71,7 @@ function Dashboard() {
 
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isPricingOpen, setIsPricingOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [confirmationData, setConfirmationData] = useState<{
     orderId: string;
@@ -100,7 +103,7 @@ function Dashboard() {
       <AppHeader subtitle={user ? `שלום, ${user.name}` : undefined} />
       <main className="px-4 sm:px-5 mt-4 sm:mt-6 pb-8">
         {orderState === "none" || orderState === "delivered" || orderState === "cancelled" ? (
-          <EmptyState onOpenModal={() => setIsModalOpen(true)} />
+          <EmptyState onOpenModal={() => setIsModalOpen(true)} onOpenPricing={() => setIsPricingOpen(true)} />
         ) : (
           <div className="space-y-6">
             <div className="bg-lavender/40 border border-lavender-foreground/10 rounded-3xl p-4 sm:p-6 text-center space-y-3 sm:space-y-4">
@@ -126,7 +129,7 @@ function Dashboard() {
               <span className="text-sm font-bold text-muted-foreground">
                 רוצה לבצע הזמנה נוספת?
               </span>
-              <EmptyState onOpenModal={() => setIsModalOpen(true)} />
+              <EmptyState onOpenModal={() => setIsModalOpen(true)} onOpenPricing={() => setIsPricingOpen(true)} />
             </div>
           </div>
         )}
@@ -172,6 +175,15 @@ function Dashboard() {
         }}
       />
 
+      <Dialog open={isPricingOpen} onOpenChange={(open) => !open && setIsPricingOpen(false)}>
+        <DialogContent
+          className="w-[92vw] max-w-lg p-0 overflow-hidden rounded-[2.5rem] border-none gap-0 h-[80vh] flex flex-col"
+          dir="rtl"
+        >
+          <PricingView onClose={() => setIsPricingOpen(false)} />
+        </DialogContent>
+      </Dialog>
+
       {/* Chat FAB */}
       <Link
         to="/chat"
@@ -189,7 +201,7 @@ function Dashboard() {
   );
 }
 
-function EmptyState({ onOpenModal }: { onOpenModal: () => void }) {
+function EmptyState({ onOpenModal, onOpenPricing }: { onOpenModal: () => void; onOpenPricing: () => void }) {
   return (
     <div className="flex flex-col items-center gap-4 pt-4">
       <button
@@ -202,6 +214,14 @@ function EmptyState({ onOpenModal }: { onOpenModal: () => void }) {
         </span>
       </button>
       <p className="text-sm text-muted-foreground mt-1">לחיצה אחת ואנחנו בדרך אליך</p>
+
+      <button
+        onClick={onOpenPricing}
+        className="mt-2 flex items-center gap-2 px-6 py-2.5 rounded-full border border-primary/20 text-primary hover:bg-primary/5 active:scale-95 transition text-sm font-bold shadow-sm"
+      >
+        <Tag className="size-4" />
+        <span>צפייה במחירון השירותים</span>
+      </button>
     </div>
   );
 }
