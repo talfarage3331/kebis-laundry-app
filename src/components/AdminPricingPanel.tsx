@@ -465,14 +465,23 @@ export function AdminPricingPanel() {
                 >
                   <span>{c.emoji}</span>
                   <span>{c.label_he}</span>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteCategory(c.id, c.label_he)}
-                    className="hover:text-destructive transition mr-1 cursor-pointer p-0.5 rounded-full hover:bg-black/5 flex items-center justify-center"
-                    title={`מחק את ${c.label_he}`}
-                  >
-                    <Trash2 className="size-3" />
-                  </button>
+                  {["washing", "ironing", "dry_cleaning", "special"].includes(c.id) ? (
+                    <span
+                      className="text-muted-foreground/35 mr-1 p-0.5 flex items-center justify-center cursor-not-allowed"
+                      title="קטגוריית בסיס (לא ניתן למחוק)"
+                    >
+                      <Trash2 className="size-3" />
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteCategory(c.id, c.label_he)}
+                      className="hover:text-destructive transition mr-1 cursor-pointer p-0.5 rounded-full hover:bg-black/5 flex items-center justify-center"
+                      title={`מחק את ${c.label_he}`}
+                    >
+                      <Trash2 className="size-3" />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>

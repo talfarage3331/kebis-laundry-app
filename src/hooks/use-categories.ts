@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { collection, onSnapshot, addDoc, serverTimestamp, doc, setDoc, deleteDoc } from "firebase/firestore";
+import { collection, onSnapshot, addDoc, serverTimestamp, doc, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 export interface Category {
@@ -30,27 +30,8 @@ export function useCategories() {
 
     const unsubscribe = onSnapshot(
       categoriesCollection,
-      async (snapshot) => {
-        if (snapshot.empty) {
-          // Seed the database with DEFAULT_CATEGORIES
-          try {
-            for (const cat of DEFAULT_CATEGORIES) {
-              await setDoc(doc(db, "categories", cat.id), {
-                label_he: cat.label_he,
-                emoji: cat.emoji,
-                colorClass: cat.colorClass,
-                createdAt: serverTimestamp(),
-              });
-            }
-          } catch (err) {
-            console.warn("[useCategories] Failed to seed default categories:", err);
-          }
-          setCategories(DEFAULT_CATEGORIES);
-          setLoading(false);
-          return;
-        }
-
-        const list: Category[] = snapshot.docs.map((docSnap) => {
+      (snapshot) => {
+        const firestoreList: Category[] = snapshot.docs.map((docSnap) => {
           const d = docSnap.data();
           return {
             id: docSnap.id,
@@ -60,7 +41,22 @@ export function useCategories() {
           };
         });
 
-        setCategories(list);
+        // Hard-merge: Start with DEFAULT_CATEGORIES, and append/override with firestoreList
+        const combined = [...DEFAULT_CATEGORIES];
+        
+        for (const fc of firestoreList) {
+          const index = combined.findIndex((dc) => dc.id === fc.id || dc.label_he === fc.label_he);
+          if (index !== -1) {
+            combined[index] = {
+              ...combined[index],
+              ...fc,
+            };
+          } else {
+            combined.push(fc);
+          }
+        }
+
+        setCategories(combined);
         setLoading(false);
       },
       (err) => {
@@ -95,6 +91,9 @@ export function useCategories() {
   };
 
   const deleteCategory = async (id: string) => {
+    if (["washing", "ironing", "dry_cleaning", "special"].includes(id)) {
+      throw new Error("לא ניתן למחוק קטגוריית בסיס");
+    }
     try {
       await deleteDoc(doc(db, "categories", id));
     } catch (err) {
