@@ -263,7 +263,7 @@ export function AdminPricingPanel() {
   const [expanded, setExpanded] = useState(false);
 
   // Category management state
-  const { categories, addCategory } = useCategories();
+  const { categories, addCategory, deleteCategory } = useCategories();
   const [newCatLabel, setNewCatLabel] = useState("");
   const [newCatEmoji, setNewCatEmoji] = useState("👕");
   const [isAddingCat, setIsAddingCat] = useState(false);
@@ -285,6 +285,17 @@ export function AdminPricingPanel() {
       toast.error("שגיאה בהוספת קטגוריה: " + msg);
     } finally {
       setIsAddingCat(false);
+    }
+  };
+
+  const handleDeleteCategory = async (id: string, label: string) => {
+    if (!confirm(`האם אתה בטוח שברצונך למחוק את הקטגוריה "${label}"?`)) return;
+    try {
+      await deleteCategory(id);
+      toast.success(`הקטגוריה "${label}" נמחקה בהצלחה`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error("שגיאה במחיקת קטגוריה: " + msg);
     }
   };
 
@@ -411,7 +422,7 @@ export function AdminPricingPanel() {
           </div>
 
           {/* Quick Category Manager */}
-          <div className="px-4 py-3 border-b border-border bg-muted/10 flex flex-col gap-2 text-right dir-rtl" dir="rtl">
+          <div className="px-4 py-3 border-b border-border bg-muted/10 flex flex-col gap-3 text-right dir-rtl" dir="rtl">
             <span className="text-xs font-bold text-muted-foreground block">ניהול קטגוריות מהיר</span>
             <form onSubmit={handleCreateCategory} className="flex gap-2 items-center">
               <div className="flex-1 flex gap-2">
@@ -443,6 +454,28 @@ export function AdminPricingPanel() {
                 <span>+ הוסף קטגוריה חדשה</span>
               </button>
             </form>
+
+            {/* List of existing categories */}
+            <div className="flex flex-wrap gap-1.5 items-center mt-1">
+              <span className="text-[11px] font-bold text-muted-foreground ml-1">קטגוריות קיימות:</span>
+              {categories.map((c) => (
+                <div
+                  key={c.id}
+                  className={`flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full border border-border/40 ${c.colorClass}`}
+                >
+                  <span>{c.emoji}</span>
+                  <span>{c.label_he}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteCategory(c.id, c.label_he)}
+                    className="hover:text-destructive transition mr-1 cursor-pointer p-0.5 rounded-full hover:bg-black/5 flex items-center justify-center"
+                    title={`מחק את ${c.label_he}`}
+                  >
+                    <Trash2 className="size-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Loading */}

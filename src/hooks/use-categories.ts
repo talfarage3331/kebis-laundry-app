@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { collection, onSnapshot, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, onSnapshot, addDoc, serverTimestamp, doc, setDoc, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 export interface Category {
@@ -30,8 +30,27 @@ export function useCategories() {
 
     const unsubscribe = onSnapshot(
       categoriesCollection,
-      (snapshot) => {
-        let list: Category[] = snapshot.docs.map((docSnap) => {
+      async (snapshot) => {
+        if (snapshot.empty) {
+          // Seed the database with DEFAULT_CATEGORIES
+          try {
+            for (const cat of DEFAULT_CATEGORIES) {
+              await setDoc(doc(db, "categories", cat.id), {
+                label_he: cat.label_he,
+                emoji: cat.emoji,
+                colorClass: cat.colorClass,
+                createdAt: serverTimestamp(),
+              });
+            }
+          } catch (err) {
+            console.warn("[useCategories] Failed to seed default categories:", err);
+          }
+          setCategories(DEFAULT_CATEGORIES);
+          setLoading(false);
+          return;
+        }
+
+        const list: Category[] = snapshot.docs.map((docSnap) => {
           const d = docSnap.data();
           return {
             id: docSnap.id,
@@ -40,10 +59,6 @@ export function useCategories() {
             colorClass: d.colorClass ?? "bg-slate-100 text-slate-700",
           };
         });
-
-        if (list.length === 0) {
-          list = DEFAULT_CATEGORIES;
-        }
 
         setCategories(list);
         setLoading(false);
@@ -79,5 +94,14 @@ export function useCategories() {
     });
   };
 
-  return { categories, loading, addCategory };
+  const deleteCategory = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, "categories", id));
+    } catch (err) {
+      console.error("[useCategories] Error deleting category:", err);
+      throw err;
+    }
+  };
+
+  return { categories, loading, addCategory, deleteCategory };
 }
