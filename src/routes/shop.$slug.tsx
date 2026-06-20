@@ -26,7 +26,7 @@ export const Route = createFileRoute("/shop/$slug")({
     // has settled, so we treat null === guest here (safe: worst case the
     // signup page shows for a split-second, then its own useEffect
     // redirects the logged-in user to the right dashboard).
-    if (!auth.currentUser) {
+    if (!auth?.currentUser) {
       throw redirect({
         to: "/signup",
         search: { slug: params.slug },
