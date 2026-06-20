@@ -512,6 +512,34 @@ function LaundryDashboard() {
   });
 
   /* ── render ─────────────────────────────────────────────────────── */
+  if (user?.role === "laundry" && user?.status === "pending_approval") {
+    return (
+      <div className="min-h-screen bg-background flex flex-col justify-center items-center px-4 py-12 text-center dir-rtl" dir="rtl">
+        <div className="max-w-md w-full space-y-6 bg-card border border-muted-foreground/10 p-8 rounded-3xl shadow-lg">
+          <div className="size-16 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto animate-pulse">
+            <span className="text-3xl">⏳</span>
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-xl sm:text-2xl font-black text-foreground">החשבון ממתין לאישור</h2>
+            <p className="text-sm sm:text-base text-muted-foreground font-semibold">
+              חשבונך ממתין לאישור המנהל הראשי. תקבל גישה לפאנל מיד לאחר האישור.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              logout();
+              navigate({ to: "/login" });
+            }}
+            className="w-full rounded-2xl bg-destructive text-destructive-foreground py-3 text-sm font-extrabold shadow-md hover:opacity-90 active:scale-[0.98] transition flex items-center justify-center gap-2 min-h-[48px]"
+          >
+            <LogOut className="size-4" />
+            <span>התנתק</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <AppLayout>
       <div className="min-h-screen bg-background pb-16 dir-rtl text-right overflow-x-hidden" dir="rtl">

@@ -51,6 +51,7 @@ interface Profile {
   fullName: string;
   email: string;
   role: "admin" | "laundry" | "customer";
+  status?: "pending_approval" | "approved" | "suspended";
 }
 
 function AdminDashboard() {
@@ -67,6 +68,7 @@ function AdminDashboard() {
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
   const [editRole, setEditRole] = useState<"admin" | "laundry" | "customer">("customer");
+  const [editStatus, setEditStatus] = useState<"pending_approval" | "approved" | "suspended">("approved");
   const [isUpdating, setIsUpdating] = useState(false);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
 
@@ -102,6 +104,7 @@ function AdminDashboard() {
         fullName: docSnap.data().fullName || "",
         email: docSnap.data().email || "",
         role: docSnap.data().role || "customer",
+        status: docSnap.data().status,
       }));
 
       setProfiles(data);
@@ -127,10 +130,14 @@ function AdminDashboard() {
     setIsUpdating(true);
     try {
       const userDocRef = doc(db, "users", editingProfile.id);
-      await updateDoc(userDocRef, {
+      const updateData: Record<string, any> = {
         fullName: editName,
         role: editRole,
-      });
+      };
+      if (editRole === "laundry") {
+        updateData.status = editStatus;
+      }
+      await updateDoc(userDocRef, updateData);
 
       toast.success("פרופיל המשתמש עודכן בהצלחה!");
       setEditingProfile(null);
@@ -168,6 +175,7 @@ function AdminDashboard() {
     setEditName(profile.fullName || "");
     setEditEmail(profile.email || "");
     setEditRole(profile.role || "customer");
+    setEditStatus(profile.status || "approved");
   };
 
   // Filtered profiles
@@ -176,7 +184,11 @@ function AdminDashboard() {
       (p.fullName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
       (p.email || "").toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesRole = roleFilter === "all" || p.role === roleFilter;
+    const matchesRole = roleFilter === "all"
+      ? true
+      : roleFilter === "pending_approval"
+        ? p.status === "pending_approval"
+        : p.role === roleFilter;
 
     return matchesSearch && matchesRole;
   });
@@ -306,6 +318,7 @@ function AdminDashboard() {
                 { key: "all", label: "הכל" },
                 { key: "customer", label: "לקוחות" },
                 { key: "laundry", label: "מכבסה" },
+                { key: "pending_approval", label: "ממתינים לאישור" },
                 { key: "admin", label: "מנהלים" },
               ].map((filter) => (
                 <button
@@ -364,6 +377,11 @@ function AdminDashboard() {
                         >
                           {getRoleLabel(profile.role)}
                         </span>
+                        {profile.role === "laundry" && profile.status === "pending_approval" && (
+                          <span className="inline-block mt-1.5 sm:mt-2 mr-1 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">
+                            ממתין לאישור
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -446,6 +464,21 @@ function AdminDashboard() {
                 <option value="admin">מנהל מערכת (Admin)</option>
               </select>
             </div>
+
+            {editRole === "laundry" && (
+              <div className="space-y-1.5 animate-in slide-in-from-top-2 duration-200">
+                <label className="text-xs font-bold text-foreground block">סטטוס אישור</label>
+                <select
+                  value={editStatus}
+                  onChange={(e) => setEditStatus(e.target.value as any)}
+                  className="w-full h-11 sm:h-11 px-3 rounded-xl border border-muted-foreground/20 bg-background text-foreground text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary text-right appearance-none"
+                  dir="rtl"
+                >
+                  <option value="pending_approval">⏳ ממתין לאישור (Pending)</option>
+                  <option value="approved">✅ מאושר (Approved)</option>
+                </select>
+              </div>
+            )}
           </div>
 
           <div className="flex gap-2 mt-2">

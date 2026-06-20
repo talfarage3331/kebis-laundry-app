@@ -40,6 +40,7 @@ export interface User {
   name: string;
   email: string;
   role?: "admin" | "laundry" | "customer";
+  status?: "pending_approval" | "approved" | "suspended";
   associatedLaundryId?: string;
 }
 
@@ -302,12 +303,14 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
             }
 
             let associatedLaundryId: string | undefined = undefined;
+            let userStatus: "pending_approval" | "approved" | "suspended" | undefined = undefined;
 
             if (userDocSnap.exists()) {
               const data = userDocSnap.data();
               dbName = data.fullName || data.name || dbName;
               userRole = data.role || userRole;
               associatedLaundryId = data.associatedLaundryId;
+              userStatus = data.status;
             } else {
               // Create user profile document in background
               setDoc(
@@ -338,6 +341,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
               name: resolvedDisplayName,
               email: email,
               role: userRole,
+              status: userStatus,
               associatedLaundryId: associatedLaundryId,
             });
             setIsRoleLoading(false);

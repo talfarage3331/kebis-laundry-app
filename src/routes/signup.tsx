@@ -57,6 +57,9 @@ function Signup() {
     if (selectedRole === "laundry" && !businessName.trim()) {
       return toast.error("יש להזין שם עסק");
     }
+    if (selectedRole === "customer" && !activeLaundryId) {
+      return toast.error("ההרשמה כלקוח מתאפשרת רק דרך קישור ייעודי של המכבסה.");
+    }
 
     setLoading(true);
     try {
@@ -75,12 +78,13 @@ function Signup() {
         createdAt: serverTimestamp(),
       };
 
-      // For laundry vendors, generate & persist a unique shopSlug
+      // For laundry vendors, generate & persist a unique shopSlug; mark pending approval
       if (assignedRole === "laundry") {
         const baseSlug = generateSlug(businessName.trim() || name);
         const uniqueSlug = await ensureUniqueSlug(baseSlug);
         docData.shopSlug = uniqueSlug;
         docData.businessName = businessName.trim();
+        docData.status = "pending_approval";
       } else if (assignedRole === "customer" && activeLaundryId) {
         docData.associatedLaundryId = activeLaundryId;
       }
@@ -103,7 +107,8 @@ function Signup() {
     }
   };
 
-  if (!activeLaundryId) {
+  // Customer without invite link — show blocked screen only when customer role selected
+  if (!activeLaundryId && selectedRole === "customer") {
     return (
       <div className="min-h-[100dvh] bg-background flex flex-col overflow-x-hidden" dir="rtl">
         <div className="bg-primary text-primary-foreground rounded-b-[2rem] sm:rounded-b-[2.5rem] px-4 sm:px-6 pt-safe-auth pb-8 sm:pb-12">
@@ -118,17 +123,24 @@ function Signup() {
           </div>
         </div>
 
-        <div className="mx-auto max-w-md w-full px-6 mt-12 text-center space-y-6">
+        <div className="mx-auto max-w-md w-full px-6 mt-10 text-center space-y-6">
           <div className="size-16 rounded-full bg-destructive/10 grid place-items-center mx-auto animate-bounce">
             <Building2 className="size-8 text-destructive" />
           </div>
           <div className="space-y-2">
-            <h2 className="text-xl sm:text-2xl font-black text-foreground">שגיאה בהרשמה</h2>
+            <h2 className="text-xl sm:text-2xl font-black text-foreground">ההרשמה חסומה</h2>
             <p className="text-sm text-muted-foreground font-extrabold">
-              ההרשמה מתאפשרת רק דרך קישור ייעודי של המכבסה.
+              ההרשמה כלקוח מתאפשרת רק דרך קישור ייעודי של המכבסה.
             </p>
           </div>
           <div className="border-t border-muted-foreground/10 pt-6 flex flex-col gap-2.5">
+            <button
+              type="button"
+              onClick={() => setSelectedRole("laundry")}
+              className="w-full rounded-2xl bg-primary/10 text-primary border border-primary/20 py-3 text-sm font-extrabold hover:bg-primary hover:text-primary-foreground active:scale-[0.98] transition flex items-center justify-center min-h-[48px]"
+            >
+              🏪 הרשמה כבעל מכבסה
+            </button>
             <Link
               to="/login"
               className="w-full rounded-2xl bg-primary text-primary-foreground py-3 text-sm font-extrabold shadow-md hover:opacity-90 active:scale-[0.98] transition flex items-center justify-center min-h-[48px]"
@@ -193,6 +205,17 @@ function Signup() {
             </button>
           </div>
         </div>
+
+        {/* Laundry pending notice */}
+        {selectedRole === "laundry" && (
+          <div className="animate-in slide-in-from-top-2 duration-200 rounded-2xl bg-amber-50 border border-amber-200 p-3 flex gap-2.5 items-start">
+            <span className="text-amber-500 text-base mt-0.5">⏳</span>
+            <p className="text-xs text-amber-700 font-semibold leading-relaxed">
+              לאחר ההרשמה, החשבון שלך יהיה ממתין לאישור המנהל הראשי.
+              תקבל גישה מלאה לפאנל הניהול מיד לאחר האישור.
+            </p>
+          </div>
+        )}
 
         <div>
           <label className="text-sm font-semibold">שם מלא</label>
