@@ -77,6 +77,7 @@ interface Store {
     basePrice?: number,
     totalPrice?: number,
     requiresWashing?: boolean,
+    laundryId?: string,
   ) => Promise<string | null>;
   advanceOrder: () => void;
   setDelivery: (m: DeliveryMethod) => void;
@@ -426,6 +427,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       basePrice?: number,
       totalPrice?: number,
       washing: boolean = false,
+      laundryId?: string,
     ): Promise<string | null> => {
       if (!user) return null;
       const newState: OrderState = "pending";
@@ -503,6 +505,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
           addons: addons || [],
           deliveryTier: deliveryTier || "standard",
           basePrice: basePrice || 0,
+          laundryId: laundryId || "",
         });
 
         // Synchronize laundry notifications list locally (Mock triggers)

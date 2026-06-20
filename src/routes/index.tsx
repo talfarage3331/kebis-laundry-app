@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { AppHeader } from "@/components/AppHeader";
 import { useLaundry, ORDER_STEPS, stateLabel, ADDONS_META, DELIVERY_TIERS_META } from "@/lib/laundry-store";
+import { useLaundryOptions, seedDefaultsIfEmpty } from "@/hooks/use-laundry-options";
 import { db } from "@/lib/firebase";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 import {
@@ -151,6 +152,7 @@ function Dashboard() {
           basePrice,
           totalPrice,
           requiresWashing,
+          laundryId,
         ) => {
           // Combine address + optional user notes into a single notes string stored in the DB
           const combinedNotes = [address, notes].filter(Boolean).join("\n\n");
@@ -165,6 +167,7 @@ function Dashboard() {
             basePrice,
             totalPrice,
             requiresWashing,
+            laundryId,
           );
           setIsModalOpen(false);
           if (orderId) {
@@ -259,6 +262,7 @@ interface PickupModalProps {
     basePrice: number,
     totalPrice: number,
     requiresWashing: boolean,
+    laundryId: string,
   ) => Promise<void>;
 }
 
@@ -370,6 +374,68 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
   const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
   const [deliveryTier, setDeliveryTier] = useState<string>("standard");
   const [phoneNumber, setPhoneNumber] = useState("");
+
+  // Laundry shops state & option hook
+  const { customAddons, customTiers } = useLaundryOptions();
+  const [laundryShops, setLaundryShops] = useState<{ id: string; name: string }[]>([]);
+  const [selectedLaundry, setSelectedLaundry] = useState<{ id: string; name: string } | null>(null);
+
+  // Load laundry shops
+  useEffect(() => {
+    const q = query(collection(db, "users"), where("role", "==", "laundry"));
+    const unsub = onSnapshot(q, (snapshot) => {
+      const shops = snapshot.docs.map((docSnap) => {
+        const d = docSnap.data();
+        return {
+          id: docSnap.id,
+          name: d.fullName || d.name || `מכבסה #${docSnap.id.slice(0, 4)}`,
+        };
+      });
+      setLaundryShops(shops);
+      if (shops.length > 0 && !selectedLaundry) {
+        setSelectedLaundry(shops[0]);
+      } else if (shops.length === 0) {
+        const fallback = { id: "default_laundry", name: "מכבסה ראשית Kebisa" };
+        setLaundryShops([fallback]);
+        setSelectedLaundry(fallback);
+      }
+    });
+    return () => unsub();
+  }, [selectedLaundry]);
+
+  // Seed default options if the selected laundry shop has none
+  useEffect(() => {
+    if (isOpen && selectedLaundry?.id) {
+      seedDefaultsIfEmpty(selectedLaundry.id);
+    }
+  }, [isOpen, selectedLaundry?.id]);
+
+  // Filter addons & delivery tiers for the selected shop
+  const shopAddonsList = customAddons.filter(a => a.laundryId === selectedLaundry?.id);
+  const shopTiersList = customTiers.filter(t => t.laundryId === selectedLaundry?.id);
+
+  // Build options maps
+  const shopAddons: Record<string, { label: string; price: number; group: string; desc: string }> = {};
+  if (shopAddonsList.length > 0) {
+    shopAddonsList.forEach(a => {
+      shopAddons[a.key] = { label: a.label, price: a.price, group: a.group, desc: a.desc };
+    });
+  } else {
+    Object.entries(ADDONS_META).forEach(([k, v]) => {
+      shopAddons[k] = v;
+    });
+  }
+
+  const shopTiers: Record<string, { label: string; price: number; desc: string }> = {};
+  if (shopTiersList.length > 0) {
+    shopTiersList.forEach(t => {
+      shopTiers[t.key] = { label: t.label, price: t.price, desc: t.desc };
+    });
+  } else {
+    Object.entries(DELIVERY_TIERS_META).forEach(([k, v]) => {
+      shopTiers[k] = v;
+    });
+  }
 
   const toggleAddon = (key: string) => {
     setSelectedAddons((prev) =>
@@ -649,8 +715,8 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
 
       localStorage.setItem("recent_laundry_addresses", JSON.stringify(updatedRecents));
 
-      const addonsPriceSum = selectedAddons.reduce((sum, key) => sum + (ADDONS_META[key]?.price || 0), 0);
-      const deliveryTierPrice = deliveryMethod === "home_delivery" ? (DELIVERY_TIERS_META[deliveryTier]?.price || 0) : 0;
+      const addonsPriceSum = selectedAddons.reduce((sum, key) => sum + (shopAddons[key]?.price || 0), 0);
+      const deliveryTierPrice = deliveryMethod === "home_delivery" ? (shopTiers[deliveryTier]?.price || 0) : 0;
       const estimatedTotalPrice = addonsPriceSum + deliveryTierPrice;
 
       const finalNotes = deliveryMethod === "home_delivery" && selectedAddons.includes("phone_coord") && phoneNumber.trim()
@@ -668,7 +734,8 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
         deliveryMethod === "home_delivery" ? deliveryTier : "standard",
         0,
         estimatedTotalPrice,
-        requiresWashing
+        requiresWashing,
+        selectedLaundry?.id || "default_laundry"
       );
 
       setAddressSearchQuery("");
@@ -709,6 +776,28 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
         </DialogHeader>
 
         <div className="space-y-5 my-4 text-right">
+          {/* Shop Selection Field */}
+          <div className="space-y-2 text-right">
+            <label className="text-sm font-bold text-foreground block">
+              בחר סניף / מכבסה <span className="text-destructive font-black">*</span>
+            </label>
+            <select
+              value={selectedLaundry?.id || ""}
+              onChange={(e) => {
+                const shop = laundryShops.find(s => s.id === e.target.value);
+                if (shop) setSelectedLaundry(shop);
+              }}
+              className="w-full h-11 px-3 rounded-2xl border border-muted-foreground/20 bg-background text-foreground text-sm font-bold focus:outline-none focus:ring-2 focus:ring-primary text-right appearance-none"
+              dir="rtl"
+            >
+              {laundryShops.map((shop) => (
+                <option key={shop.id} value={shop.id}>
+                  🏪 {shop.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* Pickup Address Field */}
           <div className="space-y-2 relative">
             <div className="flex items-center justify-between">
@@ -1046,7 +1135,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
               <p className="text-[11px] sm:text-xs text-slate-500">תוספת קבועה לשדרוג איכות הכביסה</p>
             </div>
             <div className="space-y-2">
-              {Object.entries(ADDONS_META)
+              {Object.entries(shopAddons)
                 .filter(([, meta]) => meta.group === "שדרוגי פרימיום")
                 .map(([key, meta]) => (
                   <AddonRow
@@ -1069,7 +1158,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
               <p className="text-[11px] sm:text-xs text-slate-500">טיפול מותאם אישית לפי סוג הבגד</p>
             </div>
             <div className="space-y-2">
-              {Object.entries(ADDONS_META)
+              {Object.entries(shopAddons)
                 .filter(([, meta]) => meta.group === "סוגי טיפול מיוחדים")
                 .map(([key, meta]) => (
                   <AddonRow
@@ -1093,7 +1182,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
                 <p className="text-[11px] sm:text-xs text-slate-500">בחר את מהירות המשלוח המועדפת עליך</p>
               </div>
               <div className="space-y-2">
-                {Object.entries(DELIVERY_TIERS_META).map(([key, meta]) => (
+                {Object.entries(shopTiers).map(([key, meta]) => (
                   <RadioRow
                     key={key}
                     id={key}
@@ -1116,7 +1205,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
                 <p className="text-[11px] sm:text-xs text-slate-500">שדרוגים מיוחדים לחוויית איסוף מהסניף</p>
               </div>
               <div className="space-y-2">
-                {Object.entries(ADDONS_META)
+                {Object.entries(shopAddons)
                   .filter(([key]) => key === "quick_pickup" || key === "express_wash")
                   .map(([key, meta]) => (
                     <AddonRow
@@ -1141,7 +1230,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
                 <p className="text-[11px] sm:text-xs text-slate-500">העדפות מסירה מיוחדות לשליח</p>
               </div>
               <div className="space-y-2">
-                {Object.entries(ADDONS_META)
+                {Object.entries(shopAddons)
                   .filter(([, meta]) => meta.group === "חוויית לוגיסטיקה")
                   .map(([key, meta]) => (
                     <div key={key} className="w-full">
@@ -1179,7 +1268,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
             <span className="text-xs font-bold text-muted-foreground block font-black">סיכום תוספות ושדרוגים</span>
             <div className="space-y-1.5 text-xs font-semibold">
               {selectedAddons.map((key) => {
-                const meta = ADDONS_META[key];
+                const meta = shopAddons[key];
                 if (!meta) return null;
                 return (
                   <div key={key} className="flex justify-between items-center text-muted-foreground animate-fade-in">
@@ -1188,17 +1277,17 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
                   </div>
                 );
               })}
-              {deliveryMethod === "home_delivery" && (DELIVERY_TIERS_META[deliveryTier]?.price || 0) > 0 && (
+              {deliveryMethod === "home_delivery" && (shopTiers[deliveryTier]?.price || 0) > 0 && (
                 <div className="flex justify-between items-center text-muted-foreground animate-fade-in">
-                  <span>משלוח ({DELIVERY_TIERS_META[deliveryTier]?.label})</span>
-                  <span>+₪{DELIVERY_TIERS_META[deliveryTier]?.price || 0}</span>
+                  <span>משלוח ({shopTiers[deliveryTier]?.label})</span>
+                  <span>+₪{shopTiers[deliveryTier]?.price || 0}</span>
                 </div>
               )}
               <div className="border-t border-border pt-1.5 flex justify-between items-center text-sm font-black text-foreground">
                 <span>סה״כ תוספות</span>
                 <span className="text-primary text-base font-black">
-                  ₪{selectedAddons.reduce((sum, key) => sum + (ADDONS_META[key]?.price || 0), 0) + 
-                    (deliveryMethod === "home_delivery" ? (DELIVERY_TIERS_META[deliveryTier]?.price || 0) : 0)
+                  ₪{selectedAddons.reduce((sum, key) => sum + (shopAddons[key]?.price || 0), 0) + 
+                    (deliveryMethod === "home_delivery" ? (shopTiers[deliveryTier]?.price || 0) : 0)
                   }
                 </span>
               </div>

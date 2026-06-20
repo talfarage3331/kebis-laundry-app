@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { AppHeader } from "@/components/AppHeader";
 import { useLaundry, stateLabel, getOrderSteps, normalizeStatus, ADDONS_META, DELIVERY_TIERS_META } from "@/lib/laundry-store";
+import { useLaundryOptions } from "@/hooks/use-laundry-options";
 import {
   PackageOpen,
   Check,
@@ -243,16 +244,17 @@ function OrderCard({
   isExpanded: boolean;
   onToggle: () => void;
 }) {
+  const { resolveAddon, resolveTier } = useLaundryOptions();
   // Delivery-aware steps
   const steps = getOrderSteps(order.delivery_method);
   const currentIdx = steps.findIndex((s) => s.key === order.status);
 
   const addonsPriceSum = (order.addons || []).reduce(
-    (sum: number, key: string) => sum + (ADDONS_META[key]?.price || 0),
+    (sum: number, key: string) => sum + (resolveAddon(key, order.laundryId)?.price || 0),
     0
   );
   const deliveryTierPrice = order.delivery_method === "home_delivery"
-    ? (DELIVERY_TIERS_META[order.deliveryTier || "standard"]?.price || 0)
+    ? (resolveTier(order.deliveryTier || "standard", order.laundryId)?.price || 0)
     : 0;
 
   const basePrice = order.basePrice !== undefined 
@@ -626,7 +628,7 @@ function OrderCard({
                 <span className="bg-lime/20 text-lime-foreground border border-lime-foreground/20 text-[10px] font-black px-2 py-0.5 rounded-full">ניקוי יבש ✨</span>
               )}
               {(order.addons || []).map((key: string) => {
-                const m = ADDONS_META[key];
+                const m = resolveAddon(key, order.laundryId);
                 if (!m) return null;
                 return (
                   <span key={key} className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-black px-2 py-0.5 rounded-full">
@@ -634,11 +636,14 @@ function OrderCard({
                   </span>
                 );
               })}
-              {order.delivery_method === "home_delivery" && (
-                <span className="bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-black px-2 py-0.5 rounded-full">
-                  {DELIVERY_TIERS_META[order.deliveryTier || "standard"]?.label} (+₪{DELIVERY_TIERS_META[order.deliveryTier || "standard"]?.price})
-                </span>
-              )}
+              {order.delivery_method === "home_delivery" && (() => {
+                const tierMeta = resolveTier(order.deliveryTier || "standard", order.laundryId);
+                return (
+                  <span className="bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-black px-2 py-0.5 rounded-full">
+                    {tierMeta?.label} (+₪{tierMeta?.price})
+                  </span>
+                );
+              })()}
               {order.delivery_method === "self_pickup" && (
                 <span className="bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-black px-2 py-0.5 rounded-full">
                   🏠 איסוף עצמי (חינם)

@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { AdminPricingPanel } from "@/components/AdminPricingPanel";
+import { LaundrySettingsCRUDPanel } from "@/components/LaundrySettingsCRUDPanel";
 import { useLaundry, normalizeStatus, type OrderState, ADDONS_META, DELIVERY_TIERS_META } from "@/lib/laundry-store";
 import { db } from "@/lib/firebase";
 import { collection, query, onSnapshot, doc, updateDoc } from "firebase/firestore";
@@ -54,6 +55,7 @@ interface LaundryOrder {
   invoices?: Array<{ id: string; date: string; name: string; data: string }>;
   addons?: string[];
   deliveryTier?: string;
+  laundryId?: string;
 }
 
 /* ─── status helpers ─────────────────────────────────────────────── */
@@ -251,19 +253,65 @@ function LaundryDashboard() {
             addons:           Array.isArray(o.addons) ? o.addons : [],
             deliveryTier:     o.deliveryTier || "standard",
             basePrice:        o.basePrice !== undefined ? Number(o.basePrice) : undefined,
+            laundryId:        o.laundryId || "",
           } as LaundryOrder;
         } catch (docErr) {
           console.error(`[laundry-dashboard] failed to parse order doc ${docSnap.id}:`, docErr);
           return null;
         }
-      }).filter((o): o is LaundryOrder => o !== null && o.delivery_method !== "placeholder" && !o.id.startsWith("placeholder"));
+      }).filter((o): o is LaundryOrder => o !== null);
 
-      realOrders.sort((a, b) => {
-        try {
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-        } catch { return 0; }
+      const filteredForShop = realOrders.filter((o) => {
+        if (o.delivery_method === "placeholder" || o.id.startsWith("placeholder")) return false;
+        if (user?.role === "laundry") {
+          return !o.laundryId || o.laundryId === user.uid;
+        }
+        return true;
       });
-      setOrders(realOrders as any);
+
+      const getUrgencyScore = (o: LaundryOrder) => {
+        const tier = (o.deliveryTier || "").toLowerCase();
+        const addons = o.addons || [];
+        
+        // Same-Day / Super Express / כביסה מהירה
+        if (
+          tier === "super_express" || 
+          tier === "same_day" || 
+          tier === "כביסה מהירה" || 
+          addons.includes("express_wash") ||
+          tier.includes("super") ||
+          tier.includes("same") ||
+          tier.includes("מהירה")
+        ) {
+          return 3;
+        }
+        // Express
+        if (tier === "express" || tier.includes("express")) {
+          return 2;
+        }
+        // Standard / Regular / other
+        return 1;
+      };
+
+      filteredForShop.sort((a, b) => {
+        const scoreA = getUrgencyScore(a);
+        const scoreB = getUrgencyScore(b);
+
+        if (scoreB !== scoreA) {
+          return scoreB - scoreA; // Highest score (3) first
+        }
+
+        // Tie-breaker: Oldest creation date first
+        try {
+          const timeA = new Date(a.created_at).getTime();
+          const timeB = new Date(b.created_at).getTime();
+          return timeA - timeB; // Oldest time first
+        } catch {
+          return 0;
+        }
+      });
+
+      setOrders(filteredForShop as any);
       setIsLoading(false);
     }, (err) => {
       console.error("Firestore orders listen error:", err);
@@ -626,6 +674,9 @@ function LaundryDashboard() {
 
               {/* Pricing management panel */}
               <AdminPricingPanel />
+
+              {/* Laundry Settings Panel */}
+              <LaundrySettingsCRUDPanel />
 
               {/* ── Tabs ─────────────────────────────────────────────────── */}
               <div className="flex gap-1.5">

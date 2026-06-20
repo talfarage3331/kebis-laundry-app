@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { useLaundry, normalizeStatus, ADDONS_META, DELIVERY_TIERS_META } from "@/lib/laundry-store";
+import { useLaundryOptions } from "@/hooks/use-laundry-options";
 import {
   ArrowRight,
   FileText,
@@ -29,6 +30,7 @@ const methods = [
 
 function Payments() {
   const { user, invoices } = useLaundry();
+  const { resolveAddon, resolveTier } = useLaundryOptions();
   const navigate = useNavigate();
   const [method, setMethod] = useState<string>("bit");
 
@@ -67,6 +69,7 @@ function Payments() {
               addons: Array.isArray(data.addons) ? data.addons : [],
               deliveryTier: data.deliveryTier || "standard",
               basePrice: data.basePrice !== undefined ? Number(data.basePrice) : undefined,
+              laundryId: data.laundryId || "",
             };
           })
           .filter(
@@ -201,7 +204,7 @@ function Payments() {
                           <span>
                             ₪{(order.basePrice !== undefined 
                               ? order.basePrice 
-                              : Math.max(0, order.amount_due - (order.addons || []).reduce((sum: number, key: string) => sum + (ADDONS_META[key]?.price || 0), 0) - (order.delivery_method === "home_delivery" ? (DELIVERY_TIERS_META[order.deliveryTier || "standard"]?.price || 0) : 0))
+                              : Math.max(0, order.amount_due - (order.addons || []).reduce((sum: number, key: string) => sum + (resolveAddon(key, order.laundryId)?.price || 0), 0) - (order.delivery_method === "home_delivery" ? (resolveTier(order.deliveryTier || "standard", order.laundryId)?.price || 0) : 0))
                             ).toFixed(2)}
                           </span>
                         </div>
@@ -210,11 +213,11 @@ function Payments() {
                           <div className="space-y-1">
                             <div className="flex justify-between text-muted-foreground">
                               <span>תוספות ושדרוגים:</span>
-                              <span>+₪{(order.addons || []).reduce((sum: number, key: string) => sum + (ADDONS_META[key]?.price || 0), 0).toFixed(2)}</span>
+                              <span>+₪{(order.addons || []).reduce((sum: number, key: string) => sum + (resolveAddon(key, order.laundryId)?.price || 0), 0).toFixed(2)}</span>
                             </div>
                             <div className="flex flex-wrap gap-1 pr-2">
                               {(order.addons || []).map((key: string) => {
-                                const m = ADDONS_META[key];
+                                const m = resolveAddon(key, order.laundryId);
                                 if (!m) return null;
                                 return (
                                   <span key={key} className="text-[10px] bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 rounded-full font-bold">
@@ -226,14 +229,17 @@ function Payments() {
                           </div>
                         )}
 
-                        {order.delivery_method === "home_delivery" && (
-                          <div className="space-y-1">
-                            <div className="flex justify-between text-muted-foreground">
-                              <span>דמי משלוח ({DELIVERY_TIERS_META[order.deliveryTier || "standard"]?.label}):</span>
-                              <span>+₪{(DELIVERY_TIERS_META[order.deliveryTier || "standard"]?.price || 0).toFixed(2)}</span>
+                        {order.delivery_method === "home_delivery" && (() => {
+                          const tierMeta = resolveTier(order.deliveryTier || "standard", order.laundryId);
+                          return (
+                            <div className="space-y-1">
+                              <div className="flex justify-between text-muted-foreground">
+                                <span>דמי משלוח ({tierMeta?.label}):</span>
+                                <span>+₪{(tierMeta?.price || 0).toFixed(2)}</span>
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          );
+                        })()}
                         
                         <div className="border-t border-border pt-2 flex justify-between text-sm font-extrabold text-foreground">
                           <span>סה״כ לתשלום:</span>
