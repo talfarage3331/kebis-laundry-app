@@ -6,7 +6,7 @@ import { LaundrySettingsCRUDPanel } from "@/components/LaundrySettingsCRUDPanel"
 import { useLaundryOptions } from "@/hooks/use-laundry-options";
 import { useLaundry, normalizeStatus, type OrderState, ADDONS_META, DELIVERY_TIERS_META } from "@/lib/laundry-store";
 import { db } from "@/lib/firebase";
-import { collection, query, onSnapshot, doc, updateDoc } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, updateDoc } from "firebase/firestore";
 import {
   LogOut,
   RefreshCw,
@@ -217,12 +217,15 @@ function LaundryDashboard() {
     return () => unsub();
   }, [user?.email]);
 
-  /* orders real-time listener */
+  /* orders real-time listener — strict multi-tenant isolation */
   useEffect(() => {
+    if (!user?.uid) return;
     setIsLoading(true);
-    const q = query(collection(db, "orders"));
-    const unsub = onSnapshot(q, (snapshot) => {
-      const realOrders = snapshot.docs.map((docSnap) => {
+
+    const ordersMergeMap = new Map<string, LaundryOrder>();
+
+    const processSnapshot = (snapshot: any) => {
+      snapshot.docs.forEach((docSnap: any) => {
         try {
           const o = docSnap.data() ?? {};
           let parsedImages: string[] = [];
@@ -233,7 +236,7 @@ function LaundryDashboard() {
             try { const parsed = JSON.parse(rawImages); parsedImages = Array.isArray(parsed) ? parsed : []; } catch { parsedImages = []; }
           }
           const createdAt = safeIso(o.created_at ?? o.createdAt);
-          return {
+          const order: LaundryOrder = {
             id: docSnap.id,
             created_at: createdAt,
             status: normalizeStatus(o.status),
@@ -256,67 +259,58 @@ function LaundryDashboard() {
             deliveryTier:     o.deliveryTier || "standard",
             basePrice:        o.basePrice !== undefined ? Number(o.basePrice) : undefined,
             laundryId:        o.laundryId || "",
-          } as LaundryOrder;
+          };
+          // Exclude placeholders
+          if (order.delivery_method === "placeholder" || order.id.startsWith("placeholder")) return;
+          ordersMergeMap.set(docSnap.id, order);
         } catch (docErr) {
           console.error(`[laundry-dashboard] failed to parse order doc ${docSnap.id}:`, docErr);
-          return null;
         }
-      }).filter((o): o is LaundryOrder => o !== null);
-
-      const filteredForShop = realOrders.filter((o) => {
-        if (o.delivery_method === "placeholder" || o.id.startsWith("placeholder")) return false;
-        if (user?.role === "laundry") {
-          return !o.laundryId || o.laundryId === user.uid;
-        }
-        return true;
       });
+
+      const merged = Array.from(ordersMergeMap.values());
 
       const getUrgencyScore = (o: LaundryOrder) => {
         const tier = (o.deliveryTier || "").toLowerCase();
         const addons = o.addons || [];
-        
-        // Same-Day / Super Express / כביסה מהירה
         if (
-          tier === "super_express" || 
-          tier === "same_day" || 
-          tier === "כביסה מהירה" || 
-          addons.includes("express_wash") ||
-          tier.includes("super") ||
-          tier.includes("same") ||
-          tier.includes("מהירה")
-        ) {
-          return 3;
-        }
-        // Express
-        if (tier === "express" || tier.includes("express")) {
-          return 2;
-        }
-        // Standard / Regular / other
+          tier === "super_express" || tier === "same_day" || tier === "כביסה מהירה" ||
+          addons.includes("express_wash") || tier.includes("super") || tier.includes("same") || tier.includes("מהירה")
+        ) return 3;
+        if (tier === "express" || tier.includes("express")) return 2;
         return 1;
       };
 
-      filteredForShop.sort((a, b) => {
+      merged.sort((a, b) => {
         const scoreA = getUrgencyScore(a);
         const scoreB = getUrgencyScore(b);
-
-        if (scoreB !== scoreA) {
-          return scoreB - scoreA; // Highest score (3) first
-        }
-
-        // Tie-breaker: Oldest creation date first
+        if (scoreB !== scoreA) return scoreB - scoreA;
         try {
-          const timeA = new Date(a.created_at).getTime();
-          const timeB = new Date(b.created_at).getTime();
-          return timeA - timeB; // Oldest time first
-        } catch {
-          return 0;
-        }
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        } catch { return 0; }
       });
 
-      setOrders(filteredForShop as any);
+      setOrders(merged as any);
       setIsLoading(false);
-    }, (err) => {
-      console.error("Firestore orders listen error:", err);
+    };
+
+    // Query 1 — STRICT: orders explicitly bound to this laundry user
+    const qStrict = query(
+      collection(db, "orders"),
+      where("laundryId", "==", user.uid),
+    );
+    // Query 2 — LEGACY backward-compat: orders with no laundryId assigned
+    const qLegacy = query(
+      collection(db, "orders"),
+      where("laundryId", "==", ""),
+    );
+
+    const unsubStrict = onSnapshot(qStrict, processSnapshot, (err) => {
+      console.error("[laundry-dashboard] strict query error:", err);
+      setIsLoading(false);
+    });
+    const unsubLegacy = onSnapshot(qLegacy, processSnapshot, (err) => {
+      console.error("[laundry-dashboard] legacy query error:", err);
       setIsLoading(false);
     });
 
@@ -337,8 +331,12 @@ function LaundryDashboard() {
       }
     };
     window.addEventListener("storage", onStorage);
-    return () => { unsub(); window.removeEventListener("storage", onStorage); };
-  }, []);
+    return () => {
+      unsubStrict();
+      unsubLegacy();
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [user?.uid]);
 
   /* ── Firestore helpers ──────────────────────────────────────────── */
   const updateOrderStatus = async (orderId: string, newStatus: string) => {

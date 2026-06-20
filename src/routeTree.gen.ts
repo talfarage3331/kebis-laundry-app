@@ -20,6 +20,7 @@ import { Route as ChatRouteImport } from './routes/chat'
 import { Route as AdminChatRouteImport } from './routes/admin-chat'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ShopSlugRouteImport } from './routes/shop.$slug'
 import { Route as ApiPushUnsubscribeRouteImport } from './routes/api/push/unsubscribe'
 import { Route as ApiPushSubscribeRouteImport } from './routes/api/push/subscribe'
 import { Route as ApiPushNotifyRouteImport } from './routes/api/push/notify'
@@ -79,6 +80,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ShopSlugRoute = ShopSlugRouteImport.update({
+  id: '/shop/$slug',
+  path: '/shop/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPushUnsubscribeRoute = ApiPushUnsubscribeRouteImport.update({
   id: '/api/push/unsubscribe',
   path: '/api/push/unsubscribe',
@@ -107,6 +113,7 @@ export interface FileRoutesByFullPath {
   '/profile': typeof ProfileRoute
   '/signup': typeof SignupRoute
   '/tracking': typeof TrackingRoute
+  '/shop/$slug': typeof ShopSlugRoute
   '/api/push/notify': typeof ApiPushNotifyRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/push/unsubscribe': typeof ApiPushUnsubscribeRoute
@@ -123,6 +130,7 @@ export interface FileRoutesByTo {
   '/profile': typeof ProfileRoute
   '/signup': typeof SignupRoute
   '/tracking': typeof TrackingRoute
+  '/shop/$slug': typeof ShopSlugRoute
   '/api/push/notify': typeof ApiPushNotifyRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/push/unsubscribe': typeof ApiPushUnsubscribeRoute
@@ -140,6 +148,7 @@ export interface FileRoutesById {
   '/profile': typeof ProfileRoute
   '/signup': typeof SignupRoute
   '/tracking': typeof TrackingRoute
+  '/shop/$slug': typeof ShopSlugRoute
   '/api/push/notify': typeof ApiPushNotifyRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/push/unsubscribe': typeof ApiPushUnsubscribeRoute
@@ -158,6 +167,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/signup'
     | '/tracking'
+    | '/shop/$slug'
     | '/api/push/notify'
     | '/api/push/subscribe'
     | '/api/push/unsubscribe'
@@ -174,6 +184,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/signup'
     | '/tracking'
+    | '/shop/$slug'
     | '/api/push/notify'
     | '/api/push/subscribe'
     | '/api/push/unsubscribe'
@@ -190,6 +201,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/signup'
     | '/tracking'
+    | '/shop/$slug'
     | '/api/push/notify'
     | '/api/push/subscribe'
     | '/api/push/unsubscribe'
@@ -207,6 +219,7 @@ export interface RootRouteChildren {
   ProfileRoute: typeof ProfileRoute
   SignupRoute: typeof SignupRoute
   TrackingRoute: typeof TrackingRoute
+  ShopSlugRoute: typeof ShopSlugRoute
   ApiPushNotifyRoute: typeof ApiPushNotifyRoute
   ApiPushSubscribeRoute: typeof ApiPushSubscribeRoute
   ApiPushUnsubscribeRoute: typeof ApiPushUnsubscribeRoute
@@ -291,6 +304,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/shop/$slug': {
+      id: '/shop/$slug'
+      path: '/shop/$slug'
+      fullPath: '/shop/$slug'
+      preLoaderRoute: typeof ShopSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/push/unsubscribe': {
       id: '/api/push/unsubscribe'
       path: '/api/push/unsubscribe'
@@ -327,6 +347,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProfileRoute: ProfileRoute,
   SignupRoute: SignupRoute,
   TrackingRoute: TrackingRoute,
+  ShopSlugRoute: ShopSlugRoute,
   ApiPushNotifyRoute: ApiPushNotifyRoute,
   ApiPushSubscribeRoute: ApiPushSubscribeRoute,
   ApiPushUnsubscribeRoute: ApiPushUnsubscribeRoute,
@@ -334,3 +355,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

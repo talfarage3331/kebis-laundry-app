@@ -282,7 +282,7 @@ function RoleRouteGuard({ children }: { children: React.ReactNode }) {
       }
     } else {
       // Guest
-      const isPublicPath = ["/login", "/signup", "/"].includes(path);
+      const isPublicPath = ["/login", "/signup", "/"].includes(path) || path.startsWith("/shop/");
       if (!isPublicPath) {
         navigate({ to: "/login", replace: true });
       }
@@ -327,7 +327,7 @@ function RoleRouteGuard({ children }: { children: React.ReactNode }) {
       );
     }
   } else {
-    const isPublicPath = ["/login", "/signup", "/"].includes(path);
+    const isPublicPath = ["/login", "/signup", "/"].includes(path) || path.startsWith("/shop/");
     if (!isPublicPath) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-background">

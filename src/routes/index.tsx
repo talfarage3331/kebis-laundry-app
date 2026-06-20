@@ -375,20 +375,31 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
   const [deliveryTier, setDeliveryTier] = useState<string>("standard");
   const [phoneNumber, setPhoneNumber] = useState("");
 
+  // ── Multi-tenant: read active tenant from context ────────────────────────────────
+  const { activeTenantId, activeTenantName } = useLaundry();
+  const hasTenant = Boolean(activeTenantId);
+
   // Laundry shops state & option hook
   const { customAddons, customTiers } = useLaundryOptions();
   const [laundryShops, setLaundryShops] = useState<{ id: string; name: string }[]>([]);
   const [selectedLaundry, setSelectedLaundry] = useState<{ id: string; name: string } | null>(null);
 
-  // Load laundry shops
+  // Determine the effective laundry ID to use:
+  // - If a tenant is active (via slug), always use that.
+  // - Otherwise fall back to the dropdown selection.
+  const effectiveLaundryId = hasTenant ? (activeTenantId ?? "") : (selectedLaundry?.id ?? "");
+  const effectiveLaundryName = hasTenant ? (activeTenantName ?? "") : (selectedLaundry?.name ?? "");
+
+  // Load laundry shops (only needed for the fallback dropdown)
   useEffect(() => {
+    if (hasTenant) return; // Skip shop loading when tenant is pre-set by slug
     const q = query(collection(db, "users"), where("role", "==", "laundry"));
     const unsub = onSnapshot(q, (snapshot) => {
       const shops = snapshot.docs.map((docSnap) => {
         const d = docSnap.data();
         return {
           id: docSnap.id,
-          name: d.fullName || d.name || `מכבסה #${docSnap.id.slice(0, 4)}`,
+          name: d.businessName || d.fullName || d.name || `מכבסה #${docSnap.id.slice(0, 4)}`,
         };
       });
       setLaundryShops(shops);
@@ -401,18 +412,18 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
       }
     });
     return () => unsub();
-  }, [selectedLaundry]);
+  }, [hasTenant, selectedLaundry]);
 
   // Seed default options if the selected laundry shop has none
   useEffect(() => {
-    if (isOpen && selectedLaundry?.id) {
-      seedDefaultsIfEmpty(selectedLaundry.id);
+    if (isOpen && effectiveLaundryId) {
+      seedDefaultsIfEmpty(effectiveLaundryId);
     }
-  }, [isOpen, selectedLaundry?.id]);
+  }, [isOpen, effectiveLaundryId]);
 
-  // Filter addons & delivery tiers for the selected shop
-  const shopAddonsList = customAddons.filter(a => a.laundryId === selectedLaundry?.id);
-  const shopTiersList = customTiers.filter(t => t.laundryId === selectedLaundry?.id);
+  // Filter addons & delivery tiers for the active/selected shop
+  const shopAddonsList = customAddons.filter(a => a.laundryId === effectiveLaundryId);
+  const shopTiersList = customTiers.filter(t => t.laundryId === effectiveLaundryId);
 
   // Build options maps
   const shopAddons: Record<string, { label: string; price: number; group: string; desc: string }> = {};
@@ -735,7 +746,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
         0,
         estimatedTotalPrice,
         requiresWashing,
-        selectedLaundry?.id || "default_laundry"
+        effectiveLaundryId || "default_laundry"
       );
 
       setAddressSearchQuery("");
@@ -776,27 +787,42 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
         </DialogHeader>
 
         <div className="space-y-5 my-4 text-right">
-          {/* Shop Selection Field */}
-          <div className="space-y-2 text-right">
-            <label className="text-sm font-bold text-foreground block">
-              בחר סניף / מכבסה <span className="text-destructive font-black">*</span>
-            </label>
-            <select
-              value={selectedLaundry?.id || ""}
-              onChange={(e) => {
-                const shop = laundryShops.find(s => s.id === e.target.value);
-                if (shop) setSelectedLaundry(shop);
-              }}
-              className="w-full h-11 px-3 rounded-2xl border border-muted-foreground/20 bg-background text-foreground text-sm font-bold focus:outline-none focus:ring-2 focus:ring-primary text-right appearance-none"
-              dir="rtl"
-            >
-              {laundryShops.map((shop) => (
-                <option key={shop.id} value={shop.id}>
-                  🏪 {shop.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* Shop Banner / Selection Field — Chameleon UI */}
+          {hasTenant ? (
+            /* TENANT MODE: show branded banner instead of dropdown */
+            <div className="flex items-center gap-2.5 bg-primary/8 border border-primary/20 rounded-2xl px-4 py-3">
+              <div className="size-8 rounded-full bg-primary/15 grid place-items-center shrink-0">
+                <Store className="size-4 text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-bold text-primary uppercase tracking-wider">מכבסה פעילה</p>
+                <p className="text-sm font-extrabold text-foreground truncate">{effectiveLaundryName}</p>
+              </div>
+              <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full whitespace-nowrap">✓ מחובר</span>
+            </div>
+          ) : (
+            /* FALLBACK MODE: show shop selector dropdown */
+            <div className="space-y-2 text-right">
+              <label className="text-sm font-bold text-foreground block">
+                בחר סניף / מכבסה <span className="text-destructive font-black">*</span>
+              </label>
+              <select
+                value={selectedLaundry?.id || ""}
+                onChange={(e) => {
+                  const shop = laundryShops.find(s => s.id === e.target.value);
+                  if (shop) setSelectedLaundry(shop);
+                }}
+                className="w-full h-11 px-3 rounded-2xl border border-muted-foreground/20 bg-background text-foreground text-sm font-bold focus:outline-none focus:ring-2 focus:ring-primary text-right appearance-none"
+                dir="rtl"
+              >
+                {laundryShops.map((shop) => (
+                  <option key={shop.id} value={shop.id}>
+                    🏪 {shop.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Pickup Address Field */}
           <div className="space-y-2 relative">

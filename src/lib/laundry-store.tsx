@@ -52,6 +52,15 @@ interface Store {
   login: (u: User) => void;
   logout: () => void;
 
+  /** The laundry vendor UID resolved from the active shop slug (persisted in localStorage) */
+  activeTenantId: string | null;
+  /** Display name of the active tenant */
+  activeTenantName: string | null;
+  /** URL slug of the active tenant */
+  activeTenantSlug: string | null;
+  /** Call this to clear the active tenant (e.g., when user navigates away from a shop link) */
+  clearActiveTenant: () => void;
+
   orderState: OrderState;
   deliveryMethod: DeliveryMethod;
   paymentState: PaymentState;
@@ -188,6 +197,43 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     }
     return [];
   });
+
+  // ── Multi-tenant state ────────────────────────────────────────────
+  const [activeTenantId, setActiveTenantId] = useState<string | null>(() =>
+    typeof window !== "undefined" ? localStorage.getItem("activeLaundryId") : null,
+  );
+  const [activeTenantName, setActiveTenantName] = useState<string | null>(() =>
+    typeof window !== "undefined" ? localStorage.getItem("activeLaundryName") : null,
+  );
+  const [activeTenantSlug, setActiveTenantSlug] = useState<string | null>(() =>
+    typeof window !== "undefined" ? localStorage.getItem("activeLaundrySlug") : null,
+  );
+
+  // Listen for localStorage changes triggered by ShopSlugResolver (cross-tab or same-tab via StorageEvent)
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "activeLaundryId") {
+        setActiveTenantId(e.newValue);
+      }
+      if (e.key === "activeLaundryName") {
+        setActiveTenantName(e.newValue);
+      }
+      if (e.key === "activeLaundrySlug") {
+        setActiveTenantSlug(e.newValue);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  const clearActiveTenant = useCallback(() => {
+    localStorage.removeItem("activeLaundryId");
+    localStorage.removeItem("activeLaundryName");
+    localStorage.removeItem("activeLaundrySlug");
+    setActiveTenantId(null);
+    setActiveTenantName(null);
+    setActiveTenantSlug(null);
+  }, []);
 
   // Auth listener — real-time role sync using onSnapshot with robust error callbacks and defaulting
   useEffect(() => {
@@ -429,6 +475,8 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       washing: boolean = false,
       laundryId?: string,
     ): Promise<string | null> => {
+      // Auto-resolve tenant from context if caller didn't supply one
+      const resolvedLaundryId = laundryId || activeTenantId || "";
       if (!user) return null;
       const newState: OrderState = "pending";
       const amount = 0;
@@ -505,7 +553,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
           addons: addons || [],
           deliveryTier: deliveryTier || "standard",
           basePrice: basePrice || 0,
-          laundryId: laundryId || "",
+          laundryId: resolvedLaundryId,
         });
 
         // Synchronize laundry notifications list locally (Mock triggers)
@@ -532,7 +580,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         return null;
       }
     },
-    [user],
+    [user, activeTenantId],
   );
 
   const advanceOrder = useCallback(async () => {
@@ -626,6 +674,10 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         isRoleLoading,
         login,
         logout,
+        activeTenantId,
+        activeTenantName,
+        activeTenantSlug,
+        clearActiveTenant,
         orderState,
         deliveryMethod,
         paymentState,

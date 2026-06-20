@@ -5,6 +5,7 @@ import {
   addDoc,
   updateDoc,
   deleteDoc,
+  getDoc,
   query,
   where,
   onSnapshot,
@@ -13,6 +14,7 @@ import {
 import { db } from "@/lib/firebase";
 import { useLaundry } from "@/lib/laundry-store";
 import { useLaundryOptions, seedDefaultsIfEmpty } from "@/hooks/use-laundry-options";
+import { generateSlug } from "@/lib/slug";
 import {
   Plus,
   Edit2,
@@ -24,6 +26,8 @@ import {
   Loader2,
   PlusCircle,
   RefreshCw,
+  Link,
+  Copy,
 } from "lucide-react";
 import {
   Dialog,
@@ -69,6 +73,60 @@ export function LaundrySettingsCRUDPanel() {
   const [addons, setAddons] = useState<any[]>([]);
   const [tiers, setTiers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // ── Shareable link state ────────────────────────────────────────────
+  const [shopSlug, setShopSlug] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  // Load shopSlug from the logged-in user's Firestore doc
+  useEffect(() => {
+    if (!laundryId) return;
+    const fetchSlug = async () => {
+      try {
+        const docSnap = await getDoc(doc(db, "users", laundryId));
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setShopSlug(data.shopSlug || null);
+        }
+      } catch (err) {
+        console.warn("[LaundrySettingsCRUDPanel] could not load shopSlug:", err);
+      }
+    };
+    fetchSlug();
+  }, [laundryId]);
+
+  /** Generate a unique slug from the user's name and persist it */
+  const handleGenerateSlug = async () => {
+    if (!laundryId || !user?.name) return;
+    setIsGenerating(true);
+    try {
+      const base = generateSlug(user.name);
+      // Append a short timestamp suffix to keep it unique
+      const candidate = base || `shop-${laundryId.slice(0, 6)}`;
+      await updateDoc(doc(db, "users", laundryId), { shopSlug: candidate });
+      setShopSlug(candidate);
+      toast.success("קישור החנות נוצר בהצלחה!");
+    } catch (err: any) {
+      toast.error("שגיאה ביצירת הקישור: " + err.message);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  /** Copy the shop URL to clipboard */
+  const handleCopyLink = async () => {
+    if (!shopSlug) return;
+    const url = `${window.location.origin}/shop/${shopSlug}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      toast.success("הקישור הועתק ללוח!");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("שגיאה בהעתקת הקישור");
+    }
+  };
 
   // Dialog States
   const [addonModalOpen, setAddonModalOpen] = useState(false);
@@ -266,6 +324,48 @@ export function LaundrySettingsCRUDPanel() {
 
   return (
     <div className="bg-card border border-muted-foreground/10 rounded-2xl p-4 sm:p-5 shadow-sm space-y-4 text-right" dir="rtl">
+
+      {/* ──── Shareable Link Card ───────────────────────────────────── */}
+      <div className="bg-gradient-to-br from-primary/5 to-primary/10 border border-primary/20 rounded-2xl p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <div className="size-8 rounded-full bg-primary/15 grid place-items-center shrink-0">
+            <Link className="size-4 text-primary" />
+          </div>
+          <div>
+            <p className="text-sm font-extrabold text-foreground">קישור החנות האישית שלך</p>
+            <p className="text-[10px] text-muted-foreground">שתף קישור זה עם לקוחותך — הם יגיעו ישירות לחנות שלך</p>
+          </div>
+        </div>
+
+        {shopSlug ? (
+          <div className="flex items-center gap-2">
+            <div className="flex-1 min-w-0 bg-background border border-muted-foreground/20 rounded-xl px-3 py-2 font-mono text-xs text-primary font-bold truncate select-all">
+              {window.location.origin}/shop/{shopSlug}
+            </div>
+            <button
+              onClick={handleCopyLink}
+              className={`shrink-0 size-9 rounded-xl flex items-center justify-center transition-all active:scale-95 ${
+                copied
+                  ? "bg-emerald-50 text-emerald-600 border border-emerald-200"
+                  : "bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-primary-foreground"
+              }`}
+              title="העתק קישור"
+            >
+              {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={handleGenerateSlug}
+            disabled={isGenerating}
+            className="w-full py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-black flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50"
+          >
+            {isGenerating ? <Loader2 className="size-3.5 animate-spin" /> : <Link className="size-3.5" />}
+            צור קישור לחנות
+          </button>
+        )}
+      </div>
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-muted-foreground/10 pb-3">
         <div>
           <h2 className="text-base font-extrabold text-foreground flex items-center gap-2">
