@@ -14,7 +14,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
     if (!isFullyLoaded) return;
 
     if (!user) {
-      if (!["/login", "/signup"].includes(pathname)) {
+      const isPublicPath = ["/login", "/signup"].includes(pathname) || pathname.startsWith("/shop/");
+      if (!isPublicPath) {
         navigate({ to: "/login" });
       }
       return;
