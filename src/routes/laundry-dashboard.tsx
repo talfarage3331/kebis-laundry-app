@@ -50,6 +50,7 @@ interface LaundryOrder {
   images?: string[];
   requires_ironing?: boolean;
   requires_dry_cleaning?: boolean;
+  requires_washing?: boolean;
   invoices?: Array<{ id: string; date: string; name: string; data: string }>;
   addons?: string[];
   deliveryTier?: string;
@@ -243,6 +244,7 @@ function LaundryDashboard() {
             images:           parsedImages,
             requires_ironing:     !!(o.requires_ironing || o.requiresIroning),
             requires_dry_cleaning:!!(o.requires_dry_cleaning || o.requiresDryCleaning),
+            requires_washing:     !!(o.requires_washing || o.requiresWashing),
             invoices: o.invoiceUrl
               ? [{ id: `inv-${docSnap.id}`, date: createdAt, name: o.invoiceName ?? "invoice.pdf", data: o.invoiceUrl }]
               : [],
@@ -808,8 +810,11 @@ function LaundryDashboard() {
                                   </div>
 
                                   {/* Services badges */}
-                                  {(order.requires_ironing || order.requires_dry_cleaning || (order.addons && order.addons.length > 0)) && (
+                                  {(order.requires_washing || order.requires_ironing || order.requires_dry_cleaning || (order.addons && order.addons.length > 0)) && (
                                     <div className="flex gap-1.5 flex-wrap">
+                                      {order.requires_washing && (
+                                        <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-black px-2 py-0.5 rounded-full">כביסה 👕</span>
+                                      )}
                                       {order.requires_ironing && (
                                         <span className="bg-primary/10 text-primary border border-primary/20 text-[10px] font-black px-2 py-0.5 rounded-full">גיהוץ 🧺</span>
                                       )}

@@ -139,7 +139,19 @@ function Dashboard() {
       <PickupModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        onSubmit={async (address, notes, images, requiresIroning, requiresDryCleaning, deliveryMethod) => {
+        onSubmit={async (
+          address,
+          notes,
+          images,
+          requiresIroning,
+          requiresDryCleaning,
+          deliveryMethod,
+          addons,
+          deliveryTier,
+          basePrice,
+          totalPrice,
+          requiresWashing,
+        ) => {
           // Combine address + optional user notes into a single notes string stored in the DB
           const combinedNotes = [address, notes].filter(Boolean).join("\n\n");
           const orderId = await createOrder(
@@ -148,6 +160,11 @@ function Dashboard() {
             requiresIroning,
             requiresDryCleaning,
             deliveryMethod,
+            addons,
+            deliveryTier,
+            basePrice,
+            totalPrice,
+            requiresWashing,
           );
           setIsModalOpen(false);
           if (orderId) {
@@ -241,6 +258,7 @@ interface PickupModalProps {
     deliveryTier: string,
     basePrice: number,
     totalPrice: number,
+    requiresWashing: boolean,
   ) => Promise<void>;
 }
 
@@ -257,21 +275,9 @@ function AddonRow({ label, price, desc, selected, onToggle }: AddonRowProps) {
   return (
     <div
       onClick={onToggle}
-      className="flex justify-between items-center w-full py-3.5 border-b border-slate-100 transition-all cursor-pointer select-none text-right"
+      className="flex items-center w-full py-3.5 border-b border-slate-100 transition-all cursor-pointer select-none text-right gap-3"
       dir="rtl"
     >
-      <div className="flex-1 min-w-0 text-right pl-3">
-        <div className="flex items-center gap-1.5 flex-wrap justify-start">
-          <span className="text-sm font-bold text-foreground">{label}</span>
-          {price > 0 && (
-            <span className="text-[10px] font-black text-primary bg-primary/10 px-2 py-0.5 rounded-full">
-              +₪{price}
-            </span>
-          )}
-        </div>
-        <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{desc}</p>
-      </div>
-
       <div className="shrink-0">
         <div
           className={`size-5 rounded-md border flex items-center justify-center transition-all ${
@@ -282,6 +288,18 @@ function AddonRow({ label, price, desc, selected, onToggle }: AddonRowProps) {
         >
           {selected && <Check className="size-3.5 stroke-[3]" />}
         </div>
+      </div>
+
+      <div className="flex-1 min-w-0 text-right">
+        <div className="flex items-center gap-1.5 flex-wrap justify-start">
+          <span className="text-sm font-bold text-foreground">{label}</span>
+          {price > 0 && (
+            <span className="text-[10px] font-black text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+              +₪{price}
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{desc}</p>
       </div>
     </div>
   );
@@ -300,21 +318,9 @@ function RadioRow({ label, price, desc, selected, onSelect }: RadioRowProps) {
   return (
     <div
       onClick={onSelect}
-      className="flex justify-between items-center w-full py-3.5 border-b border-slate-100 transition-all cursor-pointer select-none text-right"
+      className="flex items-center w-full py-3.5 border-b border-slate-100 transition-all cursor-pointer select-none text-right gap-3"
       dir="rtl"
     >
-      <div className="flex-1 min-w-0 text-right pl-3">
-        <div className="flex items-center gap-1.5 flex-wrap justify-start">
-          <span className="text-sm font-bold text-foreground">{label}</span>
-          {price > 0 && (
-            <span className="text-[10px] font-black text-primary bg-primary/10 px-2 py-0.5 rounded-full">
-              +₪{price}
-            </span>
-          )}
-        </div>
-        <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{desc}</p>
-      </div>
-
       <div className="shrink-0">
         <div
           className={`size-5 rounded-full border-2 flex items-center justify-center transition-all ${
@@ -325,6 +331,18 @@ function RadioRow({ label, price, desc, selected, onSelect }: RadioRowProps) {
         >
           {selected && <div className="size-2.5 rounded-full bg-primary" />}
         </div>
+      </div>
+
+      <div className="flex-1 min-w-0 text-right">
+        <div className="flex items-center gap-1.5 flex-wrap justify-start">
+          <span className="text-sm font-bold text-foreground">{label}</span>
+          {price > 0 && (
+            <span className="text-[10px] font-black text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+              +₪{price}
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{desc}</p>
       </div>
     </div>
   );
@@ -345,6 +363,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
   const [images, setImages] = useState<string[]>([]);
   const [requiresIroning, setRequiresIroning] = useState(false);
   const [requiresDryCleaning, setRequiresDryCleaning] = useState(false);
+  const [requiresWashing, setRequiresWashing] = useState(false);
   const [deliveryMethod, setDeliveryMethod] = useState<"self_pickup" | "home_delivery" | null>(null);
   
   // Wolt add-ons and delivery tier states
@@ -388,6 +407,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
       setImages([]);
       setRequiresIroning(false);
       setRequiresDryCleaning(false);
+      setRequiresWashing(false);
       setDeliveryMethod(null);
       setSelectedAddons([]);
       setDeliveryTier("standard");
@@ -647,7 +667,8 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
         selectedAddons,
         deliveryMethod === "home_delivery" ? deliveryTier : "standard",
         0,
-        estimatedTotalPrice
+        estimatedTotalPrice,
+        requiresWashing
       );
 
       setAddressSearchQuery("");
@@ -660,6 +681,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
       setImages([]);
       setRequiresIroning(false);
       setRequiresDryCleaning(false);
+      setRequiresWashing(false);
       setDeliveryMethod(null);
       setSelectedAddons([]);
       setDeliveryTier("standard");
@@ -857,43 +879,78 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
             />
           </div>
 
-          {/* Additional Services Section */}
+          {/* Service Type Grid */}
           <div className="space-y-2.5">
             <label className="text-sm font-bold text-foreground block">
-              שירותים נוספים (אופציונלי)
+              סוגי שירות מבוקשים
             </label>
-            <div className="grid grid-cols-2 gap-4 text-right dir-rtl" dir="rtl">
+            <div className="grid grid-cols-3 gap-2 sm:gap-3 text-right dir-rtl" dir="rtl">
+              {/* Washing Card */}
+              <div
+                onClick={() => setRequiresWashing(!requiresWashing)}
+                className={`relative overflow-hidden rounded-2xl p-2.5 sm:p-3.5 min-h-[44px] flex flex-col items-center justify-center gap-2 text-center cursor-pointer transition-all duration-300 border select-none ${
+                  requiresWashing
+                    ? "border-2 border-primary bg-primary/10 shadow-[0_8px_30px_rgba(124,58,237,0.15)] scale-[1.02]"
+                    : "border-muted-foreground/10 bg-background/50 hover:bg-muted/30 hover:shadow-sm"
+                }`}
+              >
+                {requiresWashing && (
+                  <span className="absolute top-1.5 right-1.5 size-4 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-sm animate-in scale-in duration-200">
+                    <Check className="size-2.5 stroke-[3]" />
+                  </span>
+                )}
+                <div
+                  className={`size-10 rounded-xl flex items-center justify-center transition-all ${
+                    requiresWashing ? "bg-primary/20 scale-110" : "bg-muted/60"
+                  }`}
+                >
+                  <Shirt
+                    className={`size-5 transition-colors ${requiresWashing ? "text-primary animate-pulse" : "text-muted-foreground"}`}
+                  />
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <span
+                    className={`text-xs font-black transition-colors ${requiresWashing ? "text-primary" : "text-foreground"}`}
+                  >
+                    כביסה 👕
+                  </span>
+                  <span className="text-[9px] font-medium text-muted-foreground leading-normal">
+                    ניקוי וריענון
+                  </span>
+                </div>
+              </div>
+
               {/* Ironing Card */}
               <div
                 onClick={() => setRequiresIroning(!requiresIroning)}
-                className={`relative overflow-hidden rounded-2xl sm:rounded-3xl p-3 sm:p-4 min-h-[44px] flex flex-col items-center justify-center gap-2 sm:gap-3 text-center cursor-pointer transition-all duration-300 border select-none ${
+                className={`relative overflow-hidden rounded-2xl p-2.5 sm:p-3.5 min-h-[44px] flex flex-col items-center justify-center gap-2 text-center cursor-pointer transition-all duration-300 border select-none ${
                   requiresIroning
                     ? "border-2 border-primary bg-primary/10 shadow-[0_8px_30px_rgba(124,58,237,0.15)] scale-[1.02]"
                     : "border-muted-foreground/10 bg-background/50 hover:bg-muted/30 hover:shadow-sm"
                 }`}
               >
                 {requiresIroning && (
-                  <span className="absolute top-2.5 right-2.5 size-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-sm animate-in scale-in duration-200">
-                    <Check className="size-3 stroke-[3]" />
+                  <span className="absolute top-1.5 right-1.5 size-4 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-sm animate-in scale-in duration-200">
+                    <Check className="size-2.5 stroke-[3]" />
                   </span>
                 )}
                 <div
-                  className={`size-12 rounded-2xl flex items-center justify-center transition-all ${
+                  className={`size-10 rounded-xl flex items-center justify-center transition-all ${
                     requiresIroning ? "bg-primary/20 scale-110" : "bg-muted/60"
                   }`}
                 >
                   <Shirt
-                    className={`size-6 transition-colors ${requiresIroning ? "text-primary animate-pulse" : "text-muted-foreground"}`}
+                    className={`size-5 transition-colors ${requiresIroning ? "text-primary animate-pulse" : "text-muted-foreground"}`}
                   />
                 </div>
                 <div className="flex flex-col gap-0.5">
                   <span
-                    className={`text-sm font-black transition-colors ${requiresIroning ? "text-primary" : "text-foreground"}`}
+                    className={`text-xs font-black transition-colors ${requiresIroning ? "text-primary" : "text-foreground"}`}
                   >
                     גיהוץ 🧺
                   </span>
-                  <span className="text-[10px] font-medium text-muted-foreground leading-normal">
-                    כולל קיפול ריחני
+                  <span className="text-[9px] font-medium text-muted-foreground leading-normal">
+                    קיפול וריח
                   </span>
                 </div>
               </div>
@@ -901,34 +958,34 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
               {/* Dry Cleaning Card */}
               <div
                 onClick={() => setRequiresDryCleaning(!requiresDryCleaning)}
-                className={`relative overflow-hidden rounded-2xl sm:rounded-3xl p-3 sm:p-4 min-h-[44px] flex flex-col items-center justify-center gap-2 sm:gap-3 text-center cursor-pointer transition-all duration-300 border select-none ${
+                className={`relative overflow-hidden rounded-2xl p-2.5 sm:p-3.5 min-h-[44px] flex flex-col items-center justify-center gap-2 text-center cursor-pointer transition-all duration-300 border select-none ${
                   requiresDryCleaning
                     ? "border-2 border-primary bg-primary/10 shadow-[0_8px_30px_rgba(124,58,237,0.15)] scale-[1.02]"
                     : "border-muted-foreground/10 bg-background/50 hover:bg-muted/30 hover:shadow-sm"
                 }`}
               >
                 {requiresDryCleaning && (
-                  <span className="absolute top-2.5 right-2.5 size-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-sm animate-in scale-in duration-200">
-                    <Check className="size-3 stroke-[3]" />
+                  <span className="absolute top-1.5 right-1.5 size-4 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-sm animate-in scale-in duration-200">
+                    <Check className="size-2.5 stroke-[3]" />
                   </span>
                 )}
                 <div
-                  className={`size-12 rounded-2xl flex items-center justify-center transition-all ${
+                  className={`size-10 rounded-xl flex items-center justify-center transition-all ${
                     requiresDryCleaning ? "bg-primary/20 scale-110" : "bg-muted/60"
                   }`}
                 >
                   <Sparkles
-                    className={`size-6 transition-colors ${requiresDryCleaning ? "text-primary" : "text-muted-foreground"}`}
+                    className={`size-5 transition-colors ${requiresDryCleaning ? "text-primary" : "text-muted-foreground"}`}
                   />
                 </div>
                 <div className="flex flex-col gap-0.5">
                   <span
-                    className={`text-sm font-black transition-colors ${requiresDryCleaning ? "text-primary" : "text-foreground"}`}
+                    className={`text-xs font-black transition-colors ${requiresDryCleaning ? "text-primary" : "text-foreground"}`}
                   >
                     ניקוי יבש ✨
                   </span>
-                  <span className="text-[10px] font-medium text-muted-foreground leading-normal">
-                    הסרת כתמים וטיפול עדין
+                  <span className="text-[9px] font-medium text-muted-foreground leading-normal">
+                    טיפול עדין
                   </span>
                 </div>
               </div>
@@ -1151,49 +1208,66 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
             </p>
           </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-bold text-foreground block">
-              צילום כתמים או פריטים עדינים (אופציונלי)
-            </label>
-
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-muted-foreground/20 hover:border-primary/50 transition-colors rounded-2xl p-4 sm:p-6 text-center cursor-pointer flex flex-col items-center justify-center gap-2 bg-muted/30 group min-h-[44px]"
-            >
-              <div className="size-12 rounded-full bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-                <Camera className="size-6 text-primary" />
-              </div>
-              <p className="text-sm font-semibold text-foreground">לחץ להעלאת תמונות</p>
-              <p className="text-xs text-muted-foreground">ניתן להעלות מספר תמונות</p>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept="image/*"
-                onChange={handleFileChange}
-                className="hidden"
+          {/* Section: דגשים מיוחדים וצילום */}
+          <div className="space-y-4 border-t border-slate-100 pt-4">
+            <h3 className="text-sm sm:text-base font-bold text-foreground">דגשים וצילומים 📸</h3>
+            
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-muted-foreground block">
+                דגשים מיוחדים לכביסה (אופציונלי)
+              </label>
+              <Textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="יש לך דגשים מיוחדים לכביסה? כתוב לנו כאן... (למשל: כביסה עדינה, להפריד צבעים)"
+                className="min-h-[80px] rounded-2xl border-muted-foreground/20 focus-visible:ring-primary focus-visible:border-primary text-sm p-3 leading-relaxed text-right resize-none"
+                dir="rtl"
               />
             </div>
 
-            {images.length > 0 && (
-              <div className="flex flex-wrap gap-2 pt-2 justify-start">
-                {images.map((img, idx) => (
-                  <div
-                    key={idx}
-                    className="relative size-16 sm:size-20 rounded-2xl overflow-hidden group border border-muted-foreground/10 shadow-sm"
-                  >
-                    <img src={img} alt="תצוגה מקדימה" className="size-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => removeImage(idx)}
-                      className="absolute top-1 left-1 size-7 sm:size-6 rounded-full bg-destructive/90 text-destructive-foreground grid place-items-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity active:scale-95 shadow-sm"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
-                  </div>
-                ))}
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-muted-foreground block">
+                צילום כתמים או פריטים עדינים (אופציונלי)
+              </label>
+
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                className="border-2 border-dashed border-muted-foreground/20 hover:border-primary/50 transition-colors rounded-2xl p-4 text-center cursor-pointer flex flex-col items-center justify-center gap-2 bg-muted/30 group min-h-[44px]"
+              >
+                <div className="size-10 rounded-full bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <Camera className="size-5 text-primary" />
+                </div>
+                <p className="text-xs font-semibold text-foreground">לחץ להעלאת תמונות</p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
               </div>
-            )}
+
+              {images.length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-2 justify-start">
+                  {images.map((img, idx) => (
+                    <div
+                      key={idx}
+                      className="relative size-16 rounded-2xl overflow-hidden group border border-muted-foreground/10 shadow-sm"
+                    >
+                      <img src={img} alt="תצוגה מקדימה" className="size-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => removeImage(idx)}
+                        className="absolute top-1 left-1 size-6 rounded-full bg-destructive/90 text-destructive-foreground grid place-items-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity active:scale-95 shadow-sm"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

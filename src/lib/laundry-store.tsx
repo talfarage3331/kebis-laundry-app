@@ -64,6 +64,7 @@ interface Store {
   orderImages: string[];
   requiresIroning: boolean;
   requiresDryCleaning: boolean;
+  requiresWashing: boolean;
 
   createOrder: (
     notes?: string,
@@ -75,6 +76,7 @@ interface Store {
     deliveryTier?: string,
     basePrice?: number,
     totalPrice?: number,
+    requiresWashing?: boolean,
   ) => Promise<string | null>;
   advanceOrder: () => void;
   setDelivery: (m: DeliveryMethod) => void;
@@ -168,6 +170,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [requiresIroning, setRequiresIroning] = useState(false);
   const [requiresDryCleaning, setRequiresDryCleaning] = useState(false);
+  const [requiresWashing, setRequiresWashing] = useState(false);
   const [orderNotes, setOrderNotes] = useState<string | null>(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("laundry_notes");
@@ -342,6 +345,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
           images: data.images || [],
           requires_ironing: !!(data.requires_ironing || data.requiresIroning),
           requires_dry_cleaning: !!(data.requires_dry_cleaning || data.requiresDryCleaning),
+          requires_washing: !!(data.requires_washing || data.requiresWashing),
           created_at: data.created_at || data.createdAt || new Date().toISOString(),
         } as any;
       });
@@ -375,6 +379,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         setActiveOrderDate(activeOrder.created_at);
         setRequiresIroning(activeOrder.requires_ironing);
         setRequiresDryCleaning(activeOrder.requires_dry_cleaning);
+        setRequiresWashing(activeOrder.requires_washing || false);
         setOrderNotes(activeOrder.notes);
         setOrderImages(activeOrder.images);
       } else {
@@ -406,6 +411,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     setInvoices([]);
     setRequiresIroning(false);
     setRequiresDryCleaning(false);
+    setRequiresWashing(false);
   }, []);
 
   const createOrder = useCallback(
@@ -419,6 +425,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       deliveryTier?: string,
       basePrice?: number,
       totalPrice?: number,
+      washing: boolean = false,
     ): Promise<string | null> => {
       if (!user) return null;
       const newState: OrderState = "pending";
@@ -430,6 +437,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       setAmountDue(amount);
       setRequiresIroning(ironing);
       setRequiresDryCleaning(dryCleaning);
+      setRequiresWashing(washing);
 
       localStorage.setItem(`laundry_ironing_${user.email}`, String(ironing));
       localStorage.setItem(`laundry_dry_cleaning_${user.email}`, String(dryCleaning));
@@ -484,6 +492,8 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
           requiresIroning: ironing,
           requires_dry_cleaning: dryCleaning,
           requiresDryCleaning: dryCleaning,
+          requires_washing: washing,
+          requiresWashing: washing,
           notes: notes || "",
           images: images || [],
           invoiceUrl: "",
@@ -596,6 +606,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     setInvoices([]);
     setRequiresIroning(false);
     setRequiresDryCleaning(false);
+    setRequiresWashing(false);
     setOrderNotes(null);
     setOrderImages([]);
     localStorage.removeItem("laundry_notes");
@@ -623,6 +634,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         orderImages,
         requiresIroning,
         requiresDryCleaning,
+        requiresWashing,
         createOrder,
         advanceOrder,
         setDelivery,
