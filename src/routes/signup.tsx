@@ -66,8 +66,6 @@ function Signup() {
 
   const [activeLaundryId, setActiveLaundryId] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
-    const localId = localStorage.getItem("activeLaundryId");
-    if (localId) return localId;
     if (urlLaundryId) {
       localStorage.setItem("activeLaundryId", urlLaundryId);
       window.dispatchEvent(
@@ -78,7 +76,7 @@ function Signup() {
       );
       return urlLaundryId;
     }
-    return null;
+    return localStorage.getItem("activeLaundryId");
   });
 
   useEffect(() => {
@@ -95,32 +93,29 @@ function Signup() {
         })
       );
 
-      const localName = localStorage.getItem("activeLaundryName");
-      if (!localName) {
-        getDoc(doc(db, "users", checkId))
-          .then((snap) => {
-            if (snap.exists()) {
-              const data = snap.data();
-              const vendorName = data.businessName || data.fullName || data.name || "מכבסה";
-              const vendorSlug = data.shopSlug || "";
-              localStorage.setItem("activeLaundryName", vendorName);
-              localStorage.setItem("activeLaundrySlug", vendorSlug);
-              window.dispatchEvent(
-                new StorageEvent("storage", {
-                  key: "activeLaundryName",
-                  newValue: vendorName,
-                })
-              );
-              window.dispatchEvent(
-                new StorageEvent("storage", {
-                  key: "activeLaundrySlug",
-                  newValue: vendorSlug,
-                })
-              );
-            }
-          })
-          .catch((err) => console.warn("[signup] failed to fetch laundry name for guard:", err));
-      }
+      getDoc(doc(db, "users", checkId))
+        .then((snap) => {
+          if (snap.exists()) {
+            const data = snap.data();
+            const vendorName = data.businessName || data.fullName || data.name || "מכבסה";
+            const vendorSlug = data.shopSlug || "";
+            localStorage.setItem("activeLaundryName", vendorName);
+            localStorage.setItem("activeLaundrySlug", vendorSlug);
+            window.dispatchEvent(
+              new StorageEvent("storage", {
+                key: "activeLaundryName",
+                newValue: vendorName,
+              })
+            );
+            window.dispatchEvent(
+              new StorageEvent("storage", {
+                key: "activeLaundrySlug",
+                newValue: vendorSlug,
+              })
+            );
+          }
+        })
+        .catch((err) => console.warn("[signup] failed to fetch laundry details:", err));
     }
   }, [urlLaundryId, activeLaundryId]);
 
@@ -268,13 +263,14 @@ function Signup() {
         navigate({ to: "/laundry-dashboard" });
       } else {
         // Customer tab: new Google user
-        if (activeLaundryId) {
+        const finalLaundryId = activeLaundryId || urlLaundryId;
+        if (finalLaundryId) {
           const displayName = fbUser.displayName || fbUser.email?.split("@")[0] || "לקוח";
           await setDoc(userDocRef, {
             fullName: displayName,
             email: fbUser.email || "",
             role: "customer",
-            associatedLaundryId: activeLaundryId,
+            associatedLaundryId: finalLaundryId,
             createdAt: serverTimestamp(),
           });
           setLoading(false);
