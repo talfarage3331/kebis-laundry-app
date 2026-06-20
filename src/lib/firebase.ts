@@ -18,17 +18,20 @@ const isBrowser = typeof window !== "undefined";
 // (used by signInWithPopup, signInWithEmailAndPassword, etc.) work correctly.
 // During SSR we keep these as `null as any` — all auth code runs in event
 // handlers or useEffect, which only execute client-side.
-const app: FirebaseApp = isBrowser
+const app: FirebaseApp = (isBrowser
   ? getApps().length
     ? getApp()
     : initializeApp(firebaseConfig)
-  : (null as unknown as FirebaseApp);
+  : null) as unknown as FirebaseApp;
 
-export const auth: Auth = isBrowser ? getAuth(app) : (null as unknown as Auth);
-export const db: Firestore = isBrowser ? getFirestore(app) : (null as unknown as Firestore);
-export const googleProvider: GoogleAuthProvider = isBrowser
+// NOTE: These are null during SSR and on the very first synchronous JS frame
+// before Firebase initialises. All consumers MUST use optional chaining:
+//   auth?.currentUser   db?.collection(...)   etc.
+export const auth: Auth = (isBrowser && app ? getAuth(app) : null) as unknown as Auth;
+export const db: Firestore = (isBrowser && app ? getFirestore(app) : null) as unknown as Firestore;
+export const googleProvider: GoogleAuthProvider = (isBrowser
   ? new GoogleAuthProvider()
-  : (null as unknown as GoogleAuthProvider);
+  : null) as unknown as GoogleAuthProvider;
 
 export function getFirebaseAuth(): Auth {
   return auth;

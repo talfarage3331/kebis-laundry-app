@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLaundry } from "@/lib/laundry-store";
 import { Flower2, Building2, User, Store } from "lucide-react";
 import { toast } from "sonner";
@@ -80,6 +80,15 @@ function Signup() {
     return localStorage.getItem("activeLaundryId");
   });
 
+  const [isResolvingSlug, setIsResolvingSlug] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const slug = urlSlug;
+    const currentActiveSlug = localStorage.getItem("activeLaundrySlug");
+    const currentActiveId = localStorage.getItem("activeLaundryId");
+    return !!slug && (!currentActiveId || currentActiveSlug !== slug);
+  });
+  const pendingActionRef = useRef<((resolvedId: string | null) => void) | null>(null);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -123,9 +132,16 @@ function Signup() {
   // ── Async: resolve vendor ID from slug if laundryId wasn't passed directly ──
   useEffect(() => {
     const slug = urlSlug;
-    if (!slug || activeLaundryId) return; // already have an ID, skip
+    const currentActiveSlug = localStorage.getItem("activeLaundrySlug");
+
+    // Skip resolution only if we already have the active laundry ID and its slug matches the URL slug
+    if (!slug || (activeLaundryId && currentActiveSlug === slug)) {
+      setIsResolvingSlug(false);
+      return;
+    }
 
     let cancelled = false;
+    setIsResolvingSlug(true);
 
     async function resolveFromSlug() {
       try {
@@ -135,38 +151,63 @@ function Signup() {
           where("role", "==", "laundry"),
         );
         const snap = await getDocs(q);
-        if (!cancelled && !snap.empty) {
-          const vendorDoc = snap.docs[0];
-          const data = vendorDoc.data();
-          const vendorId = vendorDoc.id;
-          const vendorName: string =
-            data.businessName || data.fullName || data.name || "מכבסה";
-          const vendorSlug: string = data.shopSlug || slug;
+        if (!cancelled) {
+          if (!snap.empty) {
+            const vendorDoc = snap.docs[0];
+            const data = vendorDoc.data();
+            const vendorId = vendorDoc.id;
+            const vendorName: string =
+              data.businessName || data.fullName || data.name || "מכבסה";
+            const vendorSlug: string = data.shopSlug || slug;
 
-          localStorage.setItem("activeLaundryId", vendorId);
-          localStorage.setItem("activeLaundryName", vendorName);
-          localStorage.setItem("activeLaundrySlug", vendorSlug);
-          setActiveLaundryId(vendorId);
+            localStorage.setItem("activeLaundryId", vendorId);
+            localStorage.setItem("activeLaundryName", vendorName);
+            localStorage.setItem("activeLaundrySlug", vendorSlug);
+            setActiveLaundryId(vendorId);
 
-          window.dispatchEvent(
-            new StorageEvent("storage", { key: "activeLaundryId", newValue: vendorId })
-          );
-          window.dispatchEvent(
-            new StorageEvent("storage", { key: "activeLaundryName", newValue: vendorName })
-          );
-          window.dispatchEvent(
-            new StorageEvent("storage", { key: "activeLaundrySlug", newValue: vendorSlug })
-          );
-        } else if (!cancelled) {
-          console.warn("[signup] No vendor found for slug:", slug);
+            window.dispatchEvent(
+              new StorageEvent("storage", { key: "activeLaundryId", newValue: vendorId })
+            );
+            window.dispatchEvent(
+              new StorageEvent("storage", { key: "activeLaundryName", newValue: vendorName })
+            );
+            window.dispatchEvent(
+              new StorageEvent("storage", { key: "activeLaundrySlug", newValue: vendorSlug })
+            );
+
+            // Execute buffered submit if any
+            if (pendingActionRef.current) {
+              const action = pendingActionRef.current;
+              pendingActionRef.current = null;
+              action(vendorId);
+            }
+          } else {
+            console.warn("[signup] No vendor found for slug:", slug);
+            if (pendingActionRef.current) {
+              const action = pendingActionRef.current;
+              pendingActionRef.current = null;
+              action(null);
+            }
+          }
         }
       } catch (err) {
         console.warn("[signup] Failed to resolve slug:", err);
+        if (!cancelled && pendingActionRef.current) {
+          const action = pendingActionRef.current;
+          pendingActionRef.current = null;
+          action(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsResolvingSlug(false);
+        }
       }
     }
 
     resolveFromSlug();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [urlSlug, activeLaundryId]);
 
   useEffect(() => {
@@ -204,57 +245,70 @@ function Signup() {
       setBusinessNameError(true);
       return toast.error("יש להזין שם עסק");
     }
+
+    const performSubmit = async (resolvedId: string | null) => {
+      if (selectedRole === "customer" && !resolvedId) {
+        setLoading(false);
+        return toast.error("ההרשמה כלקוח מתאפשרת רק דרך קישור ייעודי של המכבסה.");
+      }
+
+      setLoading(true);
+      try {
+        const result = await createUserWithEmailAndPassword(auth, email, password);
+        const fbUser = result.user;
+
+        await updateProfile(fbUser, { displayName: name });
+
+        const assignedRole = email === "talfarage3331@gmail.com" ? "admin" : selectedRole;
+
+        const docData: Record<string, any> = {
+          fullName: name,
+          email: email,
+          role: assignedRole,
+          createdAt: serverTimestamp(),
+        };
+
+        if (assignedRole === "laundry") {
+          const baseSlug = generateSlug(businessName.trim() || name);
+          const uniqueSlug = await ensureUniqueSlug(baseSlug);
+          docData.shopSlug = uniqueSlug;
+          docData.businessName = businessName.trim();
+          docData.status = "pending_approval";
+        } else if (assignedRole === "customer" && resolvedId) {
+          docData.associatedLaundryId = resolvedId;
+        }
+
+        await setDoc(doc(db, "users", fbUser.uid), docData);
+
+        setLoading(false);
+        toast.success("נרשמת בהצלחה");
+
+        if (assignedRole === "admin") {
+          navigate({ to: "/admin" });
+        } else if (assignedRole === "laundry") {
+          navigate({ to: "/laundry-dashboard" });
+        } else {
+          navigate({ to: "/" });
+        }
+      } catch (error: any) {
+        setLoading(false);
+        return toast.error(error.message);
+      }
+    };
+
     const finalLaundryId = activeLaundryId || urlLaundryId;
     if (selectedRole === "customer" && !finalLaundryId) {
-      if (urlSlug) {
-        // Slug resolution is still in-flight — ask the user to retry in a moment
-        return toast.error("אמתות קישור... נסה שוב בעוד שנייה", { duration: 3000 });
+      if (urlSlug && isResolvingSlug) {
+        setLoading(true);
+        pendingActionRef.current = (resolvedId) => {
+          performSubmit(resolvedId);
+        };
+        return;
       }
       return toast.error("ההרשמה כלקוח מתאפשרת רק דרך קישור ייעודי של המכבסה.");
     }
 
-    setLoading(true);
-    try {
-      const result = await createUserWithEmailAndPassword(auth, email, password);
-      const fbUser = result.user;
-
-      await updateProfile(fbUser, { displayName: name });
-
-      const assignedRole = email === "talfarage3331@gmail.com" ? "admin" : selectedRole;
-
-      const docData: Record<string, any> = {
-        fullName: name,
-        email: email,
-        role: assignedRole,
-        createdAt: serverTimestamp(),
-      };
-
-      if (assignedRole === "laundry") {
-        const baseSlug = generateSlug(businessName.trim() || name);
-        const uniqueSlug = await ensureUniqueSlug(baseSlug);
-        docData.shopSlug = uniqueSlug;
-        docData.businessName = businessName.trim();
-        docData.status = "pending_approval";
-      } else if (assignedRole === "customer" && finalLaundryId) {
-        docData.associatedLaundryId = finalLaundryId;
-      }
-
-      await setDoc(doc(db, "users", fbUser.uid), docData);
-
-      setLoading(false);
-      toast.success("נרשמת בהצלחה");
-
-      if (assignedRole === "admin") {
-        navigate({ to: "/admin" });
-      } else if (assignedRole === "laundry") {
-        navigate({ to: "/laundry-dashboard" });
-      } else {
-        navigate({ to: "/" });
-      }
-    } catch (error: any) {
-      setLoading(false);
-      return toast.error(error.message);
-    }
+    performSubmit(finalLaundryId || null);
   };
 
   // ── Google signup/login ───────────────────────────────────────────────────
@@ -265,87 +319,102 @@ function Signup() {
       return toast.error("חובה להזין את שם העסק לפני ההרשמה עם גוגל.");
     }
 
-    setLoading(true);
-    try {
-      const result = await signInWithPopup(auth, googleProvider);
-      const fbUser = result.user;
+    const performGoogleSubmit = async (resolvedId: string | null) => {
+      setLoading(true);
+      try {
+        const result = await signInWithPopup(auth, googleProvider);
+        const fbUser = result.user;
 
-      if (!fbUser) {
-        setLoading(false);
-        return;
-      }
-
-      // Check if Firestore profile already exists (returning user)
-      const userDocRef = doc(db, "users", fbUser.uid);
-      const userDoc = await getDoc(userDocRef);
-
-      if (userDoc.exists()) {
-        // ── Returning user: log in normally ──
-        const existingRole = userDoc.data().role || "customer";
-        toast.success("התחברת בהצלחה");
-        setLoading(false);
-
-        if (existingRole === "admin") {
-          navigate({ to: "/admin" });
-        } else if (existingRole === "laundry") {
-          navigate({ to: "/laundry-dashboard" });
-        } else {
-          navigate({ to: "/" });
+        if (!fbUser) {
+          setLoading(false);
+          return;
         }
-        return;
-      }
 
-      // ── New user via Google ──
-      if (selectedRole === "laundry") {
-        // Provision laundry vendor profile
-        const displayName = fbUser.displayName || fbUser.email?.split("@")[0] || "בעל מכבסה";
-        const baseSlug = generateSlug(businessName.trim() || displayName);
-        const uniqueSlug = await ensureUniqueSlug(baseSlug);
+        // Check if Firestore profile already exists (returning user)
+        const userDocRef = doc(db, "users", fbUser.uid);
+        const userDoc = await getDoc(userDocRef);
 
-        await setDoc(userDocRef, {
-          fullName: displayName,
-          email: fbUser.email || "",
-          role: "laundry",
-          status: "pending_approval",
-          businessName: businessName.trim(),
-          shopSlug: uniqueSlug,
-          createdAt: serverTimestamp(),
-        });
+        if (userDoc.exists()) {
+          // ── Returning user: log in normally ──
+          const existingRole = userDoc.data().role || "customer";
+          toast.success("התחברת בהצלחה");
+          setLoading(false);
 
-        setLoading(false);
-        toast.success("נרשמת בהצלחה — ממתין לאישור המנהל");
-        navigate({ to: "/laundry-dashboard" });
-      } else {
-        // Customer tab: new Google user
-        const finalLaundryId = activeLaundryId || urlLaundryId;
-        if (finalLaundryId) {
-          const displayName = fbUser.displayName || fbUser.email?.split("@")[0] || "לקוח";
+          if (existingRole === "admin") {
+            navigate({ to: "/admin" });
+          } else if (existingRole === "laundry") {
+            navigate({ to: "/laundry-dashboard" });
+          } else {
+            navigate({ to: "/" });
+          }
+          return;
+        }
+
+        // ── New user via Google ──
+        if (selectedRole === "laundry") {
+          // Provision laundry vendor profile
+          const displayName = fbUser.displayName || fbUser.email?.split("@")[0] || "בעל מכבסה";
+          const baseSlug = generateSlug(businessName.trim() || displayName);
+          const uniqueSlug = await ensureUniqueSlug(baseSlug);
+
           await setDoc(userDocRef, {
             fullName: displayName,
             email: fbUser.email || "",
-            role: "customer",
-            associatedLaundryId: finalLaundryId,
+            role: "laundry",
+            status: "pending_approval",
+            businessName: businessName.trim(),
+            shopSlug: uniqueSlug,
             createdAt: serverTimestamp(),
           });
+
           setLoading(false);
-          toast.success("נרשמת בהצלחה");
-          navigate({ to: "/" });
+          toast.success("נרשמת בהצלחה — ממתין לאישור המנהל");
+          navigate({ to: "/laundry-dashboard" });
         } else {
-          // No active invite link → block & sign out
-          await signOut(auth);
-          setLoading(false);
-          toast.error(
-            "לא נמצא חשבון קיים במערכת. הרשמה כלקוח מתאפשרת רק דרך לינק ייעודי של המכבסה.",
-            { duration: 6000 }
-          );
+          // Customer tab: new Google user
+          if (resolvedId) {
+            const displayName = fbUser.displayName || fbUser.email?.split("@")[0] || "לקוח";
+            await setDoc(userDocRef, {
+              fullName: displayName,
+              email: fbUser.email || "",
+              role: "customer",
+              associatedLaundryId: resolvedId,
+              createdAt: serverTimestamp(),
+            });
+            setLoading(false);
+            toast.success("נרשמת בהצלחה");
+            navigate({ to: "/" });
+          } else {
+            // No active invite link → block & sign out
+            await signOut(auth);
+            setLoading(false);
+            toast.error(
+              "לא נמצא חשבון קיים במערכת. הרשמה כלקוח מתאפשרת רק דרך לינק ייעודי של המכבסה.",
+              { duration: 6000 }
+            );
+          }
+        }
+      } catch (error: any) {
+        setLoading(false);
+        if (error.code !== "auth/popup-closed-by-user") {
+          toast.error("התחברות עם גוגל נכשלה: " + error.message);
         }
       }
-    } catch (error: any) {
-      setLoading(false);
-      if (error.code !== "auth/popup-closed-by-user") {
-        toast.error("התחברות עם גוגל נכשלה: " + error.message);
+    };
+
+    const finalLaundryId = activeLaundryId || urlLaundryId;
+    if (selectedRole === "customer" && !finalLaundryId) {
+      if (urlSlug && isResolvingSlug) {
+        setLoading(true);
+        pendingActionRef.current = (resolvedId) => {
+          performGoogleSubmit(resolvedId);
+        };
+        return;
       }
+      return toast.error("ההרשמה כלקוח מתאפשרת רק דרך קישור ייעודי של המכבסה.");
     }
+
+    performGoogleSubmit(finalLaundryId || null);
   };
 
   // ─── BLOCKED SCREEN: Customer without invite link ────────────────────────
