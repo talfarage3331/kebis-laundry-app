@@ -57,9 +57,8 @@ function ShopSlugResolver() {
     async function resolveSlug() {
       try {
         const q = query(
-          collection(db, "users"),
-          where("shopSlug", "==", slug),
-          where("role", "==", "laundry"),
+          collection(db, "laundries"),
+          where("slug", "==", slug),
         );
         const snap = await getDocs(q);
 
@@ -68,7 +67,7 @@ function ShopSlugResolver() {
           const data = vendorDoc.data();
           const vendorId = vendorDoc.id;
           const vendorName: string =
-            data.businessName || data.fullName || data.name || "מכבסה";
+            data.name || data.businessName || data.fullName || "מכבסה";
 
           localStorage.setItem("activeLaundryId", vendorId);
           localStorage.setItem("activeLaundryName", vendorName);

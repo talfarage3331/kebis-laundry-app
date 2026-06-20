@@ -146,9 +146,8 @@ function Signup() {
     async function resolveFromSlug() {
       try {
         const q = query(
-          collection(db, "users"),
-          where("shopSlug", "==", slug),
-          where("role", "==", "laundry"),
+          collection(db, "laundries"),
+          where("slug", "==", slug),
         );
         const snap = await getDocs(q);
         if (!cancelled) {
@@ -157,8 +156,8 @@ function Signup() {
             const data = vendorDoc.data();
             const vendorId = vendorDoc.id;
             const vendorName: string =
-              data.businessName || data.fullName || data.name || "מכבסה";
-            const vendorSlug: string = data.shopSlug || slug;
+              data.name || data.businessName || data.fullName || "מכבסה";
+            const vendorSlug: string = data.slug || slug;
 
             localStorage.setItem("activeLaundryId", vendorId);
             localStorage.setItem("activeLaundryName", vendorName);
