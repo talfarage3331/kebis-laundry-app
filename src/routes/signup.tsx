@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { useLaundry } from "@/lib/laundry-store";
-import { Flower2, Building2 } from "lucide-react";
+import { Flower2, Building2, User, Store } from "lucide-react";
 import { toast } from "sonner";
 import { auth, db } from "@/lib/firebase";
 import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
@@ -20,7 +20,7 @@ function Signup() {
   const [businessName, setBusinessName] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const [activeLaundryId, setActiveLaundryId] = useState<string | null>(() =>
+  const [activeLaundryId] = useState<string | null>(() =>
     typeof window !== "undefined" ? localStorage.getItem("activeLaundryId") : null
   );
 
@@ -66,7 +66,6 @@ function Signup() {
       const result = await createUserWithEmailAndPassword(auth, email, password);
       const fbUser = result.user;
 
-      // Update Auth display name
       await updateProfile(fbUser, { displayName: name });
 
       const assignedRole = email === "talfarage3331@gmail.com" ? "admin" : selectedRole;
@@ -78,7 +77,6 @@ function Signup() {
         createdAt: serverTimestamp(),
       };
 
-      // For laundry vendors, generate & persist a unique shopSlug; mark pending approval
       if (assignedRole === "laundry") {
         const baseSlug = generateSlug(businessName.trim() || name);
         const uniqueSlug = await ensureUniqueSlug(baseSlug);
@@ -107,29 +105,53 @@ function Signup() {
     }
   };
 
-  // Customer without invite link — show blocked screen only when customer role selected
+  // ─── BLOCKED SCREEN: Customer without invite link ────────────────────────
   if (!activeLaundryId && selectedRole === "customer") {
     return (
       <div className="min-h-[100dvh] bg-background flex flex-col overflow-x-hidden" dir="rtl">
-        <div className="bg-primary text-primary-foreground rounded-b-[2rem] sm:rounded-b-[2.5rem] px-4 sm:px-6 pt-safe-auth pb-8 sm:pb-12">
-          <div className="mx-auto max-w-md flex items-center gap-3">
-            <div className="size-10 sm:size-12 rounded-full bg-primary-foreground/15 grid place-items-center shrink-0">
-              <Flower2 className="size-5 sm:size-6" strokeWidth={1.75} />
+        {/* Header */}
+        <div className="bg-primary text-primary-foreground rounded-b-[2rem] px-4 sm:px-6 pt-safe-auth pb-10">
+          <div className="mx-auto max-w-md flex items-center gap-3 mb-6">
+            <div className="size-10 rounded-full bg-primary-foreground/15 grid place-items-center shrink-0">
+              <Flower2 className="size-5" strokeWidth={1.75} />
             </div>
-            <div className="min-w-0">
-              <h1 className="text-2xl sm:text-3xl font-extrabold">כביסה</h1>
-              <p className="text-xs sm:text-sm opacity-80">הרשמה חסומה</p>
+            <div>
+              <h1 className="text-2xl font-extrabold">כביסה</h1>
+              <p className="text-xs opacity-80">הרשמה</p>
+            </div>
+          </div>
+
+          {/* Prominent tab bar in header */}
+          <div className="mx-auto max-w-md">
+            <div className="relative flex bg-primary-foreground/10 rounded-2xl p-1 gap-1">
+              <button
+                type="button"
+                onClick={() => setSelectedRole("customer")}
+                className="relative flex-1 flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-black transition-all duration-200 bg-white text-primary shadow-md"
+              >
+                <User className="size-4" />
+                לקוח
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedRole("laundry")}
+                className="relative flex-1 flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-black transition-all duration-200 text-primary-foreground/70 hover:text-primary-foreground hover:bg-primary-foreground/10"
+              >
+                <Store className="size-4" />
+                בעל מכבסה
+              </button>
             </div>
           </div>
         </div>
 
-        <div className="mx-auto max-w-md w-full px-6 mt-10 text-center space-y-6">
-          <div className="size-16 rounded-full bg-destructive/10 grid place-items-center mx-auto animate-bounce">
-            <Building2 className="size-8 text-destructive" />
+        {/* Blocked body */}
+        <div className="mx-auto max-w-md w-full px-6 mt-8 text-center space-y-6">
+          <div className="size-16 rounded-full bg-destructive/10 grid place-items-center mx-auto">
+            <Building2 className="size-8 text-destructive animate-bounce" />
           </div>
           <div className="space-y-2">
-            <h2 className="text-xl sm:text-2xl font-black text-foreground">ההרשמה חסומה</h2>
-            <p className="text-sm text-muted-foreground font-extrabold">
+            <h2 className="text-xl font-black text-foreground">ההרשמה חסומה</h2>
+            <p className="text-sm text-muted-foreground font-semibold leading-relaxed">
               ההרשמה כלקוח מתאפשרת רק דרך קישור ייעודי של המכבסה.
             </p>
           </div>
@@ -137,9 +159,10 @@ function Signup() {
             <button
               type="button"
               onClick={() => setSelectedRole("laundry")}
-              className="w-full rounded-2xl bg-primary/10 text-primary border border-primary/20 py-3 text-sm font-extrabold hover:bg-primary hover:text-primary-foreground active:scale-[0.98] transition flex items-center justify-center min-h-[48px]"
+              className="w-full rounded-2xl bg-primary/10 text-primary border border-primary/20 py-3.5 text-sm font-extrabold hover:bg-primary hover:text-primary-foreground active:scale-[0.98] transition flex items-center justify-center gap-2 min-h-[48px]"
             >
-              🏪 הרשמה כבעל מכבסה
+              <Store className="size-4" />
+              הרשמה כבעל מכבסה
             </button>
             <Link
               to="/login"
@@ -159,57 +182,92 @@ function Signup() {
     );
   }
 
+  // ─── MAIN SIGNUP FORM ────────────────────────────────────────────────────
+  const isLaundry = selectedRole === "laundry";
+
   return (
-    <div className="min-h-[100dvh] bg-background flex flex-col overflow-x-hidden">
-      <div className="bg-primary text-primary-foreground rounded-b-[2rem] sm:rounded-b-[2.5rem] px-4 sm:px-6 pt-safe-auth pb-8 sm:pb-12">
-        <div className="mx-auto max-w-md flex items-center gap-3">
-          <div className="size-10 sm:size-12 rounded-full bg-primary-foreground/15 grid place-items-center shrink-0">
-            <Flower2 className="size-5 sm:size-6" strokeWidth={1.75} />
+    <div className="min-h-[100dvh] bg-background flex flex-col overflow-x-hidden" dir="rtl">
+
+      {/* ── Header with embedded role tab switcher ── */}
+      <div
+        className={`text-primary-foreground rounded-b-[2rem] px-4 sm:px-6 pt-safe-auth pb-10 transition-colors duration-300 ${
+          isLaundry ? "bg-[hsl(270,60%,35%)]" : "bg-primary"
+        }`}
+      >
+        {/* Logo row */}
+        <div className="mx-auto max-w-md flex items-center gap-3 mb-6">
+          <div className="size-10 rounded-full bg-primary-foreground/15 grid place-items-center shrink-0">
+            <Flower2 className="size-5" strokeWidth={1.75} />
           </div>
-          <div className="min-w-0">
-            <h1 className="text-2xl sm:text-3xl font-extrabold">כביסה</h1>
-            <p className="text-xs sm:text-sm opacity-80">הצטרפו אלינו</p>
+          <div>
+            <h1 className="text-2xl font-extrabold">כביסה</h1>
+            <p className="text-xs opacity-80">
+              {isLaundry ? "הרשמת עסק" : "הצטרפו אלינו"}
+            </p>
           </div>
+        </div>
+
+        {/* ── Prominent role tab bar ── */}
+        <div className="mx-auto max-w-md">
+          <p className="text-[11px] font-bold text-primary-foreground/60 mb-2 tracking-widest uppercase">
+            סוג חשבון
+          </p>
+          <div className="relative flex bg-black/20 rounded-2xl p-1 gap-1">
+            {/* sliding indicator */}
+            <div
+              className={`absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-xl bg-white shadow-md transition-all duration-250 ease-out ${
+                isLaundry ? "translate-x-[-100%] right-1" : "right-1"
+              }`}
+              aria-hidden="true"
+            />
+
+            <button
+              id="tab-customer"
+              type="button"
+              onClick={() => setSelectedRole("customer")}
+              className={`relative flex-1 flex items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-black transition-colors duration-200 z-10 ${
+                !isLaundry
+                  ? "text-primary"
+                  : "text-primary-foreground/70 hover:text-primary-foreground"
+              }`}
+            >
+              <User className="size-4 shrink-0" />
+              לקוח
+            </button>
+
+            <button
+              id="tab-laundry"
+              type="button"
+              onClick={() => setSelectedRole("laundry")}
+              className={`relative flex-1 flex items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-black transition-colors duration-200 z-10 ${
+                isLaundry
+                  ? "text-[hsl(270,60%,35%)]"
+                  : "text-primary-foreground/70 hover:text-primary-foreground"
+              }`}
+            >
+              <Store className="size-4 shrink-0" />
+              בעל מכבסה
+            </button>
+          </div>
+
+          {/* Context label under tabs */}
+          <p className="mt-2.5 text-[11px] text-primary-foreground/70 font-semibold text-center">
+            {isLaundry
+              ? "הרשמה לניהול מכבסה — ממתין לאישור מנהל"
+              : "הרשמה דרך קישור ייעודי של המכבסה"}
+          </p>
         </div>
       </div>
 
+      {/* ── Form body ── */}
       <form
         onSubmit={submit}
-        className="mx-auto max-w-md w-full px-4 sm:px-6 mt-6 sm:mt-8 space-y-4 flex-1 pb-8"
+        className="mx-auto max-w-md w-full px-4 sm:px-6 mt-5 space-y-4 flex-1 pb-10"
       >
-        {/* Role selector */}
-        <div>
-          <label className="text-sm font-semibold">סוג חשבון</label>
-          <div className="mt-1.5 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setSelectedRole("customer")}
-              className={`rounded-2xl border py-3 text-sm font-bold transition-all min-h-[48px] flex items-center justify-center gap-2 ${
-                selectedRole === "customer"
-                  ? "bg-primary text-primary-foreground border-primary shadow-md"
-                  : "bg-background border-border text-foreground hover:border-primary/40"
-              }`}
-            >
-              👤 לקוח
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedRole("laundry")}
-              className={`rounded-2xl border py-3 text-sm font-bold transition-all min-h-[48px] flex items-center justify-center gap-2 ${
-                selectedRole === "laundry"
-                  ? "bg-primary text-primary-foreground border-primary shadow-md"
-                  : "bg-background border-border text-foreground hover:border-primary/40"
-              }`}
-            >
-              🏪 בעל מכבסה
-            </button>
-          </div>
-        </div>
-
-        {/* Laundry pending notice */}
-        {selectedRole === "laundry" && (
-          <div className="animate-in slide-in-from-top-2 duration-200 rounded-2xl bg-amber-50 border border-amber-200 p-3 flex gap-2.5 items-start">
-            <span className="text-amber-500 text-base mt-0.5">⏳</span>
+        {/* Pending approval notice for laundry */}
+        {isLaundry && (
+          <div className="animate-in slide-in-from-top-2 duration-200 rounded-2xl bg-amber-50 border border-amber-200 p-3.5 flex gap-3 items-start">
+            <span className="text-lg shrink-0 mt-0.5">⏳</span>
             <p className="text-xs text-amber-700 font-semibold leading-relaxed">
               לאחר ההרשמה, החשבון שלך יהיה ממתין לאישור המנהל הראשי.
               תקבל גישה מלאה לפאנל הניהול מיד לאחר האישור.
@@ -217,31 +275,32 @@ function Signup() {
           </div>
         )}
 
+        {/* Full name */}
         <div>
-          <label className="text-sm font-semibold">שם מלא</label>
+          <label className="text-sm font-semibold text-foreground">שם מלא</label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="mt-1.5 w-full rounded-2xl border border-border bg-background px-4 py-3 sm:py-3.5 text-base min-h-[48px] focus:outline-none focus:ring-2 focus:ring-primary"
+            className="mt-1.5 w-full rounded-2xl border border-border bg-background px-4 py-3 sm:py-3.5 text-base min-h-[48px] focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-muted-foreground/50"
             placeholder="ישראל ישראלי"
           />
         </div>
 
         {/* Business name — only for laundry owners */}
-        {selectedRole === "laundry" && (
-          <div className="animate-in slide-in-from-top-2 duration-200">
-            <label className="text-sm font-semibold flex items-center gap-1.5">
+        {isLaundry && (
+          <div className="animate-in slide-in-from-top-3 duration-300">
+            <label className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
               <Building2 className="size-3.5 text-primary" />
               שם העסק / המכבסה
             </label>
             <input
               value={businessName}
               onChange={(e) => setBusinessName(e.target.value)}
-              className="mt-1.5 w-full rounded-2xl border border-border bg-background px-4 py-3 sm:py-3.5 text-base min-h-[48px] focus:outline-none focus:ring-2 focus:ring-primary"
-              placeholder='מכבסת כביסה פרמיום'
+              className="mt-1.5 w-full rounded-2xl border border-border bg-background px-4 py-3 sm:py-3.5 text-base min-h-[48px] focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-muted-foreground/50"
+              placeholder="מכבסת כביסה פרמיום"
             />
             {businessName && (
-              <p className="mt-1 text-[11px] text-muted-foreground">
+              <p className="mt-1.5 text-[11px] text-muted-foreground bg-muted/40 px-3 py-1.5 rounded-xl">
                 קישור החנות שלך:{" "}
                 <span className="font-bold text-primary">
                   /shop/{generateSlug(businessName)}
@@ -251,36 +310,42 @@ function Signup() {
           </div>
         )}
 
+        {/* Email */}
         <div>
-          <label className="text-sm font-semibold">דוא"ל</label>
+          <label className="text-sm font-semibold text-foreground">דוא&quot;ל</label>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="mt-1.5 w-full rounded-2xl border border-border bg-background px-4 py-3 sm:py-3.5 text-base min-h-[48px] focus:outline-none focus:ring-2 focus:ring-primary"
+            className="mt-1.5 w-full rounded-2xl border border-border bg-background px-4 py-3 sm:py-3.5 text-base min-h-[48px] focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-muted-foreground/50"
             placeholder="name@example.com"
           />
         </div>
+
+        {/* Password */}
         <div>
-          <label className="text-sm font-semibold">סיסמה</label>
+          <label className="text-sm font-semibold text-foreground">סיסמה</label>
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="mt-1.5 w-full rounded-2xl border border-border bg-background px-4 py-3 sm:py-3.5 text-base min-h-[48px] focus:outline-none focus:ring-2 focus:ring-primary"
+            className="mt-1.5 w-full rounded-2xl border border-border bg-background px-4 py-3 sm:py-3.5 text-base min-h-[48px] focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-muted-foreground/50"
             placeholder="••••••••"
           />
         </div>
+
+        {/* Submit */}
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-3xl bg-lime text-lime-foreground py-3.5 sm:py-4 text-base sm:text-lg font-extrabold min-h-[48px] shadow-[0_15px_40px_-15px_oklch(0.92_0.18_125/0.6)] active:scale-[0.98] transition disabled:opacity-50"
+          className="w-full rounded-3xl bg-lime text-lime-foreground py-4 text-base sm:text-lg font-extrabold min-h-[52px] shadow-[0_15px_40px_-15px_oklch(0.92_0.18_125/0.6)] active:scale-[0.98] transition disabled:opacity-50"
         >
-          {loading ? "נרשם..." : "הרשמה"}
+          {loading ? "נרשם..." : isLaundry ? "הרשמה כבעל מכבסה" : "הרשמה"}
         </button>
+
         <p className="text-center text-sm text-muted-foreground">
           כבר רשום?{" "}
-          <Link to="/login" className="text-primary font-bold">
+          <Link to="/login" className="text-primary font-bold hover:underline">
             התחבר
           </Link>
         </p>
