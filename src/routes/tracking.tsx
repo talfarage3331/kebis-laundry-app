@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { AppHeader } from "@/components/AppHeader";
-import { useLaundry, stateLabel, getOrderSteps, normalizeStatus } from "@/lib/laundry-store";
+import { useLaundry, stateLabel, getOrderSteps, normalizeStatus, ADDONS_META, DELIVERY_TIERS_META } from "@/lib/laundry-store";
 import {
   PackageOpen,
   Check,
@@ -87,6 +87,9 @@ function Tracking() {
             images: parsedImages,
             requires_ironing: !!(data.requires_ironing || data.requiresIroning),
             requires_dry_cleaning: !!(data.requires_dry_cleaning || data.requiresDryCleaning),
+            addons: Array.isArray(data.addons) ? data.addons : [],
+            deliveryTier: data.deliveryTier || "standard",
+            basePrice: data.basePrice !== undefined ? Number(data.basePrice) : undefined,
             invoice: data.invoiceUrl
               ? {
                   id: `inv-${doc.id}`,
@@ -243,6 +246,20 @@ function OrderCard({
   // Delivery-aware steps
   const steps = getOrderSteps(order.delivery_method);
   const currentIdx = steps.findIndex((s) => s.key === order.status);
+
+  const addonsPriceSum = (order.addons || []).reduce(
+    (sum: number, key: string) => sum + (ADDONS_META[key]?.price || 0),
+    0
+  );
+  const deliveryTierPrice = order.delivery_method === "home_delivery"
+    ? (DELIVERY_TIERS_META[order.deliveryTier || "standard"]?.price || 0)
+    : 0;
+
+  const basePrice = order.basePrice !== undefined 
+    ? order.basePrice 
+    : (order.amount_due > 0 ? Math.max(0, order.amount_due - addonsPriceSum - deliveryTierPrice) : 0);
+
+  const calculatedTotal = basePrice + addonsPriceSum + deliveryTierPrice;
 
   // ── Edit state (only active when status === "pending") ────────────────────
   const isLocked = order.status !== "pending";
@@ -598,22 +615,78 @@ function OrderCard({
           </div>
         )}
 
-        <div className="rounded-3xl bg-lavender text-lavender-foreground p-5 space-y-2 text-sm border border-lavender-foreground/5 shadow-sm animate-fade-in">
-          <Row
-            label="שיטת מסירה"
-            value={
-              order.delivery_method === "self_pickup"
-                ? "איסוף עצמי"
-                : order.delivery_method === "home_delivery"
-                  ? "משלוח הביתה"
-                  : "טרם נבחר"
-            }
-          />
-          <Row
-            label="סטטוס תשלום"
-            value={order.payment_state === "paid" ? "שולם" : "ממתין לתשלום"}
-          />
-          <Row label="סכום" value={`₪${(order.amount_due || 0).toFixed(2)}`} />
+        <div className="rounded-3xl bg-lavender text-lavender-foreground p-5 space-y-3 text-sm border border-lavender-foreground/5 shadow-sm animate-fade-in">
+          <div className="border-b border-lavender-foreground/15 pb-2">
+            <h4 className="font-extrabold text-xs text-foreground mb-2">שירותים ושדרוגים שנבחרו:</h4>
+            <div className="flex gap-1.5 flex-wrap">
+              {order.requires_ironing && (
+                <span className="bg-primary/10 text-primary border border-primary/20 text-[10px] font-black px-2 py-0.5 rounded-full">גיהוץ 🧺</span>
+              )}
+              {order.requires_dry_cleaning && (
+                <span className="bg-lime/20 text-lime-foreground border border-lime-foreground/20 text-[10px] font-black px-2 py-0.5 rounded-full">ניקוי יבש ✨</span>
+              )}
+              {(order.addons || []).map((key: string) => {
+                const m = ADDONS_META[key];
+                if (!m) return null;
+                return (
+                  <span key={key} className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-black px-2 py-0.5 rounded-full">
+                    {m.label} (+₪{m.price})
+                  </span>
+                );
+              })}
+              {order.delivery_method === "home_delivery" && (
+                <span className="bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-black px-2 py-0.5 rounded-full">
+                  {DELIVERY_TIERS_META[order.deliveryTier || "standard"]?.label} (+₪{DELIVERY_TIERS_META[order.deliveryTier || "standard"]?.price})
+                </span>
+              )}
+              {order.delivery_method === "self_pickup" && (
+                <span className="bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-black px-2 py-0.5 rounded-full">
+                  🏠 איסוף עצמי (חינם)
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <h4 className="font-extrabold text-xs text-foreground">פירוט סכום הזמנה:</h4>
+            <div className="flex justify-between text-xs font-semibold text-muted-foreground">
+              <span>סכום בסיס (לפי משקל/פריטים):</span>
+              <span>{basePrice > 0 ? `₪${basePrice.toFixed(2)}` : "ממתין לתמחור"}</span>
+            </div>
+            {addonsPriceSum > 0 && (
+              <div className="flex justify-between text-xs font-semibold text-muted-foreground">
+                <span>תוספות ושדרוגי פרימיום:</span>
+                <span>+₪{addonsPriceSum.toFixed(2)}</span>
+              </div>
+            )}
+            {order.delivery_method === "home_delivery" && deliveryTierPrice > 0 && (
+              <div className="flex justify-between text-xs font-semibold text-muted-foreground">
+                <span>דמי משלוח ({DELIVERY_TIERS_META[order.deliveryTier || "standard"]?.label}):</span>
+                <span>+₪{deliveryTierPrice.toFixed(2)}</span>
+              </div>
+            )}
+            <div className="border-t border-lavender-foreground/15 pt-2 flex justify-between text-sm font-extrabold text-foreground">
+              <span>סה״כ לתשלום:</span>
+              <span>₪{(order.amount_due || calculatedTotal || 0).toFixed(2)}</span>
+            </div>
+          </div>
+
+          <div className="border-t border-lavender-foreground/15 pt-2 space-y-1 text-xs">
+            <Row
+              label="שיטת מסירה"
+              value={
+                order.delivery_method === "self_pickup"
+                  ? "איסוף עצמי"
+                  : order.delivery_method === "home_delivery"
+                    ? "משלוח הביתה"
+                    : "טרם נבחר"
+              }
+            />
+            <Row
+              label="סטטוס תשלום"
+              value={order.payment_state === "paid" ? "שולם" : "ממתין לתשלום"}
+            />
+          </div>
         </div>
 
         {/* Delivery method is now selected during order creation — no post-order picker */}

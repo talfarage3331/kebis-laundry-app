@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { AdminPricingPanel } from "@/components/AdminPricingPanel";
-import { useLaundry, normalizeStatus, type OrderState } from "@/lib/laundry-store";
+import { useLaundry, normalizeStatus, type OrderState, ADDONS_META, DELIVERY_TIERS_META } from "@/lib/laundry-store";
 import { db } from "@/lib/firebase";
 import { collection, query, onSnapshot, doc, updateDoc } from "firebase/firestore";
 import {
@@ -42,6 +42,7 @@ interface LaundryOrder {
   payment_state: string;
   amount_due: number;
   price?: number;
+  basePrice?: number;
   user_email: string;
   userId: string;
   notes?: string;
@@ -50,6 +51,8 @@ interface LaundryOrder {
   requires_ironing?: boolean;
   requires_dry_cleaning?: boolean;
   invoices?: Array<{ id: string; date: string; name: string; data: string }>;
+  addons?: string[];
+  deliveryTier?: string;
 }
 
 /* ─── status helpers ─────────────────────────────────────────────── */
@@ -243,6 +246,9 @@ function LaundryDashboard() {
             invoices: o.invoiceUrl
               ? [{ id: `inv-${docSnap.id}`, date: createdAt, name: o.invoiceName ?? "invoice.pdf", data: o.invoiceUrl }]
               : [],
+            addons:           Array.isArray(o.addons) ? o.addons : [],
+            deliveryTier:     o.deliveryTier || "standard",
+            basePrice:        o.basePrice !== undefined ? Number(o.basePrice) : undefined,
           } as LaundryOrder;
         } catch (docErr) {
           console.error(`[laundry-dashboard] failed to parse order doc ${docSnap.id}:`, docErr);
@@ -290,9 +296,9 @@ function LaundryDashboard() {
     } catch (err: any) { toast.error("שגיאה בעדכון הסטטוס: " + err.message); }
   };
 
-  const updateOrderPrice = async (orderId: string, newPrice: number) => {
+  const updateOrderPrice = async (orderId: string, newPrice: number, basePrice: number) => {
     try {
-      await updateDoc(doc(db, "orders", orderId), { price: newPrice, amount_due: newPrice, amountDue: newPrice, total_price: newPrice });
+      await updateDoc(doc(db, "orders", orderId), { price: newPrice, amount_due: newPrice, amountDue: newPrice, total_price: newPrice, basePrice: basePrice });
       toast.success("מחיר ההזמנה עודכן בהצלחה!");
     } catch (err: any) { toast.error("שגיאה בעדכון המחיר: " + err.message); }
   };
@@ -354,7 +360,16 @@ function LaundryDashboard() {
 
       const priceVal = typedPrices[orderId];
       if (priceVal !== undefined && priceVal !== "") {
-        await updateOrderPrice(orderId, Number(priceVal));
+        const basePriceNum = Number(priceVal);
+        const addonsPriceSum = (currentOrder?.addons || []).reduce(
+          (sum: number, key: string) => sum + (ADDONS_META[key]?.price || 0),
+          0
+        );
+        const deliveryTierPrice = currentOrder?.delivery_method === "home_delivery"
+          ? (DELIVERY_TIERS_META[currentOrder?.deliveryTier || "standard"]?.price || 0)
+          : 0;
+        const finalPriceNum = basePriceNum + addonsPriceSum + deliveryTierPrice;
+        await updateOrderPrice(orderId, finalPriceNum, basePriceNum);
       }
 
       const newStatus = pendingStatuses[orderId];
@@ -765,7 +780,6 @@ function LaundryDashboard() {
                                 </div>
                               )}
 
-
                               {/* 3-column grid */}
                               <div className="grid grid-cols-1 md:grid-cols-3 gap-4" dir="rtl">
 
@@ -794,13 +808,27 @@ function LaundryDashboard() {
                                   </div>
 
                                   {/* Services badges */}
-                                  {(order.requires_ironing || order.requires_dry_cleaning) && (
+                                  {(order.requires_ironing || order.requires_dry_cleaning || (order.addons && order.addons.length > 0)) && (
                                     <div className="flex gap-1.5 flex-wrap">
                                       {order.requires_ironing && (
                                         <span className="bg-primary/10 text-primary border border-primary/20 text-[10px] font-black px-2 py-0.5 rounded-full">גיהוץ 🧺</span>
                                       )}
                                       {order.requires_dry_cleaning && (
                                         <span className="bg-lime/20 text-lime-foreground border border-lime-foreground/20 text-[10px] font-black px-2 py-0.5 rounded-full">ניקוי יבש ✨</span>
+                                      )}
+                                      {order.addons?.map((key) => {
+                                        const m = ADDONS_META[key];
+                                        if (!m) return null;
+                                        return (
+                                          <span key={key} className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-black px-2 py-0.5 rounded-full">
+                                            {m.label} (+₪{m.price})
+                                          </span>
+                                        );
+                                      })}
+                                      {order.delivery_method === "home_delivery" && order.deliveryTier && (
+                                        <span className="bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-black px-2 py-0.5 rounded-full">
+                                          {DELIVERY_TIERS_META[order.deliveryTier]?.label} (+₪{DELIVERY_TIERS_META[order.deliveryTier]?.price})
+                                        </span>
                                       )}
                                     </div>
                                   )}
@@ -863,19 +891,43 @@ function LaundryDashboard() {
                                   {/* Price input */}
                                   <div className="space-y-1">
                                     <label className="text-[10px] font-black text-foreground flex items-center justify-between">
-                                      <span>מחיר סופי (₪)</span>
+                                      <span>מחיר בסיס (₪)</span>
                                       <span className="text-muted-foreground font-semibold">
-                                        נוכחי: {displayPrice !== undefined && displayPrice !== 0 ? `₪${displayPrice}` : "—"}
+                                        נוכחי: {order.basePrice !== undefined && order.basePrice !== 0 ? `₪${order.basePrice}` : "—"}
                                       </span>
                                     </label>
                                     <input
                                       type="number"
                                       disabled={isCancelled}
-                                      value={typedPrices[order.id] !== undefined ? typedPrices[order.id] : String(displayPrice ?? "")}
+                                      value={typedPrices[order.id] !== undefined ? typedPrices[order.id] : String(order.basePrice !== undefined ? order.basePrice : "")}
                                       onChange={(e) => setTypedPrices((prev) => ({ ...prev, [order.id]: e.target.value }))}
-                                      placeholder="סכום לתשלום"
-                                      className="h-10 w-full max-w-xs bg-background border border-muted-foreground/20 rounded-lg px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                                      placeholder="מחיר בסיס"
+                                      className="h-10 w-full max-w-xs bg-background border border-muted-foreground/20 rounded-lg px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed text-right"
                                     />
+
+                                    {/* Real-time Math Summary */}
+                                    <div className="mt-2 p-2.5 rounded-lg bg-muted/40 border border-muted-foreground/10 text-[10px] font-semibold space-y-1 max-w-xs text-right">
+                                      <div className="flex justify-between">
+                                        <span>מחיר בסיס:</span>
+                                        <span>₪{Number(typedPrices[order.id] !== undefined ? typedPrices[order.id] : (order.basePrice ?? 0)) || 0}</span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span>שדרוגי כביסה (+):</span>
+                                        <span>₪{(order.addons || []).reduce((sum: number, key: string) => sum + (ADDONS_META[key]?.price || 0), 0)}</span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span>דמי משלוח (+):</span>
+                                        <span>₪{order.delivery_method === "home_delivery" ? (DELIVERY_TIERS_META[order.deliveryTier || "standard"]?.price || 0) : 0}</span>
+                                      </div>
+                                      <div className="border-t border-muted-foreground/20 pt-1 flex justify-between font-black text-primary text-xs">
+                                        <span>מחיר סופי ללקוח:</span>
+                                        <span>
+                                          ₪{(Number(typedPrices[order.id] !== undefined ? typedPrices[order.id] : (order.basePrice ?? 0)) || 0) +
+                                            (order.addons || []).reduce((sum: number, key: string) => sum + (ADDONS_META[key]?.price || 0), 0) +
+                                            (order.delivery_method === "home_delivery" ? (DELIVERY_TIERS_META[order.deliveryTier || "standard"]?.price || 0) : 0)}
+                                        </span>
+                                      </div>
+                                    </div>
                                   </div>
 
                                   {/* Status dropdown — options conditional on delivery method */}

@@ -71,6 +71,10 @@ interface Store {
     requiresIroning?: boolean,
     requiresDryCleaning?: boolean,
     deliveryMethod?: DeliveryMethod,
+    addons?: string[],
+    deliveryTier?: string,
+    basePrice?: number,
+    totalPrice?: number,
   ) => Promise<string | null>;
   advanceOrder: () => void;
   setDelivery: (m: DeliveryMethod) => void;
@@ -411,6 +415,10 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       ironing: boolean = false,
       dryCleaning: boolean = false,
       delivery: DeliveryMethod = "none",
+      addons?: string[],
+      deliveryTier?: string,
+      basePrice?: number,
+      totalPrice?: number,
     ): Promise<string | null> => {
       if (!user) return null;
       const newState: OrderState = "pending";
@@ -468,8 +476,8 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
           deliveryMethod: delivery,
           payment_state: "unpaid",
           paymentState: "unpaid",
-          amount_due: amount,
-          total_price: amount,
+          amount_due: totalPrice || amount,
+          total_price: totalPrice || amount,
           user_email: user.email,
           userEmail: user.email,
           requires_ironing: ironing,
@@ -482,6 +490,9 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
           invoiceName: "",
           created_at: new Date().toISOString(),
           createdAt: new Date().toISOString(),
+          addons: addons || [],
+          deliveryTier: deliveryTier || "standard",
+          basePrice: basePrice || 0,
         });
 
         // Synchronize laundry notifications list locally (Mock triggers)
@@ -631,3 +642,36 @@ export function useLaundry() {
   if (!c) throw new Error("useLaundry must be used within LaundryProvider");
   return c;
 }
+
+export interface AddonItem {
+  label: string;
+  price: number;
+  group: string;
+  desc: string;
+}
+
+export interface DeliveryTierItem {
+  label: string;
+  price: number;
+  desc: string;
+}
+
+export const ADDONS_META: Record<string, AddonItem> = {
+  // Group A
+  extra_scent: { label: "אקסטרה ריח", price: 10, group: "שדרוגי פרימיום", desc: "מרכך מרוכז או פניני ריח במודל מלונות יוקרה" },
+  hypoallergenic: { label: "כביסה היפואלרגנית / לתינוקות", price: 15, group: "שדרוגי פרימיום", desc: "חומרי כביסה ללא ריח וצבע, מאושרים לעור רגיש" },
+  eco_friendly: { label: "חומרים ירוקים Eco-Friendly", price: 12, group: "שדרוגי פרימיום", desc: "חומרי ניקוי אקולוגיים המתפרקים ביולוגית" },
+  // Group B
+  delicate_wash: { label: "כביסה עדינה Delicate Wash", price: 15, group: "סוגי טיפול מיוחדים", desc: "רשתות הגנה, תוכנית קרה וסחיטה איטית" },
+  anti_crease: { label: "טיפול מונע קמטים", price: 10, group: "סוגי טיפול מיוחדים", desc: "תוכנית ייבוש מיוחדת או קיפול מיידי מהמייבש" },
+  stain_removal: { label: "הסרת כתמים קשים", price: 20, group: "סוגי טיפול מיוחדים", desc: "טיפול ידני מקדים (Pre-treatment) עם מסירי כתמים" },
+  // Group D
+  contactless: { label: "משלוח שקט (Contactless)", price: 0, group: "חוויית לוגיסטיקה", desc: "השאר מחוץ לדלת - השליח יצלם לאפליקציה" },
+  phone_coord: { label: "תיאום טלפוני חובה", price: 0, group: "חוויית לוגיסטיקה", desc: "השליח לא מגיע בלי לוודא בשיחה מקדימה שאתם בבית" }
+};
+
+export const DELIVERY_TIERS_META: Record<string, DeliveryTierItem> = {
+  standard: { label: "משלוח רגיל (Standard)", price: 0, desc: "איסוף והחזרה תוך 48 שעות" },
+  express: { label: "משלוח אקספרס (Express)", price: 35, desc: "איסוף והחזרה תוך 24 שעות" },
+  super_express: { label: "משלוח סופר-אקספרס מהיום להיום", price: 60, desc: "איסוף בבוקר, החזרה בערב" }
+};

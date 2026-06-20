@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
-import { useLaundry, normalizeStatus } from "@/lib/laundry-store";
+import { useLaundry, normalizeStatus, ADDONS_META, DELIVERY_TIERS_META } from "@/lib/laundry-store";
 import {
   ArrowRight,
   FileText,
@@ -64,6 +64,9 @@ function Payments() {
               user_email: data.user_email || data.userEmail || user.email,
               notes: data.notes || "",
               images: data.images || [],
+              addons: Array.isArray(data.addons) ? data.addons : [],
+              deliveryTier: data.deliveryTier || "standard",
+              basePrice: data.basePrice !== undefined ? Number(data.basePrice) : undefined,
             };
           })
           .filter(
@@ -188,6 +191,54 @@ function Payments() {
                         <p className="text-4xl font-extrabold mt-1">
                           ₪{order.amount_due.toFixed(2)}
                         </p>
+                      </div>
+
+                      {/* Wolt-Style Price Breakdown */}
+                      <div className="rounded-3xl border border-border p-5 bg-muted/20 space-y-3 text-xs animate-fade-in">
+                        <h4 className="font-extrabold text-sm text-foreground border-b border-border pb-1">פירוט סכום ההזמנה</h4>
+                        <div className="flex justify-between text-muted-foreground">
+                          <span>מחיר בסיס (כביסה):</span>
+                          <span>
+                            ₪{(order.basePrice !== undefined 
+                              ? order.basePrice 
+                              : Math.max(0, order.amount_due - (order.addons || []).reduce((sum: number, key: string) => sum + (ADDONS_META[key]?.price || 0), 0) - (order.delivery_method === "home_delivery" ? (DELIVERY_TIERS_META[order.deliveryTier || "standard"]?.price || 0) : 0))
+                            ).toFixed(2)}
+                          </span>
+                        </div>
+                        
+                        {(order.addons || []).length > 0 && (
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-muted-foreground">
+                              <span>תוספות ושדרוגים:</span>
+                              <span>+₪{(order.addons || []).reduce((sum: number, key: string) => sum + (ADDONS_META[key]?.price || 0), 0).toFixed(2)}</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1 pr-2">
+                              {(order.addons || []).map((key: string) => {
+                                const m = ADDONS_META[key];
+                                if (!m) return null;
+                                return (
+                                  <span key={key} className="text-[10px] bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 rounded-full font-bold">
+                                    {m.label} (+₪{m.price})
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {order.delivery_method === "home_delivery" && (
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-muted-foreground">
+                              <span>דמי משלוח ({DELIVERY_TIERS_META[order.deliveryTier || "standard"]?.label}):</span>
+                              <span>+₪{(DELIVERY_TIERS_META[order.deliveryTier || "standard"]?.price || 0).toFixed(2)}</span>
+                            </div>
+                          </div>
+                        )}
+                        
+                        <div className="border-t border-border pt-2 flex justify-between text-sm font-extrabold text-foreground">
+                          <span>סה״כ לתשלום:</span>
+                          <span>₪{order.amount_due.toFixed(2)}</span>
+                        </div>
                       </div>
 
                       <div className="rounded-3xl border border-border p-5 animate-fade-in">

@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useRef, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { AppHeader } from "@/components/AppHeader";
-import { useLaundry, ORDER_STEPS, stateLabel } from "@/lib/laundry-store";
+import { useLaundry, ORDER_STEPS, stateLabel, ADDONS_META, DELIVERY_TIERS_META } from "@/lib/laundry-store";
 import { db } from "@/lib/firebase";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 import {
@@ -237,7 +237,105 @@ interface PickupModalProps {
     requiresIroning: boolean,
     requiresDryCleaning: boolean,
     deliveryMethod: "self_pickup" | "home_delivery",
+    addons: string[],
+    deliveryTier: string,
+    basePrice: number,
+    totalPrice: number,
   ) => Promise<void>;
+}
+
+interface AddonRowProps {
+  id: string;
+  label: string;
+  price: number;
+  desc: string;
+  selected: boolean;
+  onToggle: () => void;
+}
+
+function AddonRow({ label, price, desc, selected, onToggle }: AddonRowProps) {
+  return (
+    <div
+      onClick={onToggle}
+      className={`flex items-center justify-between p-3.5 rounded-2xl border transition-all cursor-pointer select-none text-right dir-rtl ${
+        selected
+          ? "border-primary bg-primary/5 shadow-sm"
+          : "border-muted-foreground/10 bg-background/50 hover:bg-muted/30"
+      }`}
+      dir="rtl"
+    >
+      <div className="flex-1 min-w-0 pr-1 text-right">
+        <div className="flex items-center gap-1.5 flex-wrap justify-start">
+          <span className="text-sm font-extrabold text-foreground">{label}</span>
+          {price > 0 && (
+            <span className="text-[10px] font-black text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+              +₪{price}
+            </span>
+          )}
+        </div>
+        <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{desc}</p>
+      </div>
+
+      <div className="shrink-0 pl-1 mr-3">
+        <div
+          className={`size-5 rounded-md border flex items-center justify-center transition-all ${
+            selected
+              ? "bg-primary border-primary text-primary-foreground scale-110"
+              : "border-muted-foreground/30 bg-background"
+          }`}
+        >
+          {selected && <Check className="size-3.5 stroke-[3]" />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface RadioRowProps {
+  id: string;
+  label: string;
+  price: number;
+  desc: string;
+  selected: boolean;
+  onSelect: () => void;
+}
+
+function RadioRow({ label, price, desc, selected, onSelect }: RadioRowProps) {
+  return (
+    <div
+      onClick={onSelect}
+      className={`flex items-center justify-between p-3.5 rounded-2xl border transition-all cursor-pointer select-none text-right dir-rtl ${
+        selected
+          ? "border-primary bg-primary/5 shadow-sm"
+          : "border-muted-foreground/10 bg-background/50 hover:bg-muted/30"
+      }`}
+      dir="rtl"
+    >
+      <div className="flex-1 min-w-0 pr-1 text-right">
+        <div className="flex items-center gap-1.5 flex-wrap justify-start">
+          <span className="text-sm font-extrabold text-foreground">{label}</span>
+          {price > 0 && (
+            <span className="text-[10px] font-black text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+              +₪{price}
+            </span>
+          )}
+        </div>
+        <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{desc}</p>
+      </div>
+
+      <div className="shrink-0 pl-1 mr-3">
+        <div
+          className={`size-5 rounded-full border-2 flex items-center justify-center transition-all ${
+            selected
+              ? "border-primary scale-110"
+              : "border-muted-foreground/30 bg-background"
+          }`}
+        >
+          {selected && <div className="size-2.5 rounded-full bg-primary" />}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
@@ -256,6 +354,17 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
   const [requiresIroning, setRequiresIroning] = useState(false);
   const [requiresDryCleaning, setRequiresDryCleaning] = useState(false);
   const [deliveryMethod, setDeliveryMethod] = useState<"self_pickup" | "home_delivery" | null>(null);
+  
+  // Wolt add-ons and delivery tier states
+  const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
+  const [deliveryTier, setDeliveryTier] = useState<string>("standard");
+
+  const toggleAddon = (key: string) => {
+    setSelectedAddons((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+    );
+  };
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [recentAddresses, setRecentAddresses] = useState<any[]>([]);
@@ -276,6 +385,8 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
       setRequiresIroning(false);
       setRequiresDryCleaning(false);
       setDeliveryMethod(null);
+      setSelectedAddons([]);
+      setDeliveryTier("standard");
 
       // Load recent addresses
       try {
@@ -509,7 +620,23 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
 
       localStorage.setItem("recent_laundry_addresses", JSON.stringify(updatedRecents));
 
-      await onSubmit(fullAddressString, notes, images, requiresIroning, requiresDryCleaning, deliveryMethod);
+      const BASE_PRICE = 60;
+      const addonsPriceSum = selectedAddons.reduce((sum, key) => sum + (ADDONS_META[key]?.price || 0), 0);
+      const deliveryTierPrice = deliveryMethod === "home_delivery" ? (DELIVERY_TIERS_META[deliveryTier]?.price || 0) : 0;
+      const estimatedTotalPrice = BASE_PRICE + addonsPriceSum + deliveryTierPrice;
+
+      await onSubmit(
+        fullAddressString,
+        notes,
+        images,
+        requiresIroning,
+        requiresDryCleaning,
+        deliveryMethod,
+        selectedAddons,
+        deliveryMethod === "home_delivery" ? deliveryTier : "standard",
+        BASE_PRICE,
+        estimatedTotalPrice
+      );
 
       setAddressSearchQuery("");
       setSelectedAddress(null);
@@ -522,6 +649,8 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
       setRequiresIroning(false);
       setRequiresDryCleaning(false);
       setDeliveryMethod(null);
+      setSelectedAddons([]);
+      setDeliveryTier("standard");
     } catch (e) {
       toast.error("שגיאה ביצירת ההזמנה");
     } finally {
@@ -841,7 +970,134 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
             </div>
           </div>
 
+          {/* Group A: שדרוגי פרימיום */}
+          <div className="space-y-3 pt-1">
+            <div className="text-right">
+              <h3 className="text-sm sm:text-base font-bold text-foreground">שדרוגי פרימיום ✨</h3>
+              <p className="text-[11px] sm:text-xs text-slate-500">תוספת קבועה לשדרוג איכות הכביסה</p>
+            </div>
+            <div className="space-y-2">
+              {Object.entries(ADDONS_META)
+                .filter(([, meta]) => meta.group === "שדרוגי פרימיום")
+                .map(([key, meta]) => (
+                  <AddonRow
+                    key={key}
+                    id={key}
+                    label={meta.label}
+                    price={meta.price}
+                    desc={meta.desc}
+                    selected={selectedAddons.includes(key)}
+                    onToggle={() => toggleAddon(key)}
+                  />
+                ))}
+            </div>
+          </div>
 
+          {/* Group B: סוגי טיפול מיוחדים */}
+          <div className="space-y-3">
+            <div className="text-right">
+              <h3 className="text-sm sm:text-base font-bold text-foreground">סוגי טיפול מיוחדים 🧺</h3>
+              <p className="text-[11px] sm:text-xs text-slate-500">טיפול מותאם אישית לפי סוג הבגד</p>
+            </div>
+            <div className="space-y-2">
+              {Object.entries(ADDONS_META)
+                .filter(([, meta]) => meta.group === "סוגי טיפול מיוחדים")
+                .map(([key, meta]) => (
+                  <AddonRow
+                    key={key}
+                    id={key}
+                    label={meta.label}
+                    price={meta.price}
+                    desc={meta.desc}
+                    selected={selectedAddons.includes(key)}
+                    onToggle={() => toggleAddon(key)}
+                  />
+                ))}
+            </div>
+          </div>
+
+          {/* Group C: אפשרויות משלוח (Home delivery only) */}
+          {deliveryMethod === "home_delivery" && (
+            <div className="space-y-3 animate-in fade-in slide-in-from-top-3 duration-300">
+              <div className="text-right">
+                <h3 className="text-sm sm:text-base font-bold text-foreground">אפשרויות משלוח 🚗</h3>
+                <p className="text-[11px] sm:text-xs text-slate-500">בחר את מהירות המשלוח המועדפת עליך</p>
+              </div>
+              <div className="space-y-2">
+                {Object.entries(DELIVERY_TIERS_META).map(([key, meta]) => (
+                  <RadioRow
+                    key={key}
+                    id={key}
+                    label={meta.label}
+                    price={meta.price}
+                    desc={meta.desc}
+                    selected={deliveryTier === key}
+                    onSelect={() => setDeliveryTier(key)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Group D: חוויית לוגיסטיקה (Home delivery only) */}
+          {deliveryMethod === "home_delivery" && (
+            <div className="space-y-3 animate-in fade-in slide-in-from-top-3 duration-300">
+              <div className="text-right">
+                <h3 className="text-sm sm:text-base font-bold text-foreground">חוויית לוגיסטיקה 📦</h3>
+                <p className="text-[11px] sm:text-xs text-slate-500">העדפות מסירה מיוחדות לשליח</p>
+              </div>
+              <div className="space-y-2">
+                {Object.entries(ADDONS_META)
+                  .filter(([, meta]) => meta.group === "חוויית לוגיסטיקה")
+                  .map(([key, meta]) => (
+                    <AddonRow
+                      key={key}
+                      id={key}
+                      label={meta.label}
+                      price={meta.price}
+                      desc={meta.desc}
+                      selected={selectedAddons.includes(key)}
+                      onToggle={() => toggleAddon(key)}
+                    />
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {/* estimated price calculator */}
+          <div className="rounded-2xl bg-muted/40 p-4 border border-border space-y-2 dir-rtl text-right mt-4" dir="rtl">
+            <span className="text-xs font-bold text-muted-foreground block">הערכת מחיר הזמנה</span>
+            <div className="space-y-1.5 text-xs font-semibold">
+              <div className="flex justify-between items-center text-muted-foreground">
+                <span>מחיר בסיס כביסה (הערכה)</span>
+                <span>₪60</span>
+              </div>
+              {selectedAddons.reduce((sum, key) => sum + (ADDONS_META[key]?.price || 0), 0) > 0 && (
+                <div className="flex justify-between items-center text-muted-foreground">
+                  <span>תוספות ושדרוגים</span>
+                  <span>+₪{selectedAddons.reduce((sum, key) => sum + (ADDONS_META[key]?.price || 0), 0)}</span>
+                </div>
+              )}
+              {deliveryMethod === "home_delivery" && (DELIVERY_TIERS_META[deliveryTier]?.price || 0) > 0 && (
+                <div className="flex justify-between items-center text-muted-foreground">
+                  <span>שירות משלוח אקספרס</span>
+                  <span>+₪{DELIVERY_TIERS_META[deliveryTier]?.price || 0}</span>
+                </div>
+              )}
+              <div className="border-t border-border pt-1.5 flex justify-between items-center text-sm font-black text-foreground">
+                <span>סה״כ משוער לתשלום</span>
+                <span className="text-primary text-base">
+                  ₪{60 + 
+                    selectedAddons.reduce((sum, key) => sum + (ADDONS_META[key]?.price || 0), 0) + 
+                    (deliveryMethod === "home_delivery" ? (DELIVERY_TIERS_META[deliveryTier]?.price || 0) : 0)
+                  }
+                </span>
+              </div>
+            </div>
+            <p className="text-[10px] text-muted-foreground leading-normal mt-1 font-medium">
+              * המחיר הסופי ייקבע במכבסה לאחר שקילת ואימות הכביסה.
+            </p>
+          </div>
 
           <div className="space-y-2">
             <label className="text-sm font-bold text-foreground block">
