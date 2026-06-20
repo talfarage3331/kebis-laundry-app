@@ -4,7 +4,7 @@ import { useLaundry } from "@/lib/laundry-store";
 import { Flower2 } from "lucide-react";
 import { toast } from "sonner";
 import { auth, db, googleProvider } from "@/lib/firebase";
-import { signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
+import { signInWithEmailAndPassword, signInWithPopup, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 
 // Custom Google brand icon (inline SVG)
@@ -56,9 +56,19 @@ function Login() {
       const result = await signInWithPopup(auth, googleProvider);
       const fbUser = result.user;
       if (fbUser) {
+        // Guard: check Firestore doc exists — block new users registering via Google on Login page
         const userDoc = await getDoc(doc(db, "users", fbUser.uid));
-        const role = userDoc.exists() ? userDoc.data().role : "customer";
+        if (!userDoc.exists()) {
+          // Force sign-out immediately — this is a login page, not registration
+          await signOut(auth);
+          toast.error(
+            "לא נמצא חשבון קיים במערכת. הרשמה כלקוח מתאפשרת רק דרך לינק ייעודי של המכבסה.",
+            { duration: 6000 }
+          );
+          return;
+        }
 
+        const role = userDoc.data().role || "customer";
         toast.success("התחברת בהצלחה");
 
         if (role === "admin") {
@@ -85,7 +95,15 @@ function Login() {
       const fbUser = result.user;
 
       const userDoc = await getDoc(doc(db, "users", fbUser.uid));
-      const role = userDoc.exists() ? userDoc.data().role : "customer";
+
+      // Guard: if no Firestore profile exists, this account was never properly registered
+      if (!userDoc.exists()) {
+        await signOut(auth);
+        setLoading(false);
+        return toast.error("משתמש זה אינו קיים במערכת. אנא עבר לדף ההרשמה.");
+      }
+
+      const role = userDoc.data().role || "customer";
 
       setLoading(false);
       toast.success("התחברת בהצלחה");
@@ -99,13 +117,15 @@ function Login() {
       }
     } catch (error: any) {
       setLoading(false);
-      return toast.error(
-        error.code === "auth/invalid-credential" ||
-          error.code === "auth/user-not-found" ||
-          error.code === "auth/wrong-password"
-          ? "פרטי התחברות לא נכונים"
-          : error.message,
-      );
+      const code = error?.code ?? "";
+      if (
+        code === "auth/invalid-credential" ||
+        code === "auth/user-not-found" ||
+        code === "auth/wrong-password"
+      ) {
+        return toast.error("משתמש זה אינו קיים במערכת. אנא עבר לדף ההרשמה.");
+      }
+      return toast.error(error.message);
     }
   };
 
