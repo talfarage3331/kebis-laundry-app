@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { collection, query, where, getDocs } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import { Loader2 } from "lucide-react";
 import { seedDefaultsIfEmpty } from "@/hooks/use-laundry-options";
 
@@ -15,7 +15,7 @@ export const Route = createFileRoute("/shop/$slug")({
  * 1. Looks up the laundry user whose `shopSlug` matches the URL param.
  * 2. FORCEFULLY overwrites localStorage tenant state (activeLaundryId / activeLaundryName).
  * 3. Seeds default add-ons & delivery tiers for that tenant if none exist yet.
- * 4. Redirects to "/" so the customer sees the branded order flow.
+ * 4. Redirects to "/signup?laundryId=VENDOR_ID" for guests, or "/" for logged-in users.
  *
  * Graceful fallback: if no matching vendor is found, redirects to "/" with no tenant.
  */
@@ -32,6 +32,9 @@ function ShopSlugResolver() {
     let cancelled = false;
 
     async function resolveSlug() {
+      let targetPath = "/";
+      let targetSearch: { laundryId?: string } | undefined = undefined;
+
       try {
         // Query Firestore for the vendor whose shopSlug matches
         const q = query(
@@ -77,6 +80,13 @@ function ShopSlugResolver() {
           seedDefaultsIfEmpty(vendorId).catch((err) =>
             console.warn("[shop-slug] seedDefaultsIfEmpty failed:", err),
           );
+
+          if (!auth.currentUser) {
+            targetPath = "/signup";
+            targetSearch = { laundryId: vendorId };
+          } else {
+            targetPath = "/";
+          }
         } else if (!cancelled) {
           // Unknown slug — clear any stale tenant state and fall through
           localStorage.removeItem("activeLaundryId");
@@ -107,7 +117,11 @@ function ShopSlugResolver() {
         console.error("[shop-slug] resolution error:", err);
       } finally {
         if (!cancelled) {
-          navigate({ to: "/", replace: true });
+          if (targetPath === "/signup" && targetSearch) {
+            navigate({ to: "/signup", search: targetSearch, replace: true });
+          } else {
+            navigate({ to: "/", replace: true });
+          }
         }
       }
     }

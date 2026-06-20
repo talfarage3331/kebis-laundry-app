@@ -44,7 +44,12 @@ const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-export const Route = createFileRoute("/signup")({ component: Signup });
+export const Route = createFileRoute("/signup")({
+  component: Signup,
+  validateSearch: (search: Record<string, unknown>): { laundryId?: string } => ({
+    laundryId: typeof search.laundryId === "string" ? search.laundryId : undefined,
+  }),
+});
 
 function Signup() {
   const { user, loading: authLoading, isProfileReady, role, isRoleLoading } = useLaundry();
@@ -57,9 +62,67 @@ function Signup() {
   const [loading, setLoading] = useState(false);
   const [businessNameError, setBusinessNameError] = useState(false);
 
-  const [activeLaundryId] = useState<string | null>(() =>
-    typeof window !== "undefined" ? localStorage.getItem("activeLaundryId") : null
-  );
+  const { laundryId: urlLaundryId } = Route.useSearch();
+
+  const [activeLaundryId, setActiveLaundryId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    const localId = localStorage.getItem("activeLaundryId");
+    if (localId) return localId;
+    if (urlLaundryId) {
+      localStorage.setItem("activeLaundryId", urlLaundryId);
+      window.dispatchEvent(
+        new StorageEvent("storage", {
+          key: "activeLaundryId",
+          newValue: urlLaundryId,
+        })
+      );
+      return urlLaundryId;
+    }
+    return null;
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const checkId = urlLaundryId || localStorage.getItem("activeLaundryId");
+    if (checkId && checkId !== activeLaundryId) {
+      setActiveLaundryId(checkId);
+      localStorage.setItem("activeLaundryId", checkId);
+      window.dispatchEvent(
+        new StorageEvent("storage", {
+          key: "activeLaundryId",
+          newValue: checkId,
+        })
+      );
+
+      const localName = localStorage.getItem("activeLaundryName");
+      if (!localName) {
+        getDoc(doc(db, "users", checkId))
+          .then((snap) => {
+            if (snap.exists()) {
+              const data = snap.data();
+              const vendorName = data.businessName || data.fullName || data.name || "מכבסה";
+              const vendorSlug = data.shopSlug || "";
+              localStorage.setItem("activeLaundryName", vendorName);
+              localStorage.setItem("activeLaundrySlug", vendorSlug);
+              window.dispatchEvent(
+                new StorageEvent("storage", {
+                  key: "activeLaundryName",
+                  newValue: vendorName,
+                })
+              );
+              window.dispatchEvent(
+                new StorageEvent("storage", {
+                  key: "activeLaundrySlug",
+                  newValue: vendorSlug,
+                })
+              );
+            }
+          })
+          .catch((err) => console.warn("[signup] failed to fetch laundry name for guard:", err));
+      }
+    }
+  }, [urlLaundryId, activeLaundryId]);
 
   useEffect(() => {
     if (user && !authLoading && isProfileReady && !isRoleLoading) {
@@ -203,13 +266,28 @@ function Signup() {
         toast.success("נרשמת בהצלחה — ממתין לאישור המנהל");
         navigate({ to: "/laundry-dashboard" });
       } else {
-        // Customer tab: new Google user without invite link → block & sign out
-        await signOut(auth);
-        setLoading(false);
-        toast.error(
-          "לא נמצא חשבון קיים במערכת. הרשמה כלקוח מתאפשרת רק דרך לינק ייעודי של המכבסה.",
-          { duration: 6000 }
-        );
+        // Customer tab: new Google user
+        if (activeLaundryId) {
+          const displayName = fbUser.displayName || fbUser.email?.split("@")[0] || "לקוח";
+          await setDoc(userDocRef, {
+            fullName: displayName,
+            email: fbUser.email || "",
+            role: "customer",
+            associatedLaundryId: activeLaundryId,
+            createdAt: serverTimestamp(),
+          });
+          setLoading(false);
+          toast.success("נרשמת בהצלחה");
+          navigate({ to: "/" });
+        } else {
+          // No active invite link → block & sign out
+          await signOut(auth);
+          setLoading(false);
+          toast.error(
+            "לא נמצא חשבון קיים במערכת. הרשמה כלקוח מתאפשרת רק דרך לינק ייעודי של המכבסה.",
+            { duration: 6000 }
+          );
+        }
       }
     } catch (error: any) {
       setLoading(false);
