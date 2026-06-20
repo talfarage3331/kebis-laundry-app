@@ -667,7 +667,10 @@ export const ADDONS_META: Record<string, AddonItem> = {
   stain_removal: { label: "הסרת כתמים קשים", price: 20, group: "סוגי טיפול מיוחדים", desc: "טיפול ידני מקדים (Pre-treatment) עם מסירי כתמים" },
   // Group D
   contactless: { label: "משלוח שקט (Contactless)", price: 0, group: "חוויית לוגיסטיקה", desc: "השאר מחוץ לדלת - השליח יצלם לאפליקציה" },
-  phone_coord: { label: "תיאום טלפוני חובה", price: 0, group: "חוויית לוגיסטיקה", desc: "השליח לא מגיע בלי לוודא בשיחה מקדימה שאתם בבית" }
+  phone_coord: { label: "תיאום טלפוני חובה", price: 0, group: "חוויית לוגיסטיקה", desc: "השליח לא מגיע בלי לוודא בשיחה מקדימה שאתם בבית" },
+  // Group E - Self-Pickup Upgrades
+  quick_pickup: { label: "איסוף מהיר", price: 10, group: "שירותי איסוף עצמי", desc: "איסוף מיידי מהסניף ללא המתנה בתור" },
+  express_wash: { label: "כביסה מהירה", price: 20, group: "שירותי איסוף עצמי", desc: "הכביסה שלך תהיה מוכנה בסניף תוך 4 שעות" }
 };
 
 export const DELIVERY_TIERS_META: Record<string, DeliveryTierItem> = {
