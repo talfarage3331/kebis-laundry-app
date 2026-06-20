@@ -3,10 +3,46 @@ import { useState, useEffect } from "react";
 import { useLaundry } from "@/lib/laundry-store";
 import { Flower2, Building2, User, Store } from "lucide-react";
 import { toast } from "sonner";
-import { auth, db } from "@/lib/firebase";
-import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
-import { doc, setDoc, serverTimestamp, collection, query, where, getDocs } from "firebase/firestore";
+import { auth, db, googleProvider } from "@/lib/firebase";
+import {
+  createUserWithEmailAndPassword,
+  signInWithPopup,
+  signOut,
+  updateProfile,
+} from "firebase/auth";
+import {
+  doc,
+  getDoc,
+  setDoc,
+  serverTimestamp,
+  collection,
+  query,
+  where,
+  getDocs,
+} from "firebase/firestore";
 import { generateSlug } from "@/lib/slug";
+
+// Custom Google brand icon (inline SVG)
+const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 533.5 544.3" xmlns="http://www.w3.org/2000/svg" fill="currentColor" {...props}>
+    <path
+      d="M533.5 278.4c0-17.7-1.6-35-4.6-51.8H272v97.9h146.9c-6.3 34.1-25.5 63-54.3 82.4v68h87.8c51.4-47.4 80.9-117.3 80.9-196.5z"
+      fill="#4285F4"
+    />
+    <path
+      d="M272 544.3c73.4 0 135-24.3 180-66.1l-87.8-68c-24.4 16.4-55.6 26-92.2 26-70.9 0-131-47.9-152.5-112.4h-90.9v70.6c45.4 89.8 138.3 149.9 243.4 149.9z"
+      fill="#34A853"
+    />
+    <path
+      d="M119.5 323.8c-10.4-30.9-10.4-64.1 0-95l-90.9-70.6c-38.3 74.6-38.3 162.6 0 237.2l90.9-71.6z"
+      fill="#FBBC05"
+    />
+    <path
+      d="M272 107.9c39.7-.6 78 13.7 107.5 39.4l80.7-80.7C408.7 21.3 342.4-1.7 272 0 166.9 0 74 60.1 28.6 149.9l90.9 71.6C141 155.8 201.1 107.9 272 107.9z"
+      fill="#EA4335"
+    />
+  </svg>
+);
 
 export const Route = createFileRoute("/signup")({ component: Signup });
 
@@ -19,6 +55,7 @@ function Signup() {
   const [selectedRole, setSelectedRole] = useState<"customer" | "laundry">("customer");
   const [businessName, setBusinessName] = useState("");
   const [loading, setLoading] = useState(false);
+  const [businessNameError, setBusinessNameError] = useState(false);
 
   const [activeLaundryId] = useState<string | null>(() =>
     typeof window !== "undefined" ? localStorage.getItem("activeLaundryId") : null
@@ -51,10 +88,12 @@ function Signup() {
     return `${base}-${Date.now().toString(36)}`;
   }
 
+  // ── Email/password signup ─────────────────────────────────────────────────
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !email || !password) return toast.error("יש למלא את כל השדות");
     if (selectedRole === "laundry" && !businessName.trim()) {
+      setBusinessNameError(true);
       return toast.error("יש להזין שם עסק");
     }
     if (selectedRole === "customer" && !activeLaundryId) {
@@ -102,6 +141,81 @@ function Signup() {
     } catch (error: any) {
       setLoading(false);
       return toast.error(error.message);
+    }
+  };
+
+  // ── Google signup/login ───────────────────────────────────────────────────
+  const signInWithGoogle = async () => {
+    // Hard guard: laundry tab requires businessName before opening OAuth popup
+    if (selectedRole === "laundry" && !businessName.trim()) {
+      setBusinessNameError(true);
+      return toast.error("חובה להזין את שם העסק לפני ההרשמה עם גוגל.");
+    }
+
+    setLoading(true);
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const fbUser = result.user;
+
+      if (!fbUser) {
+        setLoading(false);
+        return;
+      }
+
+      // Check if Firestore profile already exists (returning user)
+      const userDocRef = doc(db, "users", fbUser.uid);
+      const userDoc = await getDoc(userDocRef);
+
+      if (userDoc.exists()) {
+        // ── Returning user: log in normally ──
+        const existingRole = userDoc.data().role || "customer";
+        toast.success("התחברת בהצלחה");
+        setLoading(false);
+
+        if (existingRole === "admin") {
+          navigate({ to: "/admin" });
+        } else if (existingRole === "laundry") {
+          navigate({ to: "/laundry-dashboard" });
+        } else {
+          navigate({ to: "/" });
+        }
+        return;
+      }
+
+      // ── New user via Google ──
+      if (selectedRole === "laundry") {
+        // Provision laundry vendor profile
+        const displayName = fbUser.displayName || fbUser.email?.split("@")[0] || "בעל מכבסה";
+        const baseSlug = generateSlug(businessName.trim() || displayName);
+        const uniqueSlug = await ensureUniqueSlug(baseSlug);
+
+        await setDoc(userDocRef, {
+          fullName: displayName,
+          email: fbUser.email || "",
+          role: "laundry",
+          status: "pending_approval",
+          businessName: businessName.trim(),
+          shopSlug: uniqueSlug,
+          createdAt: serverTimestamp(),
+        });
+
+        setLoading(false);
+        toast.success("נרשמת בהצלחה — ממתין לאישור המנהל");
+        navigate({ to: "/laundry-dashboard" });
+      } else {
+        // Customer tab: new Google user without invite link → block & sign out
+        await signOut(auth);
+        setLoading(false);
+        toast.error(
+          "לא נמצא חשבון קיים במערכת. הרשמה כלקוח מתאפשרת רק דרך לינק ייעודי של המכבסה.",
+          { duration: 6000 }
+        );
+      }
+    } catch (error: any) {
+      setLoading(false);
+      if (error.code !== "auth/popup-closed-by-user") {
+        toast.error("התחברות עם גוגל נכשלה: " + error.message);
+      }
     }
   };
 
@@ -238,7 +352,7 @@ function Signup() {
             <button
               id="tab-laundry"
               type="button"
-              onClick={() => setSelectedRole("laundry")}
+              onClick={() => { setSelectedRole("laundry"); setBusinessNameError(false); }}
               className={`relative flex-1 flex items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-black transition-colors duration-200 z-10 ${
                 isLaundry
                   ? "text-[hsl(270,60%,35%)]"
@@ -275,6 +389,64 @@ function Signup() {
           </div>
         )}
 
+        {/* Business name — FIRST for laundry, with error highlight */}
+        {isLaundry && (
+          <div className="animate-in slide-in-from-top-3 duration-300">
+            <label className={`text-sm font-semibold flex items-center gap-1.5 ${businessNameError ? "text-destructive" : "text-foreground"}`}>
+              <Building2 className={`size-3.5 ${businessNameError ? "text-destructive" : "text-primary"}`} />
+              שם העסק / המכבסה
+              <span className="text-destructive text-base leading-none">*</span>
+            </label>
+            <input
+              value={businessName}
+              onChange={(e) => {
+                setBusinessName(e.target.value);
+                if (e.target.value.trim()) setBusinessNameError(false);
+              }}
+              className={`mt-1.5 w-full rounded-2xl border bg-background px-4 py-3 sm:py-3.5 text-base min-h-[48px] focus:outline-none focus:ring-2 placeholder:text-muted-foreground/50 transition-colors ${
+                businessNameError
+                  ? "border-destructive focus:ring-destructive/40 bg-destructive/5"
+                  : "border-border focus:ring-primary"
+              }`}
+              placeholder="מכבסת כביסה פרמיום"
+            />
+            {businessNameError && (
+              <p className="mt-1 text-[11px] text-destructive font-semibold">
+                שדה חובה — נדרש לפני ההרשמה עם גוגל או דוא&quot;ל.
+              </p>
+            )}
+            {businessName && !businessNameError && (
+              <p className="mt-1.5 text-[11px] text-muted-foreground bg-muted/40 px-3 py-1.5 rounded-xl">
+                קישור החנות שלך:{" "}
+                <span className="font-bold text-primary">
+                  /shop/{generateSlug(businessName)}
+                </span>
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Google button — placed prominently for laundry, with business name gate */}
+        {isLaundry && (
+          <button
+            type="button"
+            onClick={signInWithGoogle}
+            disabled={loading}
+            className="w-full flex items-center justify-center gap-2.5 rounded-3xl bg-white text-gray-800 border border-gray-200 py-3.5 text-sm font-bold min-h-[48px] shadow-sm hover:bg-gray-50 active:scale-[0.98] transition disabled:opacity-50"
+          >
+            <GoogleIcon className="size-4.5" />
+            המשך עם Google
+          </button>
+        )}
+
+        {isLaundry && (
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-px bg-border" />
+            <span className="text-[11px] text-muted-foreground font-semibold">או הרשמה עם אימייל</span>
+            <div className="flex-1 h-px bg-border" />
+          </div>
+        )}
+
         {/* Full name */}
         <div>
           <label className="text-sm font-semibold text-foreground">שם מלא</label>
@@ -285,30 +457,6 @@ function Signup() {
             placeholder="ישראל ישראלי"
           />
         </div>
-
-        {/* Business name — only for laundry owners */}
-        {isLaundry && (
-          <div className="animate-in slide-in-from-top-3 duration-300">
-            <label className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
-              <Building2 className="size-3.5 text-primary" />
-              שם העסק / המכבסה
-            </label>
-            <input
-              value={businessName}
-              onChange={(e) => setBusinessName(e.target.value)}
-              className="mt-1.5 w-full rounded-2xl border border-border bg-background px-4 py-3 sm:py-3.5 text-base min-h-[48px] focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-muted-foreground/50"
-              placeholder="מכבסת כביסה פרמיום"
-            />
-            {businessName && (
-              <p className="mt-1.5 text-[11px] text-muted-foreground bg-muted/40 px-3 py-1.5 rounded-xl">
-                קישור החנות שלך:{" "}
-                <span className="font-bold text-primary">
-                  /shop/{generateSlug(businessName)}
-                </span>
-              </p>
-            )}
-          </div>
-        )}
 
         {/* Email */}
         <div>
