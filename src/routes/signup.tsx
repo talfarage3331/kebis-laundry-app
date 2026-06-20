@@ -63,7 +63,7 @@ function Signup() {
   const [loading, setLoading] = useState(false);
   const [businessNameError, setBusinessNameError] = useState(false);
 
-  const { laundryId: urlLaundryId } = Route.useSearch();
+  const { laundryId: urlLaundryId, slug: urlSlug } = Route.useSearch();
 
   const [activeLaundryId, setActiveLaundryId] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
@@ -120,6 +120,55 @@ function Signup() {
     }
   }, [urlLaundryId, activeLaundryId]);
 
+  // ── Async: resolve vendor ID from slug if laundryId wasn't passed directly ──
+  useEffect(() => {
+    const slug = urlSlug;
+    if (!slug || activeLaundryId) return; // already have an ID, skip
+
+    let cancelled = false;
+
+    async function resolveFromSlug() {
+      try {
+        const q = query(
+          collection(db, "users"),
+          where("shopSlug", "==", slug),
+          where("role", "==", "laundry"),
+        );
+        const snap = await getDocs(q);
+        if (!cancelled && !snap.empty) {
+          const vendorDoc = snap.docs[0];
+          const data = vendorDoc.data();
+          const vendorId = vendorDoc.id;
+          const vendorName: string =
+            data.businessName || data.fullName || data.name || "מכבסה";
+          const vendorSlug: string = data.shopSlug || slug;
+
+          localStorage.setItem("activeLaundryId", vendorId);
+          localStorage.setItem("activeLaundryName", vendorName);
+          localStorage.setItem("activeLaundrySlug", vendorSlug);
+          setActiveLaundryId(vendorId);
+
+          window.dispatchEvent(
+            new StorageEvent("storage", { key: "activeLaundryId", newValue: vendorId })
+          );
+          window.dispatchEvent(
+            new StorageEvent("storage", { key: "activeLaundryName", newValue: vendorName })
+          );
+          window.dispatchEvent(
+            new StorageEvent("storage", { key: "activeLaundrySlug", newValue: vendorSlug })
+          );
+        } else if (!cancelled) {
+          console.warn("[signup] No vendor found for slug:", slug);
+        }
+      } catch (err) {
+        console.warn("[signup] Failed to resolve slug:", err);
+      }
+    }
+
+    resolveFromSlug();
+    return () => { cancelled = true; };
+  }, [urlSlug, activeLaundryId]);
+
   useEffect(() => {
     if (user && !authLoading && isProfileReady && !isRoleLoading) {
       const currentRole = user.role || role || "customer";
@@ -157,6 +206,10 @@ function Signup() {
     }
     const finalLaundryId = activeLaundryId || urlLaundryId;
     if (selectedRole === "customer" && !finalLaundryId) {
+      if (urlSlug) {
+        // Slug resolution is still in-flight — ask the user to retry in a moment
+        return toast.error("אמתות קישור... נסה שוב בעוד שנייה", { duration: 3000 });
+      }
       return toast.error("ההרשמה כלקוח מתאפשרת רק דרך קישור ייעודי של המכבסה.");
     }
 
@@ -296,7 +349,9 @@ function Signup() {
   };
 
   // ─── BLOCKED SCREEN: Customer without invite link ────────────────────────
-  const isBlocked = selectedRole === "customer" && !activeLaundryId && !urlLaundryId;
+  // Unblock if EITHER laundryId OR slug is present in the URL — Firestore
+  // resolution from the slug happens asynchronously while the user types.
+  const isBlocked = selectedRole === "customer" && !activeLaundryId && !urlLaundryId && !urlSlug;
   if (isBlocked) {
     return (
       <div className="min-h-[100dvh] bg-background flex flex-col overflow-x-hidden" dir="rtl">

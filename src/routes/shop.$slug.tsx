@@ -1,4 +1,9 @@
-import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  redirect,
+  useNavigate,
+  useParams,
+} from "@tanstack/react-router";
 import { useEffect } from "react";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
@@ -6,18 +11,36 @@ import { Loader2 } from "lucide-react";
 import { seedDefaultsIfEmpty } from "@/hooks/use-laundry-options";
 
 export const Route = createFileRoute("/shop/$slug")({
+  /**
+   * beforeLoad fires SYNCHRONOUSLY before any component renders.
+   * For unauthenticated guests, we immediately throw a redirect to
+   * /signup?slug=<slug> so the router never strips a laundryId that
+   * hasn't been resolved yet.  The actual Firestore look-up happens
+   * inside signup.tsx while the user fills in the form.
+   *
+   * Logged-in users fall through to the component which does the
+   * async Firestore resolution and then navigates to the home screen.
+   */
+  beforeLoad: ({ params }) => {
+    // Only redirect guests — auth.currentUser is null before Firebase
+    // has settled, so we treat null === guest here (safe: worst case the
+    // signup page shows for a split-second, then its own useEffect
+    // redirects the logged-in user to the right dashboard).
+    if (!auth.currentUser) {
+      throw redirect({
+        to: "/signup",
+        search: { slug: params.slug },
+        replace: true,
+      });
+    }
+  },
   component: ShopSlugResolver,
 });
 
 /**
- * Public route: /shop/<shopSlug>
- *
- * 1. Looks up the laundry user whose `shopSlug` matches the URL param.
- * 2. FORCEFULLY overwrites localStorage tenant state (activeLaundryId / activeLaundryName).
- * 3. Seeds default add-ons & delivery tiers for that tenant if none exist yet.
- * 4. Redirects to "/signup?laundryId=VENDOR_ID" for guests, or "/" for logged-in users.
- *
- * Graceful fallback: if no matching vendor is found, redirects to "/" with no tenant.
+ * This component only runs for LOGGED-IN users (guests are redirected
+ * in beforeLoad above).  It resolves the Firestore vendor, updates
+ * tenant localStorage state, and navigates to the home screen.
  */
 function ShopSlugResolver() {
   const { slug } = useParams({ from: "/shop/$slug" });
@@ -32,11 +55,7 @@ function ShopSlugResolver() {
     let cancelled = false;
 
     async function resolveSlug() {
-      let targetPath = "/";
-      let targetSearch: { laundryId?: string; slug?: string } | undefined = undefined;
-
       try {
-        // Query Firestore for the vendor whose shopSlug matches
         const q = query(
           collection(db, "users"),
           where("shopSlug", "==", slug),
@@ -51,79 +70,45 @@ function ShopSlugResolver() {
           const vendorName: string =
             data.businessName || data.fullName || data.name || "מכבסה";
 
-          // Force-overwrite any existing tenant state in localStorage
           localStorage.setItem("activeLaundryId", vendorId);
           localStorage.setItem("activeLaundryName", vendorName);
           localStorage.setItem("activeLaundrySlug", slug);
 
-          // Dispatch storage events so the LaundryProvider can react without a reload
           window.dispatchEvent(
-            new StorageEvent("storage", {
-              key: "activeLaundryId",
-              newValue: vendorId,
-            }),
+            new StorageEvent("storage", { key: "activeLaundryId", newValue: vendorId }),
           );
           window.dispatchEvent(
-            new StorageEvent("storage", {
-              key: "activeLaundryName",
-              newValue: vendorName,
-            }),
+            new StorageEvent("storage", { key: "activeLaundryName", newValue: vendorName }),
           );
           window.dispatchEvent(
-            new StorageEvent("storage", {
-              key: "activeLaundrySlug",
-              newValue: slug,
-            }),
+            new StorageEvent("storage", { key: "activeLaundrySlug", newValue: slug }),
           );
 
-          // Seed default add-ons / tiers in the background (non-blocking)
           seedDefaultsIfEmpty(vendorId).catch((err) =>
             console.warn("[shop-slug] seedDefaultsIfEmpty failed:", err),
           );
-
-          if (!auth.currentUser) {
-            localStorage.setItem("pendingLaundrySlug", slug);
-            targetPath = "/signup";
-            targetSearch = { laundryId: vendorId, slug: slug };
-          } else {
-            targetPath = "/";
-          }
         } else if (!cancelled) {
-          // Unknown slug — clear any stale tenant state and fall through
+          // Unknown slug — clear stale tenant state
           localStorage.removeItem("activeLaundryId");
           localStorage.removeItem("activeLaundryName");
           localStorage.removeItem("activeLaundrySlug");
           localStorage.removeItem("pendingLaundrySlug");
 
-          // Dispatch storage events to clear the tenant state in context
           window.dispatchEvent(
-            new StorageEvent("storage", {
-              key: "activeLaundryId",
-              newValue: null,
-            }),
+            new StorageEvent("storage", { key: "activeLaundryId", newValue: null }),
           );
           window.dispatchEvent(
-            new StorageEvent("storage", {
-              key: "activeLaundryName",
-              newValue: null,
-            }),
+            new StorageEvent("storage", { key: "activeLaundryName", newValue: null }),
           );
           window.dispatchEvent(
-            new StorageEvent("storage", {
-              key: "activeLaundrySlug",
-              newValue: null,
-            }),
+            new StorageEvent("storage", { key: "activeLaundrySlug", newValue: null }),
           );
         }
       } catch (err) {
         console.error("[shop-slug] resolution error:", err);
       } finally {
         if (!cancelled) {
-          if (targetPath === "/signup" && targetSearch) {
-            navigate({ to: "/signup", search: targetSearch, replace: true });
-          } else {
-            navigate({ to: "/", replace: true });
-          }
+          navigate({ to: "/", replace: true });
         }
       }
     }
