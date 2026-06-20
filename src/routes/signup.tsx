@@ -46,8 +46,9 @@ const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
 
 export const Route = createFileRoute("/signup")({
   component: Signup,
-  validateSearch: (search: Record<string, unknown>): { laundryId?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { laundryId?: string; slug?: string } => ({
     laundryId: typeof search.laundryId === "string" ? search.laundryId : undefined,
+    slug: typeof search.slug === "string" ? search.slug : undefined,
   }),
 });
 

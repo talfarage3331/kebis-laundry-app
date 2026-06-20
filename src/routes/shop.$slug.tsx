@@ -33,7 +33,7 @@ function ShopSlugResolver() {
 
     async function resolveSlug() {
       let targetPath = "/";
-      let targetSearch: { laundryId?: string } | undefined = undefined;
+      let targetSearch: { laundryId?: string; slug?: string } | undefined = undefined;
 
       try {
         // Query Firestore for the vendor whose shopSlug matches
@@ -82,8 +82,9 @@ function ShopSlugResolver() {
           );
 
           if (!auth.currentUser) {
+            localStorage.setItem("pendingLaundrySlug", slug);
             targetPath = "/signup";
-            targetSearch = { laundryId: vendorId };
+            targetSearch = { laundryId: vendorId, slug: slug };
           } else {
             targetPath = "/";
           }
@@ -92,6 +93,7 @@ function ShopSlugResolver() {
           localStorage.removeItem("activeLaundryId");
           localStorage.removeItem("activeLaundryName");
           localStorage.removeItem("activeLaundrySlug");
+          localStorage.removeItem("pendingLaundrySlug");
 
           // Dispatch storage events to clear the tenant state in context
           window.dispatchEvent(
