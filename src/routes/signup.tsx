@@ -360,6 +360,7 @@ function Signup() {
             </button>
             <Link
               to="/login"
+              search={urlLaundryId ? { laundryId: urlLaundryId } : undefined}
               className="w-full rounded-2xl bg-primary text-primary-foreground py-3 text-sm font-extrabold shadow-md hover:opacity-90 active:scale-[0.98] transition flex items-center justify-center min-h-[48px]"
             >
               התחבר לחשבון קיים
@@ -573,7 +574,7 @@ function Signup() {
 
         <p className="text-center text-sm text-muted-foreground">
           כבר רשום?{" "}
-          <Link to="/login" className="text-primary font-bold hover:underline">
+          <Link to="/login" search={urlLaundryId ? { laundryId: urlLaundryId } : undefined} className="text-primary font-bold hover:underline">
             התחבר
           </Link>
         </p>

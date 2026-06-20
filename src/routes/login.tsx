@@ -29,10 +29,28 @@ const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-export const Route = createFileRoute("/login")({ component: Login });
+export const Route = createFileRoute("/login")({
+  component: Login,
+  validateSearch: (search: Record<string, unknown>): { laundryId?: string } => ({
+    laundryId: typeof search.laundryId === "string" ? search.laundryId : undefined,
+  }),
+});
 
 function Login() {
   const { user, loading: authLoading, isProfileReady, role, isRoleLoading } = useLaundry();
+  const { laundryId } = Route.useSearch();
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && laundryId) {
+      localStorage.setItem("activeLaundryId", laundryId);
+      window.dispatchEvent(
+        new StorageEvent("storage", {
+          key: "activeLaundryId",
+          newValue: laundryId,
+        })
+      );
+    }
+  }, [laundryId]);
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -184,7 +202,7 @@ function Login() {
         </button>
         <p className="text-center text-sm text-muted-foreground">
           אין לך חשבון?{" "}
-          <Link to="/signup" className="text-primary font-bold">
+          <Link to="/signup" search={laundryId ? { laundryId } : undefined} className="text-primary font-bold">
             הירשם עכשיו
           </Link>
         </p>
