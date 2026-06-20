@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { AdminPricingPanel } from "@/components/AdminPricingPanel";
 import { LaundrySettingsCRUDPanel } from "@/components/LaundrySettingsCRUDPanel";
+import { useLaundryOptions } from "@/hooks/use-laundry-options";
 import { useLaundry, normalizeStatus, type OrderState, ADDONS_META, DELIVERY_TIERS_META } from "@/lib/laundry-store";
 import { db } from "@/lib/firebase";
 import { collection, query, onSnapshot, doc, updateDoc } from "firebase/firestore";
@@ -108,6 +109,7 @@ function safeIso(val: any): string {
 /* ─── main component ─────────────────────────────────────────────── */
 function LaundryDashboard() {
   const { user, logout } = useLaundry();
+  const { resolveTier } = useLaundryOptions();
   const navigate = useNavigate();
 
   const [orders, setOrders]                           = useState<LaundryOrder[]>([]);
@@ -784,6 +786,22 @@ function LaundryDashboard() {
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${getStatusColor(order.status)}`}>
                               {getStatusLabel(order.status)}
                             </span>
+                            {(() => {
+                              const tierKey = (order?.deliveryTier || "standard").toLowerCase();
+                              const isSuper = tierKey === "super_express" || tierKey.includes("super") || tierKey.includes("מהיום") || tierKey.includes("מהירה");
+                              const isExpress = !isSuper && (tierKey === "express" || tierKey.includes("express") || tierKey.includes("אקספרס"));
+                              const tierLabel = isSuper ? "אקספרס מהיום להיום" : isExpress ? "משלוח אקספרס" : "משלוח רגיל";
+                              const badgeStyle = isSuper 
+                                ? "bg-red-50 text-red-700 border-red-200 font-extrabold" 
+                                : isExpress 
+                                  ? "bg-amber-50 text-amber-700 border-amber-200 font-bold" 
+                                  : "bg-slate-50 text-slate-600 border-slate-200";
+                              return (
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] border whitespace-nowrap ${badgeStyle}`}>
+                                  {tierLabel}
+                                </span>
+                              );
+                            })()}
                             <span className="font-mono text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-muted-foreground/5 hidden sm:inline">
                               #{order.id.slice(0, 8)}
                             </span>
