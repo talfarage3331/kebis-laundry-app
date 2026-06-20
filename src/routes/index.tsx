@@ -377,51 +377,22 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
 
   // ── Multi-tenant: read active tenant from context ────────────────────────────────
   const { activeTenantId, activeTenantName } = useLaundry();
-  const hasTenant = Boolean(activeTenantId);
 
-  // Laundry shops state & option hook
+  // Laundry options hook
   const { customAddons, customTiers } = useLaundryOptions();
-  const [laundryShops, setLaundryShops] = useState<{ id: string; name: string }[]>([]);
-  const [selectedLaundry, setSelectedLaundry] = useState<{ id: string; name: string } | null>(null);
 
   // Determine the effective laundry ID to use:
-  // - If a tenant is active (via slug), always use that.
-  // - Otherwise fall back to the dropdown selection.
-  const effectiveLaundryId = hasTenant ? (activeTenantId ?? "") : (selectedLaundry?.id ?? "");
-  const effectiveLaundryName = hasTenant ? (activeTenantName ?? "") : (selectedLaundry?.name ?? "");
+  const effectiveLaundryId = activeTenantId ?? "";
+  const effectiveLaundryName = activeTenantName ?? "מכבסה";
 
-  // Load laundry shops (only needed for the fallback dropdown)
-  useEffect(() => {
-    if (hasTenant) return; // Skip shop loading when tenant is pre-set by slug
-    const q = query(collection(db, "users"), where("role", "==", "laundry"));
-    const unsub = onSnapshot(q, (snapshot) => {
-      const shops = snapshot.docs.map((docSnap) => {
-        const d = docSnap.data();
-        return {
-          id: docSnap.id,
-          name: d.businessName || d.fullName || d.name || `מכבסה #${docSnap.id.slice(0, 4)}`,
-        };
-      });
-      setLaundryShops(shops);
-      if (shops.length > 0 && !selectedLaundry) {
-        setSelectedLaundry(shops[0]);
-      } else if (shops.length === 0) {
-        const fallback = { id: "default_laundry", name: "מכבסה ראשית Kebisa" };
-        setLaundryShops([fallback]);
-        setSelectedLaundry(fallback);
-      }
-    });
-    return () => unsub();
-  }, [hasTenant, selectedLaundry]);
-
-  // Seed default options if the selected laundry shop has none
+  // Seed default options if the laundry shop has none
   useEffect(() => {
     if (isOpen && effectiveLaundryId) {
       seedDefaultsIfEmpty(effectiveLaundryId);
     }
   }, [isOpen, effectiveLaundryId]);
 
-  // Filter addons & delivery tiers for the active/selected shop
+  // Filter addons & delivery tiers for the active shop
   const shopAddonsList = customAddons.filter(a => a.laundryId === effectiveLaundryId);
   const shopTiersList = customTiers.filter(t => t.laundryId === effectiveLaundryId);
 
@@ -787,9 +758,8 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
         </DialogHeader>
 
         <div className="space-y-5 my-4 text-right">
-          {/* Shop Banner / Selection Field — Chameleon UI */}
-          {hasTenant ? (
-            /* TENANT MODE: show branded banner instead of dropdown */
+          {/* Shop Banner / Selection Field — Hardlocked Chameleon UI */}
+          {effectiveLaundryId ? (
             <div className="flex items-center gap-2.5 bg-primary/8 border border-primary/20 rounded-2xl px-4 py-3">
               <div className="size-8 rounded-full bg-primary/15 grid place-items-center shrink-0">
                 <Store className="size-4 text-primary" />
@@ -801,26 +771,8 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
               <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full whitespace-nowrap">✓ מחובר</span>
             </div>
           ) : (
-            /* FALLBACK MODE: show shop selector dropdown */
-            <div className="space-y-2 text-right">
-              <label className="text-sm font-bold text-foreground block">
-                בחר סניף / מכבסה <span className="text-destructive font-black">*</span>
-              </label>
-              <select
-                value={selectedLaundry?.id || ""}
-                onChange={(e) => {
-                  const shop = laundryShops.find(s => s.id === e.target.value);
-                  if (shop) setSelectedLaundry(shop);
-                }}
-                className="w-full h-11 px-3 rounded-2xl border border-muted-foreground/20 bg-background text-foreground text-sm font-bold focus:outline-none focus:ring-2 focus:ring-primary text-right appearance-none"
-                dir="rtl"
-              >
-                {laundryShops.map((shop) => (
-                  <option key={shop.id} value={shop.id}>
-                    🏪 {shop.name}
-                  </option>
-                ))}
-              </select>
+            <div className="flex items-center gap-2 bg-destructive/10 border border-destructive/20 rounded-2xl px-4 py-3 text-destructive text-xs font-bold justify-center" dir="rtl">
+              ⚠️ שגיאה: לא נבחרה מכבסה פעילה. יש להיכנס דרך קישור ייעודי.
             </div>
           )}
 
@@ -1389,7 +1341,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
         <div className="mt-4 flex flex-col-reverse sm:flex-row gap-2 sm:gap-3">
           <button
             onClick={handleSubmit}
-            disabled={isSubmitting || !(requiresWashing || requiresIroning || requiresDryCleaning)}
+            disabled={isSubmitting || !effectiveLaundryId || !(requiresWashing || requiresIroning || requiresDryCleaning)}
             className="flex-1 rounded-3xl bg-lime text-lime-foreground py-3.5 sm:py-4 min-h-[48px] font-bold active:scale-[0.98] transition hover:shadow-lg hover:shadow-lime/20 flex items-center justify-center gap-2 disabled:opacity-50"
           >
             {isSubmitting ? (

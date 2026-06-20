@@ -20,6 +20,10 @@ function Signup() {
   const [businessName, setBusinessName] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const [activeLaundryId, setActiveLaundryId] = useState<string | null>(() =>
+    typeof window !== "undefined" ? localStorage.getItem("activeLaundryId") : null
+  );
+
   useEffect(() => {
     if (user && !authLoading && isProfileReady && !isRoleLoading) {
       const currentRole = user.role || role || "customer";
@@ -77,6 +81,8 @@ function Signup() {
         const uniqueSlug = await ensureUniqueSlug(baseSlug);
         docData.shopSlug = uniqueSlug;
         docData.businessName = businessName.trim();
+      } else if (assignedRole === "customer" && activeLaundryId) {
+        docData.associatedLaundryId = activeLaundryId;
       }
 
       await setDoc(doc(db, "users", fbUser.uid), docData);
@@ -96,6 +102,50 @@ function Signup() {
       return toast.error(error.message);
     }
   };
+
+  if (!activeLaundryId) {
+    return (
+      <div className="min-h-[100dvh] bg-background flex flex-col overflow-x-hidden" dir="rtl">
+        <div className="bg-primary text-primary-foreground rounded-b-[2rem] sm:rounded-b-[2.5rem] px-4 sm:px-6 pt-safe-auth pb-8 sm:pb-12">
+          <div className="mx-auto max-w-md flex items-center gap-3">
+            <div className="size-10 sm:size-12 rounded-full bg-primary-foreground/15 grid place-items-center shrink-0">
+              <Flower2 className="size-5 sm:size-6" strokeWidth={1.75} />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-2xl sm:text-3xl font-extrabold">כביסה</h1>
+              <p className="text-xs sm:text-sm opacity-80">הרשמה חסומה</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mx-auto max-w-md w-full px-6 mt-12 text-center space-y-6">
+          <div className="size-16 rounded-full bg-destructive/10 grid place-items-center mx-auto animate-bounce">
+            <Building2 className="size-8 text-destructive" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-xl sm:text-2xl font-black text-foreground">שגיאה בהרשמה</h2>
+            <p className="text-sm text-muted-foreground font-extrabold">
+              ההרשמה מתאפשרת רק דרך קישור ייעודי של המכבסה.
+            </p>
+          </div>
+          <div className="border-t border-muted-foreground/10 pt-6 flex flex-col gap-2.5">
+            <Link
+              to="/login"
+              className="w-full rounded-2xl bg-primary text-primary-foreground py-3 text-sm font-extrabold shadow-md hover:opacity-90 active:scale-[0.98] transition flex items-center justify-center min-h-[48px]"
+            >
+              התחבר לחשבון קיים
+            </Link>
+            <Link
+              to="/"
+              className="w-full rounded-2xl bg-background border border-border text-foreground py-3 text-sm font-extrabold hover:bg-muted active:scale-[0.98] transition flex items-center justify-center min-h-[48px]"
+            >
+              חזרה לדף הבית
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[100dvh] bg-background flex flex-col overflow-x-hidden">
