@@ -1274,7 +1274,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
         <div className="mt-4 flex flex-col-reverse sm:flex-row gap-2 sm:gap-3">
           <button
             onClick={handleSubmit}
-            disabled={isSubmitting}
+            disabled={isSubmitting || !(requiresWashing || requiresIroning || requiresDryCleaning)}
             className="flex-1 rounded-3xl bg-lime text-lime-foreground py-3.5 sm:py-4 min-h-[48px] font-bold active:scale-[0.98] transition hover:shadow-lg hover:shadow-lime/20 flex items-center justify-center gap-2 disabled:opacity-50"
           >
             {isSubmitting ? (
