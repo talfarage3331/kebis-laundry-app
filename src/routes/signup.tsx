@@ -159,7 +159,8 @@ function Signup() {
       setBusinessNameError(true);
       return toast.error("יש להזין שם עסק");
     }
-    if (selectedRole === "customer" && !activeLaundryId) {
+    const finalLaundryId = activeLaundryId || urlLaundryId;
+    if (selectedRole === "customer" && !finalLaundryId) {
       return toast.error("ההרשמה כלקוח מתאפשרת רק דרך קישור ייעודי של המכבסה.");
     }
 
@@ -185,8 +186,8 @@ function Signup() {
         docData.shopSlug = uniqueSlug;
         docData.businessName = businessName.trim();
         docData.status = "pending_approval";
-      } else if (assignedRole === "customer" && activeLaundryId) {
-        docData.associatedLaundryId = activeLaundryId;
+      } else if (assignedRole === "customer" && finalLaundryId) {
+        docData.associatedLaundryId = finalLaundryId;
       }
 
       await setDoc(doc(db, "users", fbUser.uid), docData);
@@ -298,7 +299,8 @@ function Signup() {
   };
 
   // ─── BLOCKED SCREEN: Customer without invite link ────────────────────────
-  if (!activeLaundryId && selectedRole === "customer") {
+  const isBlocked = selectedRole === "customer" && !activeLaundryId && !urlLaundryId;
+  if (isBlocked) {
     return (
       <div className="min-h-[100dvh] bg-background flex flex-col overflow-x-hidden" dir="rtl">
         {/* Header */}
