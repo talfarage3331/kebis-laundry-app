@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
 import { useLaundry } from "@/lib/laundry-store";
-import { Flower2, Building2, User, Store } from "lucide-react";
+import { Flower2, Building2 } from "lucide-react";
 import { toast } from "sonner";
 import { auth, db, googleProvider } from "@/lib/firebase";
 import {
@@ -20,7 +20,6 @@ import {
   where,
   getDocs,
 } from "firebase/firestore";
-import { generateSlug } from "@/lib/slug";
 
 // Custom Google brand icon (inline SVG)
 const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
@@ -46,8 +45,7 @@ const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
 
 export const Route = createFileRoute("/signup")({
   component: Signup,
-  validateSearch: (search: Record<string, unknown>): { laundryId?: string; slug?: string } => ({
-    laundryId: typeof search.laundryId === "string" ? search.laundryId : undefined,
+  validateSearch: (search: Record<string, unknown>): { slug?: string } => ({
     slug: typeof search.slug === "string" ? search.slug : undefined,
   }),
 });
@@ -58,85 +56,44 @@ function Signup() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [selectedRole, setSelectedRole] = useState<"customer" | "laundry">("customer");
-  const [businessName, setBusinessName] = useState("");
   const [loading, setLoading] = useState(false);
-  const [businessNameError, setBusinessNameError] = useState(false);
 
-  const { laundryId: urlLaundryId, slug: urlSlug } = Route.useSearch();
+  const { slug: urlSlug } = Route.useSearch();
 
-  const [activeLaundryId, setActiveLaundryId] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    if (urlLaundryId) {
-      localStorage.setItem("activeLaundryId", urlLaundryId);
-      window.dispatchEvent(
-        new StorageEvent("storage", {
-          key: "activeLaundryId",
-          newValue: urlLaundryId,
-        })
-      );
-      return urlLaundryId;
-    }
-    return localStorage.getItem("activeLaundryId");
-  });
+  const [activeLaundryId, setActiveLaundryId] = useState<string | null>(null);
+  const [resolvedLaundryName, setResolvedLaundryName] = useState<string | null>(null);
 
   const [isResolvingSlug, setIsResolvingSlug] = useState(() => {
     if (typeof window === "undefined") return false;
-    const slug = urlSlug;
-    const currentActiveSlug = localStorage.getItem("activeLaundrySlug");
-    const currentActiveId = localStorage.getItem("activeLaundryId");
-    return !!slug && (!currentActiveId || currentActiveSlug !== slug);
+    return !!urlSlug;
   });
+
   const pendingActionRef = useRef<((resolvedId: string | null) => void) | null>(null);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const checkId = urlLaundryId || localStorage.getItem("activeLaundryId");
-    if (checkId && checkId !== activeLaundryId) {
-      setActiveLaundryId(checkId);
-      localStorage.setItem("activeLaundryId", checkId);
-      window.dispatchEvent(
-        new StorageEvent("storage", {
-          key: "activeLaundryId",
-          newValue: checkId,
-        })
-      );
-
-      getDoc(doc(db, "users", checkId))
-        .then((snap) => {
-          if (snap.exists()) {
-            const data = snap.data();
-            const vendorName = data.businessName || data.fullName || data.name || "מכבסה";
-            const vendorSlug = data.shopSlug || "";
-            localStorage.setItem("activeLaundryName", vendorName);
-            localStorage.setItem("activeLaundrySlug", vendorSlug);
-            window.dispatchEvent(
-              new StorageEvent("storage", {
-                key: "activeLaundryName",
-                newValue: vendorName,
-              })
-            );
-            window.dispatchEvent(
-              new StorageEvent("storage", {
-                key: "activeLaundrySlug",
-                newValue: vendorSlug,
-              })
-            );
-          }
-        })
-        .catch((err) => console.warn("[signup] failed to fetch laundry details:", err));
-    }
-  }, [urlLaundryId, activeLaundryId]);
-
-  // ── Async: resolve vendor ID from slug if laundryId wasn't passed directly ──
+  // ── Async: resolve vendor ID from slug ───────────────────────────────────
   useEffect(() => {
     const slug = urlSlug;
-    const currentActiveSlug = localStorage.getItem("activeLaundrySlug");
 
-    // Skip resolution only if we already have the active laundry ID and its slug matches the URL slug
-    if (!slug || (activeLaundryId && currentActiveSlug === slug)) {
+    if (!slug) {
       setIsResolvingSlug(false);
+      return;
+    }
+
+    // If we already resolved this exact slug, skip
+    const cachedSlug = typeof window !== "undefined" ? localStorage.getItem("activeLaundrySlug") : null;
+    const cachedId = typeof window !== "undefined" ? localStorage.getItem("activeLaundryId") : null;
+    if (cachedId && cachedSlug === slug) {
+      setActiveLaundryId(cachedId);
+      setResolvedLaundryName(
+        typeof window !== "undefined" ? localStorage.getItem("activeLaundryName") : null
+      );
+      setIsResolvingSlug(false);
+      // Execute any buffered submit
+      if (pendingActionRef.current) {
+        const action = pendingActionRef.current;
+        pendingActionRef.current = null;
+        action(cachedId);
+      }
       return;
     }
 
@@ -163,6 +120,7 @@ function Signup() {
             localStorage.setItem("activeLaundryName", vendorName);
             localStorage.setItem("activeLaundrySlug", vendorSlug);
             setActiveLaundryId(vendorId);
+            setResolvedLaundryName(vendorName);
 
             window.dispatchEvent(
               new StorageEvent("storage", { key: "activeLaundryId", newValue: vendorId })
@@ -174,14 +132,13 @@ function Signup() {
               new StorageEvent("storage", { key: "activeLaundrySlug", newValue: vendorSlug })
             );
 
-            // Execute buffered submit if any
             if (pendingActionRef.current) {
               const action = pendingActionRef.current;
               pendingActionRef.current = null;
               action(vendorId);
             }
           } else {
-            console.warn("[signup] No vendor found for slug:", slug);
+            console.warn("[signup] No laundry found for slug:", slug);
             if (pendingActionRef.current) {
               const action = pendingActionRef.current;
               pendingActionRef.current = null;
@@ -207,8 +164,9 @@ function Signup() {
     return () => {
       cancelled = true;
     };
-  }, [urlSlug, activeLaundryId]);
+  }, [urlSlug]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Redirect already-authenticated users ─────────────────────────────────
   useEffect(() => {
     if (user && !authLoading && isProfileReady && !isRoleLoading) {
       const currentRole = user.role || role || "customer";
@@ -222,238 +180,19 @@ function Signup() {
     }
   }, [user, authLoading, isProfileReady, isRoleLoading, role, navigate]);
 
-  /** Ensure the generated slug is unique — append a short suffix if needed */
-  async function ensureUniqueSlug(base: string): Promise<string> {
-    let candidate = base;
-    let attempt = 0;
-    while (attempt < 10) {
-      const q = query(collection(db, "users"), where("shopSlug", "==", candidate));
-      const snap = await getDocs(q);
-      if (snap.empty) return candidate;
-      attempt++;
-      candidate = `${base}-${attempt}`;
-    }
-    return `${base}-${Date.now().toString(36)}`;
-  }
-
-  // ── Email/password signup ─────────────────────────────────────────────────
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name || !email || !password) return toast.error("יש למלא את כל השדות");
-    if (selectedRole === "laundry" && !businessName.trim()) {
-      setBusinessNameError(true);
-      return toast.error("יש להזין שם עסק");
-    }
-
-    const performSubmit = async (resolvedId: string | null) => {
-      if (selectedRole === "customer" && !resolvedId) {
-        setLoading(false);
-        return toast.error("ההרשמה כלקוח מתאפשרת רק דרך קישור ייעודי של המכבסה.");
-      }
-
-      setLoading(true);
-      try {
-        const result = await createUserWithEmailAndPassword(auth, email, password);
-        const fbUser = result.user;
-
-        await updateProfile(fbUser, { displayName: name });
-
-        const assignedRole = email === "talfarage3331@gmail.com" ? "admin" : selectedRole;
-
-        const docData: Record<string, any> = {
-          fullName: name,
-          email: email,
-          role: assignedRole,
-          createdAt: serverTimestamp(),
-        };
-
-        if (assignedRole === "laundry") {
-          const baseSlug = generateSlug(businessName.trim() || name);
-          const uniqueSlug = await ensureUniqueSlug(baseSlug);
-          docData.shopSlug = uniqueSlug;
-          docData.businessName = businessName.trim();
-          docData.status = "pending_approval";
-        } else if (assignedRole === "customer" && resolvedId) {
-          docData.associatedLaundryId = resolvedId;
-        }
-
-        await setDoc(doc(db, "users", fbUser.uid), docData);
-
-        setLoading(false);
-        toast.success("נרשמת בהצלחה");
-
-        if (assignedRole === "admin") {
-          navigate({ to: "/admin" });
-        } else if (assignedRole === "laundry") {
-          navigate({ to: "/laundry-dashboard" });
-        } else {
-          navigate({ to: "/" });
-        }
-      } catch (error: any) {
-        setLoading(false);
-        return toast.error(error.message);
-      }
-    };
-
-    const finalLaundryId = activeLaundryId || urlLaundryId;
-    if (selectedRole === "customer" && !finalLaundryId) {
-      if (urlSlug && isResolvingSlug) {
-        setLoading(true);
-        pendingActionRef.current = (resolvedId) => {
-          performSubmit(resolvedId);
-        };
-        return;
-      }
-      return toast.error("ההרשמה כלקוח מתאפשרת רק דרך קישור ייעודי של המכבסה.");
-    }
-
-    performSubmit(finalLaundryId || null);
-  };
-
-  // ── Google signup/login ───────────────────────────────────────────────────
-  const signInWithGoogle = async () => {
-    // Hard guard: laundry tab requires businessName before opening OAuth popup
-    if (selectedRole === "laundry" && !businessName.trim()) {
-      setBusinessNameError(true);
-      return toast.error("חובה להזין את שם העסק לפני ההרשמה עם גוגל.");
-    }
-
-    const performGoogleSubmit = async (resolvedId: string | null) => {
-      setLoading(true);
-      try {
-        const result = await signInWithPopup(auth, googleProvider);
-        const fbUser = result.user;
-
-        if (!fbUser) {
-          setLoading(false);
-          return;
-        }
-
-        // Check if Firestore profile already exists (returning user)
-        const userDocRef = doc(db, "users", fbUser.uid);
-        const userDoc = await getDoc(userDocRef);
-
-        if (userDoc.exists()) {
-          // ── Returning user: log in normally ──
-          const existingRole = userDoc.data().role || "customer";
-          toast.success("התחברת בהצלחה");
-          setLoading(false);
-
-          if (existingRole === "admin") {
-            navigate({ to: "/admin" });
-          } else if (existingRole === "laundry") {
-            navigate({ to: "/laundry-dashboard" });
-          } else {
-            navigate({ to: "/" });
-          }
-          return;
-        }
-
-        // ── New user via Google ──
-        if (selectedRole === "laundry") {
-          // Provision laundry vendor profile
-          const displayName = fbUser.displayName || fbUser.email?.split("@")[0] || "בעל מכבסה";
-          const baseSlug = generateSlug(businessName.trim() || displayName);
-          const uniqueSlug = await ensureUniqueSlug(baseSlug);
-
-          await setDoc(userDocRef, {
-            fullName: displayName,
-            email: fbUser.email || "",
-            role: "laundry",
-            status: "pending_approval",
-            businessName: businessName.trim(),
-            shopSlug: uniqueSlug,
-            createdAt: serverTimestamp(),
-          });
-
-          setLoading(false);
-          toast.success("נרשמת בהצלחה — ממתין לאישור המנהל");
-          navigate({ to: "/laundry-dashboard" });
-        } else {
-          // Customer tab: new Google user
-          if (resolvedId) {
-            const displayName = fbUser.displayName || fbUser.email?.split("@")[0] || "לקוח";
-            await setDoc(userDocRef, {
-              fullName: displayName,
-              email: fbUser.email || "",
-              role: "customer",
-              associatedLaundryId: resolvedId,
-              createdAt: serverTimestamp(),
-            });
-            setLoading(false);
-            toast.success("נרשמת בהצלחה");
-            navigate({ to: "/" });
-          } else {
-            // No active invite link → block & sign out
-            await signOut(auth);
-            setLoading(false);
-            toast.error(
-              "לא נמצא חשבון קיים במערכת. הרשמה כלקוח מתאפשרת רק דרך לינק ייעודי של המכבסה.",
-              { duration: 6000 }
-            );
-          }
-        }
-      } catch (error: any) {
-        setLoading(false);
-        if (error.code !== "auth/popup-closed-by-user") {
-          toast.error("התחברות עם גוגל נכשלה: " + error.message);
-        }
-      }
-    };
-
-    const finalLaundryId = activeLaundryId || urlLaundryId;
-    if (selectedRole === "customer" && !finalLaundryId) {
-      if (urlSlug && isResolvingSlug) {
-        setLoading(true);
-        pendingActionRef.current = (resolvedId) => {
-          performGoogleSubmit(resolvedId);
-        };
-        return;
-      }
-      return toast.error("ההרשמה כלקוח מתאפשרת רק דרך קישור ייעודי של המכבסה.");
-    }
-
-    performGoogleSubmit(finalLaundryId || null);
-  };
-
-  // ─── BLOCKED SCREEN: Customer without invite link ────────────────────────
-  // Unblock if EITHER laundryId OR slug is present in the URL — Firestore
-  // resolution from the slug happens asynchronously while the user types.
-  const isBlocked = selectedRole === "customer" && !activeLaundryId && !urlLaundryId && !urlSlug;
-  if (isBlocked) {
+  // ─── BLOCKED SCREEN: no slug in URL ──────────────────────────────────────
+  if (!urlSlug) {
     return (
       <div className="min-h-[100dvh] bg-background flex flex-col overflow-x-hidden" dir="rtl">
         {/* Header */}
         <div className="bg-primary text-primary-foreground rounded-b-[2rem] px-4 sm:px-6 pt-safe-auth pb-10">
-          <div className="mx-auto max-w-md flex items-center gap-3 mb-6">
+          <div className="mx-auto max-w-md flex items-center gap-3">
             <div className="size-10 rounded-full bg-primary-foreground/15 grid place-items-center shrink-0">
               <Flower2 className="size-5" strokeWidth={1.75} />
             </div>
             <div>
               <h1 className="text-2xl font-extrabold">כביסה</h1>
               <p className="text-xs opacity-80">הרשמה</p>
-            </div>
-          </div>
-
-          {/* Prominent tab bar in header */}
-          <div className="mx-auto max-w-md">
-            <div className="relative flex bg-primary-foreground/10 rounded-2xl p-1 gap-1">
-              <button
-                type="button"
-                onClick={() => setSelectedRole("customer")}
-                className="relative flex-1 flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-black transition-all duration-200 bg-white text-primary shadow-md"
-              >
-                <User className="size-4" />
-                לקוח
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedRole("laundry")}
-                className="relative flex-1 flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-black transition-all duration-200 text-primary-foreground/70 hover:text-primary-foreground hover:bg-primary-foreground/10"
-              >
-                <Store className="size-4" />
-                בעל מכבסה
-              </button>
             </div>
           </div>
         </div>
@@ -470,17 +209,8 @@ function Signup() {
             </p>
           </div>
           <div className="border-t border-muted-foreground/10 pt-6 flex flex-col gap-2.5">
-            <button
-              type="button"
-              onClick={() => setSelectedRole("laundry")}
-              className="w-full rounded-2xl bg-primary/10 text-primary border border-primary/20 py-3.5 text-sm font-extrabold hover:bg-primary hover:text-primary-foreground active:scale-[0.98] transition flex items-center justify-center gap-2 min-h-[48px]"
-            >
-              <Store className="size-4" />
-              הרשמה כבעל מכבסה
-            </button>
             <Link
               to="/login"
-              search={urlLaundryId ? { laundryId: urlLaundryId } : undefined}
               className="w-full rounded-2xl bg-primary text-primary-foreground py-3 text-sm font-extrabold shadow-md hover:opacity-90 active:scale-[0.98] transition flex items-center justify-center min-h-[48px]"
             >
               התחבר לחשבון קיים
@@ -497,80 +227,171 @@ function Signup() {
     );
   }
 
-  // ─── MAIN SIGNUP FORM ────────────────────────────────────────────────────
-  const isLaundry = selectedRole === "laundry";
+  // ─── MAIN CUSTOMER SIGNUP FORM ────────────────────────────────────────────
+
+  // ── Email/password signup ─────────────────────────────────────────────────
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name || !email || !password) return toast.error("יש למלא את כל השדות");
+
+    const performSubmit = async (resolvedId: string | null) => {
+      if (!resolvedId) {
+        setLoading(false);
+        return toast.error("לא ניתן היה לזהות את המכבסה. אנא נסה שוב דרך הקישור המקורי.");
+      }
+
+      setLoading(true);
+      try {
+        const result = await createUserWithEmailAndPassword(auth, email, password);
+        const fbUser = result.user;
+
+        await updateProfile(fbUser, { displayName: name });
+
+        const assignedRole = email === "talfarage3331@gmail.com" ? "admin" : "customer";
+
+        const docData: Record<string, unknown> = {
+          fullName: name,
+          email: email,
+          role: assignedRole,
+          associatedLaundryId: resolvedId,
+          createdAt: serverTimestamp(),
+        };
+
+        await setDoc(doc(db, "users", fbUser.uid), docData);
+
+        setLoading(false);
+        toast.success("נרשמת בהצלחה");
+
+        if (assignedRole === "admin") {
+          navigate({ to: "/admin" });
+        } else {
+          navigate({ to: "/" });
+        }
+      } catch (error: unknown) {
+        setLoading(false);
+        const msg = error instanceof Error ? error.message : String(error);
+        return toast.error(msg);
+      }
+    };
+
+    // If slug is still resolving, buffer the submit
+    if (!activeLaundryId) {
+      if (urlSlug && isResolvingSlug) {
+        setLoading(true);
+        pendingActionRef.current = (resolvedId) => {
+          performSubmit(resolvedId);
+        };
+        return;
+      }
+      return toast.error("לא ניתן היה לזהות את המכבסה. אנא נסה שוב דרך הקישור המקורי.");
+    }
+
+    performSubmit(activeLaundryId);
+  };
+
+  // ── Google signup ─────────────────────────────────────────────────────────
+  // Fix #4: Disable the Google button while slug is still resolving
+  const signInWithGoogle = async () => {
+    if (isResolvingSlug) {
+      // Buffer: wait for slug resolution then run
+      setLoading(true);
+      pendingActionRef.current = (resolvedId) => {
+        performGoogleSignup(resolvedId);
+      };
+      return;
+    }
+
+    const resolvedId = activeLaundryId;
+    if (!resolvedId) {
+      return toast.error("לא ניתן היה לזהות את המכבסה. אנא נסה שוב דרך הקישור המקורי.");
+    }
+
+    performGoogleSignup(resolvedId);
+  };
+
+  const performGoogleSignup = async (resolvedId: string | null) => {
+    setLoading(true);
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const fbUser = result.user;
+
+      if (!fbUser) {
+        setLoading(false);
+        return;
+      }
+
+      // Check if Firestore profile already exists (returning user)
+      const userDocRef = doc(db, "users", fbUser.uid);
+      const userDoc = await getDoc(userDocRef);
+
+      if (userDoc.exists()) {
+        // Returning user: log in normally
+        const existingRole = userDoc.data().role || "customer";
+        toast.success("התחברת בהצלחה");
+        setLoading(false);
+
+        if (existingRole === "admin") {
+          navigate({ to: "/admin" });
+        } else if (existingRole === "laundry") {
+          navigate({ to: "/laundry-dashboard" });
+        } else {
+          navigate({ to: "/" });
+        }
+        return;
+      }
+
+      // New user via Google
+      if (!resolvedId) {
+        await signOut(auth);
+        setLoading(false);
+        toast.error(
+          "לא נמצא חשבון קיים במערכת. הרשמה כלקוח מתאפשרת רק דרך לינק ייעודי של המכבסה.",
+          { duration: 6000 }
+        );
+        return;
+      }
+
+      const displayName = fbUser.displayName || fbUser.email?.split("@")[0] || "לקוח";
+      await setDoc(userDocRef, {
+        fullName: displayName,
+        email: fbUser.email || "",
+        role: "customer",
+        associatedLaundryId: resolvedId,
+        createdAt: serverTimestamp(),
+      });
+
+      setLoading(false);
+      toast.success("נרשמת בהצלחה");
+      navigate({ to: "/" });
+    } catch (error: unknown) {
+      setLoading(false);
+      if (error instanceof Error && (error as { code?: string }).code !== "auth/popup-closed-by-user") {
+        toast.error("התחברות עם גוגל נכשלה: " + error.message);
+      }
+    }
+  };
+
+  const isGoogleDisabled = loading || isResolvingSlug;
 
   return (
     <div className="min-h-[100dvh] bg-background flex flex-col overflow-x-hidden" dir="rtl">
 
-      {/* ── Header with embedded role tab switcher ── */}
-      <div
-        className={`text-primary-foreground rounded-b-[2rem] px-4 sm:px-6 pt-safe-auth pb-10 transition-colors duration-300 ${
-          isLaundry ? "bg-[hsl(270,60%,35%)]" : "bg-primary"
-        }`}
-      >
-        {/* Logo row */}
-        <div className="mx-auto max-w-md flex items-center gap-3 mb-6">
+      {/* ── Header ── */}
+      <div className="bg-primary text-primary-foreground rounded-b-[2rem] px-4 sm:px-6 pt-safe-auth pb-10">
+        <div className="mx-auto max-w-md flex items-center gap-3">
           <div className="size-10 rounded-full bg-primary-foreground/15 grid place-items-center shrink-0">
             <Flower2 className="size-5" strokeWidth={1.75} />
           </div>
           <div>
             <h1 className="text-2xl font-extrabold">כביסה</h1>
             <p className="text-xs opacity-80">
-              {isLaundry ? "הרשמת עסק" : "הצטרפו אלינו"}
+              {isResolvingSlug
+                ? "טוען פרטי מכבסה..."
+                : resolvedLaundryName
+                ? `הצטרפות ל${resolvedLaundryName}`
+                : "הצטרפו אלינו"}
             </p>
           </div>
-        </div>
-
-        {/* ── Prominent role tab bar ── */}
-        <div className="mx-auto max-w-md">
-          <p className="text-[11px] font-bold text-primary-foreground/60 mb-2 tracking-widest uppercase">
-            סוג חשבון
-          </p>
-          <div className="relative flex bg-black/20 rounded-2xl p-1 gap-1">
-            {/* sliding indicator */}
-            <div
-              className={`absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-xl bg-white shadow-md transition-all duration-250 ease-out ${
-                isLaundry ? "translate-x-[-100%] right-1" : "right-1"
-              }`}
-              aria-hidden="true"
-            />
-
-            <button
-              id="tab-customer"
-              type="button"
-              onClick={() => setSelectedRole("customer")}
-              className={`relative flex-1 flex items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-black transition-colors duration-200 z-10 ${
-                !isLaundry
-                  ? "text-primary"
-                  : "text-primary-foreground/70 hover:text-primary-foreground"
-              }`}
-            >
-              <User className="size-4 shrink-0" />
-              לקוח
-            </button>
-
-            <button
-              id="tab-laundry"
-              type="button"
-              onClick={() => { setSelectedRole("laundry"); setBusinessNameError(false); }}
-              className={`relative flex-1 flex items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-black transition-colors duration-200 z-10 ${
-                isLaundry
-                  ? "text-[hsl(270,60%,35%)]"
-                  : "text-primary-foreground/70 hover:text-primary-foreground"
-              }`}
-            >
-              <Store className="size-4 shrink-0" />
-              בעל מכבסה
-            </button>
-          </div>
-
-          {/* Context label under tabs */}
-          <p className="mt-2.5 text-[11px] text-primary-foreground/70 font-semibold text-center">
-            {isLaundry
-              ? "הרשמה לניהול מכבסה — ממתין לאישור מנהל"
-              : "הרשמה דרך קישור ייעודי של המכבסה"}
-          </p>
         </div>
       </div>
 
@@ -579,74 +400,32 @@ function Signup() {
         onSubmit={submit}
         className="mx-auto max-w-md w-full px-4 sm:px-6 mt-5 space-y-4 flex-1 pb-10"
       >
-        {/* Pending approval notice for laundry */}
-        {isLaundry && (
-          <div className="animate-in slide-in-from-top-2 duration-200 rounded-2xl bg-amber-50 border border-amber-200 p-3.5 flex gap-3 items-start">
+        {/* Resolving indicator */}
+        {isResolvingSlug && (
+          <div className="animate-in slide-in-from-top-2 duration-200 rounded-2xl bg-blue-50 border border-blue-200 p-3.5 flex gap-3 items-start">
             <span className="text-lg shrink-0 mt-0.5">⏳</span>
-            <p className="text-xs text-amber-700 font-semibold leading-relaxed">
-              לאחר ההרשמה, החשבון שלך יהיה ממתין לאישור המנהל הראשי.
-              תקבל גישה מלאה לפאנל הניהול מיד לאחר האישור.
+            <p className="text-xs text-blue-700 font-semibold leading-relaxed">
+              מאמת פרטי מכבסה...
             </p>
           </div>
         )}
 
-        {/* Business name — FIRST for laundry, with error highlight */}
-        {isLaundry && (
-          <div className="animate-in slide-in-from-top-3 duration-300">
-            <label className={`text-sm font-semibold flex items-center gap-1.5 ${businessNameError ? "text-destructive" : "text-foreground"}`}>
-              <Building2 className={`size-3.5 ${businessNameError ? "text-destructive" : "text-primary"}`} />
-              שם העסק / המכבסה
-              <span className="text-destructive text-base leading-none">*</span>
-            </label>
-            <input
-              value={businessName}
-              onChange={(e) => {
-                setBusinessName(e.target.value);
-                if (e.target.value.trim()) setBusinessNameError(false);
-              }}
-              className={`mt-1.5 w-full rounded-2xl border bg-background px-4 py-3 sm:py-3.5 text-base min-h-[48px] focus:outline-none focus:ring-2 placeholder:text-muted-foreground/50 transition-colors ${
-                businessNameError
-                  ? "border-destructive focus:ring-destructive/40 bg-destructive/5"
-                  : "border-border focus:ring-primary"
-              }`}
-              placeholder="מכבסת כביסה פרמיום"
-            />
-            {businessNameError && (
-              <p className="mt-1 text-[11px] text-destructive font-semibold">
-                שדה חובה — נדרש לפני ההרשמה עם גוגל או דוא&quot;ל.
-              </p>
-            )}
-            {businessName && !businessNameError && (
-              <p className="mt-1.5 text-[11px] text-muted-foreground bg-muted/40 px-3 py-1.5 rounded-xl">
-                קישור החנות שלך:{" "}
-                <span className="font-bold text-primary">
-                  /shop/{generateSlug(businessName)}
-                </span>
-              </p>
-            )}
-          </div>
-        )}
+        {/* Google button */}
+        <button
+          type="button"
+          onClick={signInWithGoogle}
+          disabled={isGoogleDisabled}
+          className="w-full flex items-center justify-center gap-2.5 rounded-3xl bg-white text-gray-800 border border-gray-200 py-3.5 text-sm font-bold min-h-[48px] shadow-sm hover:bg-gray-50 active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <GoogleIcon className="size-4.5" />
+          {isResolvingSlug ? "ממתין לאימות..." : "המשך עם Google"}
+        </button>
 
-        {/* Google button — placed prominently for laundry, with business name gate */}
-        {isLaundry && (
-          <button
-            type="button"
-            onClick={signInWithGoogle}
-            disabled={loading}
-            className="w-full flex items-center justify-center gap-2.5 rounded-3xl bg-white text-gray-800 border border-gray-200 py-3.5 text-sm font-bold min-h-[48px] shadow-sm hover:bg-gray-50 active:scale-[0.98] transition disabled:opacity-50"
-          >
-            <GoogleIcon className="size-4.5" />
-            המשך עם Google
-          </button>
-        )}
-
-        {isLaundry && (
-          <div className="flex items-center gap-3">
-            <div className="flex-1 h-px bg-border" />
-            <span className="text-[11px] text-muted-foreground font-semibold">או הרשמה עם אימייל</span>
-            <div className="flex-1 h-px bg-border" />
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          <div className="flex-1 h-px bg-border" />
+          <span className="text-[11px] text-muted-foreground font-semibold">או הרשמה עם אימייל</span>
+          <div className="flex-1 h-px bg-border" />
+        </div>
 
         {/* Full name */}
         <div>
@@ -689,12 +468,12 @@ function Signup() {
           disabled={loading}
           className="w-full rounded-3xl bg-lime text-lime-foreground py-4 text-base sm:text-lg font-extrabold min-h-[52px] shadow-[0_15px_40px_-15px_oklch(0.92_0.18_125/0.6)] active:scale-[0.98] transition disabled:opacity-50"
         >
-          {loading ? "נרשם..." : isLaundry ? "הרשמה כבעל מכבסה" : "הרשמה"}
+          {loading ? "נרשם..." : "הרשמה"}
         </button>
 
         <p className="text-center text-sm text-muted-foreground">
           כבר רשום?{" "}
-          <Link to="/login" search={urlLaundryId ? { laundryId: urlLaundryId } : undefined} className="text-primary font-bold hover:underline">
+          <Link to="/login" className="text-primary font-bold hover:underline">
             התחבר
           </Link>
         </p>

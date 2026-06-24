@@ -1,11 +1,27 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { useLaundry } from "@/lib/laundry-store";
-import { Flower2 } from "lucide-react";
+import { Flower2, Building2, Store } from "lucide-react";
 import { toast } from "sonner";
 import { auth, db, googleProvider } from "@/lib/firebase";
-import { signInWithEmailAndPassword, signInWithPopup, signOut } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import {
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signOut,
+  createUserWithEmailAndPassword,
+  updateProfile,
+} from "firebase/auth";
+import {
+  doc,
+  getDoc,
+  setDoc,
+  serverTimestamp,
+  collection,
+  query,
+  where,
+  getDocs,
+} from "firebase/firestore";
+import { generateSlug } from "@/lib/slug";
 
 // Custom Google brand icon (inline SVG)
 const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
@@ -31,14 +47,43 @@ const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
 
 export const Route = createFileRoute("/login")({
   component: Login,
-  validateSearch: (search: Record<string, unknown>): { laundryId?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { laundryId?: string; slug?: string } => ({
     laundryId: typeof search.laundryId === "string" ? search.laundryId : undefined,
+    slug: typeof search.slug === "string" ? search.slug : undefined,
   }),
 });
 
+/** Ensure the generated slug is unique — append a short suffix if needed */
+async function ensureUniqueSlug(base: string): Promise<string> {
+  let candidate = base;
+  let attempt = 0;
+  while (attempt < 10) {
+    const q = query(collection(db, "users"), where("shopSlug", "==", candidate));
+    const snap = await getDocs(q);
+    if (snap.empty) return candidate;
+    attempt++;
+    candidate = `${base}-${attempt}`;
+  }
+  return `${base}-${Date.now().toString(36)}`;
+}
+
 function Login() {
   const { user, loading: authLoading, isProfileReady, role, isRoleLoading } = useLaundry();
-  const { laundryId } = Route.useSearch();
+  const { laundryId, slug } = Route.useSearch();
+  const navigate = useNavigate();
+
+  // ── View state: "login" or "register-laundry" ─────────────────────────────
+  const [view, setView] = useState<"login" | "register-laundry">("login");
+
+  // ── Shared form state ─────────────────────────────────────────────────────
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  // ── Laundry registration fields ───────────────────────────────────────────
+  const [name, setName] = useState("");
+  const [businessName, setBusinessName] = useState("");
+  const [businessNameError, setBusinessNameError] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined" && laundryId) {
@@ -51,11 +96,8 @@ function Login() {
       );
     }
   }, [laundryId]);
-  const navigate = useNavigate();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
 
+  // ── Redirect already-authenticated users ─────────────────────────────────
   useEffect(() => {
     if (user && !authLoading && isProfileReady && !isRoleLoading) {
       const currentRole = user.role || role || "customer";
@@ -64,20 +106,29 @@ function Login() {
       } else if (currentRole === "laundry") {
         navigate({ to: "/laundry-dashboard" });
       } else {
-        navigate({ to: "/" });
+        // Fix #1: If a slug param is present, redirect to that shop
+        if (slug) {
+          navigate({ to: "/shop/$slug", params: { slug } });
+        } else {
+          navigate({ to: "/" });
+        }
       }
     }
-  }, [user, authLoading, isProfileReady, isRoleLoading, role, navigate]);
+  }, [user, authLoading, isProfileReady, isRoleLoading, role, navigate, slug]);
 
-  const signInWithGoogle = async () => {
+  // ─────────────────────────────────────────────────────────────────────────
+  // LOGIN VIEW handlers
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // Fix #2: Google guard ONLY applies when view === "login"
+  const signInWithGoogleLogin = async () => {
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const fbUser = result.user;
       if (fbUser) {
-        // Guard: check Firestore doc exists — block new users registering via Google on Login page
         const userDoc = await getDoc(doc(db, "users", fbUser.uid));
         if (!userDoc.exists()) {
-          // Force sign-out immediately — this is a login page, not registration
+          // Block — this is the login view, not registration
           await signOut(auth);
           toast.error(
             "לא נמצא חשבון קיים במערכת. הרשמה כלקוח מתאפשרת רק דרך לינק ייעודי של המכבסה.",
@@ -86,24 +137,32 @@ function Login() {
           return;
         }
 
-        const role = userDoc.data().role || "customer";
+        const existingRole = userDoc.data().role || "customer";
         toast.success("התחברת בהצלחה");
 
-        if (role === "admin") {
+        if (existingRole === "admin") {
           navigate({ to: "/admin" });
-        } else if (role === "laundry") {
+        } else if (existingRole === "laundry") {
           navigate({ to: "/laundry-dashboard" });
         } else {
-          navigate({ to: "/" });
+          // Fix #1: redirect to shop if slug present
+          if (slug) {
+            navigate({ to: "/shop/$slug", params: { slug } });
+          } else {
+            navigate({ to: "/" });
+          }
         }
       }
-    } catch (error: any) {
-      console.error("Error logging in with Google:", error.message);
-      toast.error("התחברות עם גוגל נכשלה: " + error.message);
+    } catch (error: unknown) {
+      const err = error as { code?: string; message?: string };
+      if (err.code !== "auth/popup-closed-by-user") {
+        console.error("Error logging in with Google:", err.message);
+        toast.error("התחברות עם גוגל נכשלה: " + err.message);
+      }
     }
   };
 
-  const submit = async (e: React.FormEvent) => {
+  const submitLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) return toast.error("יש למלא את כל השדות");
 
@@ -114,28 +173,33 @@ function Login() {
 
       const userDoc = await getDoc(doc(db, "users", fbUser.uid));
 
-      // Guard: if no Firestore profile exists, this account was never properly registered
       if (!userDoc.exists()) {
         await signOut(auth);
         setLoading(false);
         return toast.error("משתמש זה אינו קיים במערכת. אנא עבר לדף ההרשמה.");
       }
 
-      const role = userDoc.data().role || "customer";
+      const existingRole = userDoc.data().role || "customer";
 
       setLoading(false);
       toast.success("התחברת בהצלחה");
 
-      if (role === "admin") {
+      if (existingRole === "admin") {
         navigate({ to: "/admin" });
-      } else if (role === "laundry") {
+      } else if (existingRole === "laundry") {
         navigate({ to: "/laundry-dashboard" });
       } else {
-        navigate({ to: "/" });
+        // Fix #1: redirect to shop if slug present
+        if (slug) {
+          navigate({ to: "/shop/$slug", params: { slug } });
+        } else {
+          navigate({ to: "/" });
+        }
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       setLoading(false);
-      const code = error?.code ?? "";
+      const err = error as { code?: string; message?: string };
+      const code = err?.code ?? "";
       if (
         code === "auth/invalid-credential" ||
         code === "auth/user-not-found" ||
@@ -143,68 +207,350 @@ function Login() {
       ) {
         return toast.error("משתמש זה אינו קיים במערכת. אנא עבר לדף ההרשמה.");
       }
-      return toast.error(error.message);
+      return toast.error(err.message ?? "שגיאה בהתחברות");
     }
   };
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // LAUNDRY REGISTRATION VIEW handlers
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // Fix #2: When view === "register-laundry", Google acts as registration — no block
+  const signInWithGoogleRegisterLaundry = async () => {
+    if (!businessName.trim()) {
+      setBusinessNameError(true);
+      return toast.error("חובה להזין את שם העסק לפני ההרשמה עם גוגל.");
+    }
+
+    setLoading(true);
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const fbUser = result.user;
+
+      if (!fbUser) {
+        setLoading(false);
+        return;
+      }
+
+      const userDocRef = doc(db, "users", fbUser.uid);
+      const userDoc = await getDoc(userDocRef);
+
+      if (userDoc.exists()) {
+        // Returning user — log them in normally
+        const existingRole = userDoc.data().role || "customer";
+        toast.success("התחברת בהצלחה");
+        setLoading(false);
+
+        if (existingRole === "admin") {
+          navigate({ to: "/admin" });
+        } else if (existingRole === "laundry") {
+          navigate({ to: "/laundry-dashboard" });
+        } else {
+          navigate({ to: "/" });
+        }
+        return;
+      }
+
+      // New laundry owner via Google — provision vendor profile
+      const displayName = fbUser.displayName || fbUser.email?.split("@")[0] || "בעל מכבסה";
+      const baseSlug = generateSlug(businessName.trim() || displayName);
+      const uniqueSlug = await ensureUniqueSlug(baseSlug);
+
+      await setDoc(userDocRef, {
+        fullName: displayName,
+        email: fbUser.email || "",
+        role: "laundry",
+        status: "pending_approval",
+        businessName: businessName.trim(),
+        shopSlug: uniqueSlug,
+        createdAt: serverTimestamp(),
+      });
+
+      setLoading(false);
+      toast.success("נרשמת בהצלחה — ממתין לאישור המנהל");
+      navigate({ to: "/laundry-dashboard" });
+    } catch (error: unknown) {
+      setLoading(false);
+      const err = error as { code?: string; message?: string };
+      if (err.code !== "auth/popup-closed-by-user") {
+        toast.error("התחברות עם גוגל נכשלה: " + err.message);
+      }
+    }
+  };
+
+  const submitRegisterLaundry = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name || !email || !password) return toast.error("יש למלא את כל השדות");
+    if (!businessName.trim()) {
+      setBusinessNameError(true);
+      return toast.error("יש להזין שם עסק");
+    }
+
+    setLoading(true);
+    try {
+      const result = await createUserWithEmailAndPassword(auth, email, password);
+      const fbUser = result.user;
+
+      await updateProfile(fbUser, { displayName: name });
+
+      const assignedRole = email === "talfarage3331@gmail.com" ? "admin" : "laundry";
+
+      const baseSlug = generateSlug(businessName.trim() || name);
+      const uniqueSlug = await ensureUniqueSlug(baseSlug);
+
+      await setDoc(doc(db, "users", fbUser.uid), {
+        fullName: name,
+        email: email,
+        role: assignedRole,
+        status: "pending_approval",
+        businessName: businessName.trim(),
+        shopSlug: uniqueSlug,
+        createdAt: serverTimestamp(),
+      });
+
+      setLoading(false);
+      toast.success("נרשמת בהצלחה — ממתין לאישור המנהל");
+
+      if (assignedRole === "admin") {
+        navigate({ to: "/admin" });
+      } else {
+        navigate({ to: "/laundry-dashboard" });
+      }
+    } catch (error: unknown) {
+      setLoading(false);
+      const err = error as { message?: string };
+      return toast.error(err.message ?? "שגיאה בהרשמה");
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // ── LOGIN VIEW ────────────────────────────────────────────────────────────
+  if (view === "login") {
+    return (
+      <div className="min-h-[100dvh] bg-background flex flex-col overflow-x-hidden" dir="rtl">
+        <div className="bg-primary text-primary-foreground rounded-b-[2rem] sm:rounded-b-[2.5rem] px-4 sm:px-6 pt-safe-auth pb-8 sm:pb-12">
+          <div className="mx-auto max-w-md flex items-center gap-3">
+            <div className="size-10 sm:size-12 rounded-full bg-primary-foreground/15 grid place-items-center shrink-0">
+              <Flower2 className="size-5 sm:size-6" strokeWidth={1.75} />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-2xl sm:text-3xl font-extrabold">כביסה</h1>
+              <p className="text-xs sm:text-sm opacity-80">ברוכים השבים</p>
+            </div>
+          </div>
+        </div>
+
+        <form
+          onSubmit={submitLogin}
+          className="mx-auto max-w-md w-full px-4 sm:px-6 mt-6 sm:mt-8 space-y-4 flex-1 pb-8"
+        >
+          <div>
+            <label className="text-sm font-semibold">דוא&quot;ל</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="mt-1.5 w-full rounded-2xl border border-border bg-background px-4 py-3 sm:py-3.5 text-base min-h-[48px] focus:outline-none focus:ring-2 focus:ring-primary"
+              placeholder="name@example.com"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-semibold">סיסמה</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="mt-1.5 w-full rounded-2xl border border-border bg-background px-4 py-3 sm:py-3.5 text-base min-h-[48px] focus:outline-none focus:ring-2 focus:ring-primary"
+              placeholder="••••••••"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full rounded-3xl bg-lime text-lime-foreground py-3.5 sm:py-4 text-base sm:text-lg font-extrabold min-h-[48px] shadow-[0_15px_40px_-15px_oklch(0.92_0.18_125/0.6)] active:scale-[0.98] transition disabled:opacity-50"
+          >
+            {loading ? "מתחבר..." : "התחברות"}
+          </button>
+          <button
+            type="button"
+            onClick={signInWithGoogleLogin}
+            className="w-full mt-2 flex items-center justify-center gap-2 rounded-3xl bg-white text-gray-800 py-3.5 sm:py-4 text-base sm:text-lg font-semibold min-h-[48px] shadow-md hover:bg-gray-100 transition"
+          >
+            <GoogleIcon className="size-5" />
+            התחברות עם Google
+          </button>
+
+          {/* Fix #3: Link to switch back when in login view (link to register-laundry) */}
+          <div className="border-t border-border pt-4 flex flex-col gap-2 text-center">
+            <button
+              type="button"
+              onClick={() => {
+                setView("register-laundry");
+                setEmail("");
+                setPassword("");
+              }}
+              className="w-full rounded-2xl bg-[hsl(270,60%,35%)]/10 text-[hsl(270,60%,35%)] border border-[hsl(270,60%,35%)]/20 py-3 text-sm font-extrabold hover:bg-[hsl(270,60%,35%)] hover:text-white active:scale-[0.98] transition flex items-center justify-center gap-2 min-h-[48px]"
+            >
+              <Store className="size-4" />
+              הרשם כמכבסה חדשה
+            </button>
+            {slug && (
+              <Link
+                to="/signup"
+                search={{ slug }}
+                className="text-sm text-primary font-bold hover:underline mt-1"
+              >
+                הרשמה כלקוח דרך הקישור שלך
+              </Link>
+            )}
+          </div>
+        </form>
+      </div>
+    );
+  }
+
+  // ── LAUNDRY REGISTER VIEW ─────────────────────────────────────────────────
   return (
-    <div className="min-h-[100dvh] bg-background flex flex-col overflow-x-hidden">
-      <div className="bg-primary text-primary-foreground rounded-b-[2rem] sm:rounded-b-[2.5rem] px-4 sm:px-6 pt-safe-auth pb-8 sm:pb-12">
+    <div className="min-h-[100dvh] bg-background flex flex-col overflow-x-hidden" dir="rtl">
+      <div className="bg-[hsl(270,60%,35%)] text-white rounded-b-[2rem] px-4 sm:px-6 pt-safe-auth pb-8 sm:pb-12">
         <div className="mx-auto max-w-md flex items-center gap-3">
-          <div className="size-10 sm:size-12 rounded-full bg-primary-foreground/15 grid place-items-center shrink-0">
-            <Flower2 className="size-5 sm:size-6" strokeWidth={1.75} />
+          <div className="size-10 sm:size-12 rounded-full bg-white/15 grid place-items-center shrink-0">
+            <Store className="size-5 sm:size-6" strokeWidth={1.75} />
           </div>
           <div className="min-w-0">
             <h1 className="text-2xl sm:text-3xl font-extrabold">כביסה</h1>
-            <p className="text-xs sm:text-sm opacity-80">ברוכים השבים</p>
+            <p className="text-xs sm:text-sm opacity-80">הרשמת עסק חדש</p>
           </div>
         </div>
       </div>
 
       <form
-        onSubmit={submit}
-        className="mx-auto max-w-md w-full px-4 sm:px-6 mt-6 sm:mt-8 space-y-4 flex-1 pb-8"
+        onSubmit={submitRegisterLaundry}
+        className="mx-auto max-w-md w-full px-4 sm:px-6 mt-5 space-y-4 flex-1 pb-10"
       >
+        {/* Pending approval notice */}
+        <div className="animate-in slide-in-from-top-2 duration-200 rounded-2xl bg-amber-50 border border-amber-200 p-3.5 flex gap-3 items-start">
+          <span className="text-lg shrink-0 mt-0.5">⏳</span>
+          <p className="text-xs text-amber-700 font-semibold leading-relaxed">
+            לאחר ההרשמה, החשבון שלך יהיה ממתין לאישור המנהל הראשי.
+            תקבל גישה מלאה לפאנל הניהול מיד לאחר האישור.
+          </p>
+        </div>
+
+        {/* Business name — FIRST */}
+        <div className="animate-in slide-in-from-top-3 duration-300">
+          <label className={`text-sm font-semibold flex items-center gap-1.5 ${businessNameError ? "text-destructive" : "text-foreground"}`}>
+            <Building2 className={`size-3.5 ${businessNameError ? "text-destructive" : "text-[hsl(270,60%,35%)]"}`} />
+            שם העסק / המכבסה
+            <span className="text-destructive text-base leading-none">*</span>
+          </label>
+          <input
+            value={businessName}
+            onChange={(e) => {
+              setBusinessName(e.target.value);
+              if (e.target.value.trim()) setBusinessNameError(false);
+            }}
+            className={`mt-1.5 w-full rounded-2xl border bg-background px-4 py-3 sm:py-3.5 text-base min-h-[48px] focus:outline-none focus:ring-2 placeholder:text-muted-foreground/50 transition-colors ${
+              businessNameError
+                ? "border-destructive focus:ring-destructive/40 bg-destructive/5"
+                : "border-border focus:ring-[hsl(270,60%,35%)]"
+            }`}
+            placeholder="מכבסת כביסה פרמיום"
+          />
+          {businessNameError && (
+            <p className="mt-1 text-[11px] text-destructive font-semibold">
+              שדה חובה — נדרש לפני ההרשמה עם גוגל או דוא&quot;ל.
+            </p>
+          )}
+          {businessName && !businessNameError && (
+            <p className="mt-1.5 text-[11px] text-muted-foreground bg-muted/40 px-3 py-1.5 rounded-xl">
+              קישור החנות שלך:{" "}
+              <span className="font-bold text-[hsl(270,60%,35%)]">
+                /shop/{generateSlug(businessName)}
+              </span>
+            </p>
+          )}
+        </div>
+
+        {/* Google button — laundry registration, no block guard */}
+        <button
+          type="button"
+          onClick={signInWithGoogleRegisterLaundry}
+          disabled={loading}
+          className="w-full flex items-center justify-center gap-2.5 rounded-3xl bg-white text-gray-800 border border-gray-200 py-3.5 text-sm font-bold min-h-[48px] shadow-sm hover:bg-gray-50 active:scale-[0.98] transition disabled:opacity-50"
+        >
+          <GoogleIcon className="size-4.5" />
+          המשך עם Google
+        </button>
+
+        <div className="flex items-center gap-3">
+          <div className="flex-1 h-px bg-border" />
+          <span className="text-[11px] text-muted-foreground font-semibold">או הרשמה עם אימייל</span>
+          <div className="flex-1 h-px bg-border" />
+        </div>
+
+        {/* Full name */}
         <div>
-          <label className="text-sm font-semibold">דוא"ל</label>
+          <label className="text-sm font-semibold text-foreground">שם מלא</label>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="mt-1.5 w-full rounded-2xl border border-border bg-background px-4 py-3 sm:py-3.5 text-base min-h-[48px] focus:outline-none focus:ring-2 focus:ring-[hsl(270,60%,35%)] placeholder:text-muted-foreground/50"
+            placeholder="ישראל ישראלי"
+          />
+        </div>
+
+        {/* Email */}
+        <div>
+          <label className="text-sm font-semibold text-foreground">דוא&quot;ל</label>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="mt-1.5 w-full rounded-2xl border border-border bg-background px-4 py-3 sm:py-3.5 text-base min-h-[48px] focus:outline-none focus:ring-2 focus:ring-primary"
+            className="mt-1.5 w-full rounded-2xl border border-border bg-background px-4 py-3 sm:py-3.5 text-base min-h-[48px] focus:outline-none focus:ring-2 focus:ring-[hsl(270,60%,35%)] placeholder:text-muted-foreground/50"
             placeholder="name@example.com"
           />
         </div>
+
+        {/* Password */}
         <div>
-          <label className="text-sm font-semibold">סיסמה</label>
+          <label className="text-sm font-semibold text-foreground">סיסמה</label>
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="mt-1.5 w-full rounded-2xl border border-border bg-background px-4 py-3 sm:py-3.5 text-base min-h-[48px] focus:outline-none focus:ring-2 focus:ring-primary"
+            className="mt-1.5 w-full rounded-2xl border border-border bg-background px-4 py-3 sm:py-3.5 text-base min-h-[48px] focus:outline-none focus:ring-2 focus:ring-[hsl(270,60%,35%)] placeholder:text-muted-foreground/50"
             placeholder="••••••••"
           />
         </div>
+
+        {/* Submit */}
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-3xl bg-lime text-lime-foreground py-3.5 sm:py-4 text-base sm:text-lg font-extrabold min-h-[48px] shadow-[0_15px_40px_-15px_oklch(0.92_0.18_125/0.6)] active:scale-[0.98] transition disabled:opacity-50"
+          className="w-full rounded-3xl bg-[hsl(270,60%,35%)] text-white py-4 text-base sm:text-lg font-extrabold min-h-[52px] shadow-[0_15px_40px_-15px_hsl(270,60%,35%,0.6)] active:scale-[0.98] transition disabled:opacity-50"
         >
-          {loading ? "מתחבר..." : "התחברות"}
+          {loading ? "נרשם..." : "הרשמה כבעל מכבסה"}
         </button>
-        <button
-          type="button"
-          onClick={signInWithGoogle}
-          className="w-full mt-2 flex items-center justify-center gap-2 rounded-3xl bg-white text-gray-800 py-3.5 sm:py-4 text-base sm:text-lg font-semibold min-h-[48px] shadow-md hover:bg-gray-100 transition"
-        >
-          <GoogleIcon className="size-5" />
-          התחברות עם Google
-        </button>
+
+        {/* Fix #3: Link back to login view */}
         <p className="text-center text-sm text-muted-foreground">
-          אין לך חשבון?{" "}
-          <Link to="/signup" search={laundryId ? { laundryId } : undefined} className="text-primary font-bold">
-            הירשם עכשיו
-          </Link>
+          כבר יש לך מכבסה?{" "}
+          <button
+            type="button"
+            onClick={() => {
+              setView("login");
+              setName("");
+              setBusinessName("");
+              setBusinessNameError(false);
+            }}
+            className="text-primary font-bold hover:underline"
+          >
+            התחבר כאן
+          </button>
         </p>
       </form>
     </div>
