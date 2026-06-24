@@ -22,11 +22,14 @@ export const Route = createFileRoute("/shop/$slug")({
    * async Firestore resolution and then navigates to the home screen.
    */
   beforeLoad: ({ params }) => {
-    // Only redirect guests — auth.currentUser is null before Firebase
-    // has settled, so we treat null === guest here (safe: worst case the
-    // signup page shows for a split-second, then its own useEffect
-    // redirects the logged-in user to the right dashboard).
-    if (!auth?.currentUser) {
+    // Guard: auth is typed as null during SSR (firebase.ts casts it).
+    // Access .currentUser only when auth is a real Auth instance.
+    // Unauthenticated guests (auth === null OR currentUser === null)
+    // are redirected to the customer signup page with the slug preserved.
+    // Logged-in users fall through to ShopSlugResolver which resolves
+    // the Firestore doc and then navigates to the home screen.
+    const currentUser = auth != null ? auth.currentUser : null;
+    if (!currentUser) {
       throw redirect({
         to: "/signup",
         search: { slug: params.slug },

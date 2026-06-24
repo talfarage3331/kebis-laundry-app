@@ -263,6 +263,7 @@ function Login() {
         status: "pending_approval",
         businessName: businessName.trim(),
         shopSlug: uniqueSlug,
+        slug: uniqueSlug,
         createdAt: serverTimestamp(),
       });
 
@@ -305,6 +306,7 @@ function Login() {
         status: "pending_approval",
         businessName: businessName.trim(),
         shopSlug: uniqueSlug,
+        slug: uniqueSlug,
         createdAt: serverTimestamp(),
       });
 
