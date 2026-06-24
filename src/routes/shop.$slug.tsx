@@ -1,67 +1,89 @@
 import {
   createFileRoute,
-  redirect,
   useNavigate,
   useParams,
 } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { collection, query, where, getDocs } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase";
+import { getApp, getApps } from "firebase/app";
+import { getAuth } from "firebase/auth";
+import {
+  getFirestore,
+  collection,
+  query,
+  where,
+  getDocs,
+  doc,
+  getDoc,
+  updateDoc,
+} from "firebase/firestore";
 import { Loader2 } from "lucide-react";
 import { seedDefaultsIfEmpty } from "@/hooks/use-laundry-options";
+import { useLaundry } from "@/lib/laundry-store";
 
 export const Route = createFileRoute("/shop/$slug")({
-  /**
-   * beforeLoad fires SYNCHRONOUSLY before any component renders.
-   * For unauthenticated guests, we immediately throw a redirect to
-   * /signup?slug=<slug> so the router never strips a laundryId that
-   * hasn't been resolved yet.  The actual Firestore look-up happens
-   * inside signup.tsx while the user fills in the form.
-   *
-   * Logged-in users fall through to the component which does the
-   * async Firestore resolution and then navigates to the home screen.
-   */
-  beforeLoad: ({ params }) => {
-    // Guard: auth is typed as null during SSR (firebase.ts casts it).
-    // Access .currentUser only when auth is a real Auth instance.
-    // Unauthenticated guests (auth === null OR currentUser === null)
-    // are redirected to the customer signup page with the slug preserved.
-    // Logged-in users fall through to ShopSlugResolver which resolves
-    // the Firestore doc and then navigates to the home screen.
-    const currentUser = auth != null ? auth.currentUser : null;
-    if (!currentUser) {
-      throw redirect({
-        to: "/signup",
-        search: { slug: params.slug },
-        replace: true,
-      });
-    }
-  },
   component: ShopSlugResolver,
 });
 
 /**
- * This component only runs for LOGGED-IN users (guests are redirected
- * in beforeLoad above).  It resolves the Firestore vendor, updates
- * tenant localStorage state, and navigates to the home screen.
+ * Returns a live Firestore instance, bypassing the module-level cached
+ * reference that can be `null` during SSR.
+ */
+function getDb() {
+  const apps = getApps();
+  if (!apps.length) throw new Error("Firebase app not initialised");
+  return getFirestore(apps[0]);
+}
+
+/**
+ * Returns a live Auth instance with the same safety guarantee.
+ */
+function getLiveAuth() {
+  const apps = getApps();
+  if (!apps.length) throw new Error("Firebase app not initialised");
+  return getAuth(apps[0]);
+}
+
+/**
+ * This component handles resolution of the shop slug on the client side.
+ * If the user is a guest, they are redirected to /signup?slug=<slug>.
+ * If they are logged in, we resolve the slug to its vendor, set the active
+ * tenant state in localStorage, permanently link their profile in Firestore
+ * if it has no associated laundry, and navigate them to the home screen.
  */
 function ShopSlugResolver() {
   const { slug } = useParams({ from: "/shop/$slug" });
   const navigate = useNavigate();
+  const { user, loading: authLoading, isProfileReady, isRoleLoading } = useLaundry();
 
   useEffect(() => {
+    // Wait until auth state is fully loaded
+    if (authLoading || !isProfileReady || isRoleLoading) return;
+
     if (!slug) {
       navigate({ to: "/", replace: true });
       return;
     }
 
+    // 1. If user is guest, redirect to signup
+    if (!user) {
+      navigate({
+        to: "/signup",
+        search: { slug },
+        replace: true,
+      });
+      return;
+    }
+
+    // 2. User is logged in -> resolve slug and navigate
     let cancelled = false;
 
-    async function resolveSlug() {
+    async function resolveAndRedirect() {
       try {
-        // Laundry businesses are stored in the 'users' collection with
-        // 'shopSlug' as the primary slug field (and 'slug' as a legacy alias).
-        // Try shopSlug first, fall back to slug.
+        const db = getDb();
+        const liveAuth = getLiveAuth();
+        const currentUser = liveAuth.currentUser;
+
+        // Try shopSlug first, fall back to slug
         let snap = await getDocs(
           query(collection(db, "users"), where("shopSlug", "==", slug)),
         );
@@ -78,10 +100,12 @@ function ShopSlugResolver() {
           const vendorName: string =
             data.businessName || data.name || data.fullName || "מכבסה";
 
+          // Save active laundry tenant in localStorage
           localStorage.setItem("activeLaundryId", vendorId);
           localStorage.setItem("activeLaundryName", vendorName);
           localStorage.setItem("activeLaundrySlug", slug);
 
+          // Dispatch storage events to synchronize the layout
           window.dispatchEvent(
             new StorageEvent("storage", { key: "activeLaundryId", newValue: vendorId }),
           );
@@ -92,11 +116,26 @@ function ShopSlugResolver() {
             new StorageEvent("storage", { key: "activeLaundrySlug", newValue: slug }),
           );
 
-          seedDefaultsIfEmpty(vendorId).catch((err) =>
+          // Permanently associate user if they don't have associatedLaundryId yet
+          if (currentUser) {
+            const userDocRef = doc(db, "users", currentUser.uid);
+            const userDoc = await getDoc(userDocRef);
+            if (userDoc.exists()) {
+              const userData = userDoc.data();
+              if (userData.role === "customer" && !userData.associatedLaundryId) {
+                await updateDoc(userDocRef, {
+                  associatedLaundryId: vendorId,
+                });
+              }
+            }
+          }
+
+          // Seed default configurations if empty
+          await seedDefaultsIfEmpty(vendorId).catch((err) =>
             console.warn("[shop-slug] seedDefaultsIfEmpty failed:", err),
           );
         } else if (!cancelled) {
-          // Unknown slug — clear stale tenant state
+          // Clear active tenant if slug is invalid
           localStorage.removeItem("activeLaundryId");
           localStorage.removeItem("activeLaundryName");
           localStorage.removeItem("activeLaundrySlug");
@@ -121,9 +160,11 @@ function ShopSlugResolver() {
       }
     }
 
-    resolveSlug();
-    return () => { cancelled = true; };
-  }, [slug, navigate]);
+    resolveAndRedirect();
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, navigate, user, authLoading, isProfileReady, isRoleLoading]);
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background gap-4">

@@ -97,6 +97,12 @@ function Login() {
     }
   }, [laundryId]);
 
+  useEffect(() => {
+    if (typeof window !== "undefined" && slug) {
+      localStorage.setItem("pendingLaundrySlug", slug);
+    }
+  }, [slug]);
+
   // ── Redirect already-authenticated users ─────────────────────────────────
   useEffect(() => {
     if (user && !authLoading && isProfileReady && !isRoleLoading) {
@@ -107,8 +113,13 @@ function Login() {
         navigate({ to: "/laundry-dashboard" });
       } else {
         // Fix #1: If a slug param is present, redirect to that shop
-        if (slug) {
-          navigate({ to: "/shop/$slug", params: { slug } });
+        const cachedSlug = typeof window !== "undefined" ? localStorage.getItem("pendingLaundrySlug") : null;
+        const targetSlug = slug || cachedSlug;
+        if (targetSlug) {
+          if (typeof window !== "undefined") {
+            localStorage.removeItem("pendingLaundrySlug");
+          }
+          navigate({ to: "/shop/$slug", params: { slug: targetSlug } });
         } else {
           navigate({ to: "/" });
         }
@@ -146,8 +157,13 @@ function Login() {
           navigate({ to: "/laundry-dashboard" });
         } else {
           // Fix #1: redirect to shop if slug present
-          if (slug) {
-            navigate({ to: "/shop/$slug", params: { slug } });
+          const cachedSlug = typeof window !== "undefined" ? localStorage.getItem("pendingLaundrySlug") : null;
+          const targetSlug = slug || cachedSlug;
+          if (targetSlug) {
+            if (typeof window !== "undefined") {
+              localStorage.removeItem("pendingLaundrySlug");
+            }
+            navigate({ to: "/shop/$slug", params: { slug: targetSlug } });
           } else {
             navigate({ to: "/" });
           }
@@ -190,8 +206,13 @@ function Login() {
         navigate({ to: "/laundry-dashboard" });
       } else {
         // Fix #1: redirect to shop if slug present
-        if (slug) {
-          navigate({ to: "/shop/$slug", params: { slug } });
+        const cachedSlug = typeof window !== "undefined" ? localStorage.getItem("pendingLaundrySlug") : null;
+        const targetSlug = slug || cachedSlug;
+        if (targetSlug) {
+          if (typeof window !== "undefined") {
+            localStorage.removeItem("pendingLaundrySlug");
+          }
+          navigate({ to: "/shop/$slug", params: { slug: targetSlug } });
         } else {
           navigate({ to: "/" });
         }
