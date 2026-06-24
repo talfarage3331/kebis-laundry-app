@@ -102,19 +102,25 @@ function Signup() {
 
     async function resolveFromSlug() {
       try {
-        const q = query(
-          collection(db, "laundries"),
-          where("slug", "==", slug),
+        // Laundry businesses are stored in the 'users' collection with
+        // 'shopSlug' as the primary slug field (and 'slug' as a legacy alias).
+        // Try shopSlug first, fall back to slug.
+        let snap = await getDocs(
+          query(collection(db, "users"), where("shopSlug", "==", slug)),
         );
-        const snap = await getDocs(q);
+        if (snap.empty) {
+          snap = await getDocs(
+            query(collection(db, "users"), where("slug", "==", slug)),
+          );
+        }
         if (!cancelled) {
           if (!snap.empty) {
             const vendorDoc = snap.docs[0];
             const data = vendorDoc.data();
             const vendorId = vendorDoc.id;
             const vendorName: string =
-              data.name || data.businessName || data.fullName || "מכבסה";
-            const vendorSlug: string = data.slug || slug;
+              data.businessName || data.name || data.fullName || "מכבסה";
+            const vendorSlug: string = data.shopSlug || data.slug || slug;
 
             localStorage.setItem("activeLaundryId", vendorId);
             localStorage.setItem("activeLaundryName", vendorName);
