@@ -43,6 +43,66 @@ const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+/**
+ * Read the 'slug' search param with full SSR/CSR resilience.
+ *
+ * TanStack Start (ssr: true) renders the component on the server where
+ * Route.useSearch() may return an empty object if the SSR pass hasn't
+ * propagated the search params yet.  We therefore also look at the raw
+ * browser URL as the ultimate source of truth on the client.
+ */
+function useSlugParam(): string | undefined {
+  const { slug: routerSlug } = Route.useSearch();
+
+  // On the server routerSlug is already correct (SSR has the request URL).
+  // On the client, fall back to window.location.search if the router hasn't
+  // hydrated the search param yet.
+  if (routerSlug) return routerSlug;
+
+  if (typeof window !== "undefined") {
+    const raw = new URLSearchParams(window.location.search).get("slug");
+    return raw ?? undefined;
+  }
+
+  return undefined;
+}
+
+/**
+ * Resolve a laundry shop slug to a Firestore vendor document.
+ * Laundries are stored in the `users` collection.
+ * Primary field: `shopSlug`  |  Legacy alias: `slug`
+ *
+ * Returns null when nothing is found so callers can handle the error.
+ */
+async function resolveSlugToVendor(
+  slug: string,
+): Promise<{ vendorId: string; vendorName: string; vendorSlug: string } | null> {
+  // Strategy 1: users.shopSlug == slug  (current field)
+  let snap = await getDocs(
+    query(collection(db, "users"), where("shopSlug", "==", slug)),
+  );
+
+  // Strategy 2: users.slug == slug  (legacy alias written alongside shopSlug)
+  if (snap.empty) {
+    snap = await getDocs(
+      query(collection(db, "users"), where("slug", "==", slug)),
+    );
+  }
+
+  if (snap.empty) {
+    console.warn("[signup] No laundry found for slug:", slug);
+    return null;
+  }
+
+  const vendorDoc = snap.docs[0];
+  const data = vendorDoc.data();
+  return {
+    vendorId: vendorDoc.id,
+    vendorName: data.businessName || data.name || data.fullName || "מכבסה",
+    vendorSlug: data.shopSlug || data.slug || slug,
+  };
+}
+
 export const Route = createFileRoute("/signup")({
   component: Signup,
   validateSearch: (search: Record<string, unknown>): { slug?: string } => ({
@@ -58,37 +118,44 @@ function Signup() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const { slug: urlSlug } = Route.useSearch();
+  // ── Slug resolution ──────────────────────────────────────────────────────
+  // Read from router first; fallback to raw URL (SSR/hydration safety).
+  const urlSlug = useSlugParam();
+
+  // resolvedIdRef is always kept in sync — used by submit handlers so they
+  // never read stale React state from inside an async closure.
+  const resolvedIdRef = useRef<string | null>(null);
 
   const [activeLaundryId, setActiveLaundryId] = useState<string | null>(null);
   const [resolvedLaundryName, setResolvedLaundryName] = useState<string | null>(null);
 
-  const [isResolvingSlug, setIsResolvingSlug] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return !!urlSlug;
-  });
+  // Three states: "idle" | "resolving" | "done"
+  // We keep this as state (not derived) so the UI stays consistent.
+  const [slugState, setSlugState] = useState<"idle" | "resolving" | "done">(
+    () => (urlSlug ? "resolving" : "idle"),
+  );
 
-  const pendingActionRef = useRef<((resolvedId: string | null) => void) | null>(null);
+  // Pending action: queued when submit fires before slug resolves.
+  const pendingActionRef = useRef<((id: string | null) => void) | null>(null);
 
-  // ── Async: resolve vendor ID from slug ───────────────────────────────────
+  // ── Effect: resolve slug → vendor ID ────────────────────────────────────
   useEffect(() => {
-    const slug = urlSlug;
-
-    if (!slug) {
-      setIsResolvingSlug(false);
+    // If no slug, nothing to resolve — stay idle.
+    if (!urlSlug) {
+      setSlugState("idle");
       return;
     }
 
-    // If we already resolved this exact slug, skip
-    const cachedSlug = typeof window !== "undefined" ? localStorage.getItem("activeLaundrySlug") : null;
-    const cachedId = typeof window !== "undefined" ? localStorage.getItem("activeLaundryId") : null;
-    if (cachedId && cachedSlug === slug) {
+    // Fast path: slug already cached from a previous resolve on this session.
+    const cachedSlug = localStorage.getItem("activeLaundrySlug");
+    const cachedId   = localStorage.getItem("activeLaundryId");
+    if (cachedId && cachedSlug === urlSlug) {
+      const cachedName = localStorage.getItem("activeLaundryName") ?? null;
+      resolvedIdRef.current = cachedId;
       setActiveLaundryId(cachedId);
-      setResolvedLaundryName(
-        typeof window !== "undefined" ? localStorage.getItem("activeLaundryName") : null
-      );
-      setIsResolvingSlug(false);
-      // Execute any buffered submit
+      setResolvedLaundryName(cachedName);
+      setSlugState("done");
+      // Drain any queued action.
       if (pendingActionRef.current) {
         const action = pendingActionRef.current;
         pendingActionRef.current = null;
@@ -98,78 +165,50 @@ function Signup() {
     }
 
     let cancelled = false;
-    setIsResolvingSlug(true);
+    setSlugState("resolving");
 
-    async function resolveFromSlug() {
-      try {
-        // Laundry businesses are stored in the 'users' collection with
-        // 'shopSlug' as the primary slug field (and 'slug' as a legacy alias).
-        // Try shopSlug first, fall back to slug.
-        let snap = await getDocs(
-          query(collection(db, "users"), where("shopSlug", "==", slug)),
-        );
-        if (snap.empty) {
-          snap = await getDocs(
-            query(collection(db, "users"), where("slug", "==", slug)),
-          );
-        }
-        if (!cancelled) {
-          if (!snap.empty) {
-            const vendorDoc = snap.docs[0];
-            const data = vendorDoc.data();
-            const vendorId = vendorDoc.id;
-            const vendorName: string =
-              data.businessName || data.name || data.fullName || "מכבסה";
-            const vendorSlug: string = data.shopSlug || data.slug || slug;
+    resolveSlugToVendor(urlSlug).then((vendor) => {
+      if (cancelled) return;
 
-            localStorage.setItem("activeLaundryId", vendorId);
-            localStorage.setItem("activeLaundryName", vendorName);
-            localStorage.setItem("activeLaundrySlug", vendorSlug);
-            setActiveLaundryId(vendorId);
-            setResolvedLaundryName(vendorName);
+      if (vendor) {
+        const { vendorId, vendorName, vendorSlug } = vendor;
 
-            window.dispatchEvent(
-              new StorageEvent("storage", { key: "activeLaundryId", newValue: vendorId })
-            );
-            window.dispatchEvent(
-              new StorageEvent("storage", { key: "activeLaundryName", newValue: vendorName })
-            );
-            window.dispatchEvent(
-              new StorageEvent("storage", { key: "activeLaundrySlug", newValue: vendorSlug })
-            );
+        localStorage.setItem("activeLaundryId",   vendorId);
+        localStorage.setItem("activeLaundryName",  vendorName);
+        localStorage.setItem("activeLaundrySlug",  vendorSlug);
 
-            if (pendingActionRef.current) {
-              const action = pendingActionRef.current;
-              pendingActionRef.current = null;
-              action(vendorId);
-            }
-          } else {
-            console.warn("[signup] No laundry found for slug:", slug);
-            if (pendingActionRef.current) {
-              const action = pendingActionRef.current;
-              pendingActionRef.current = null;
-              action(null);
-            }
-          }
-        }
-      } catch (err) {
-        console.warn("[signup] Failed to resolve slug:", err);
-        if (!cancelled && pendingActionRef.current) {
-          const action = pendingActionRef.current;
-          pendingActionRef.current = null;
-          action(null);
-        }
-      } finally {
-        if (!cancelled) {
-          setIsResolvingSlug(false);
-        }
+        resolvedIdRef.current = vendorId;
+        setActiveLaundryId(vendorId);
+        setResolvedLaundryName(vendorName);
+
+        window.dispatchEvent(new StorageEvent("storage", { key: "activeLaundryId",   newValue: vendorId }));
+        window.dispatchEvent(new StorageEvent("storage", { key: "activeLaundryName", newValue: vendorName }));
+        window.dispatchEvent(new StorageEvent("storage", { key: "activeLaundrySlug", newValue: vendorSlug }));
+      } else {
+        resolvedIdRef.current = null;
       }
-    }
 
-    resolveFromSlug();
-    return () => {
-      cancelled = true;
-    };
+      setSlugState("done");
+
+      // Drain any queued submit/google action.
+      if (pendingActionRef.current) {
+        const action = pendingActionRef.current;
+        pendingActionRef.current = null;
+        action(vendor?.vendorId ?? null);
+      }
+    }).catch((err) => {
+      if (cancelled) return;
+      console.error("[signup] slug resolution error:", err);
+      resolvedIdRef.current = null;
+      setSlugState("done");
+      if (pendingActionRef.current) {
+        const action = pendingActionRef.current;
+        pendingActionRef.current = null;
+        action(null);
+      }
+    });
+
+    return () => { cancelled = true; };
   }, [urlSlug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Redirect already-authenticated users ─────────────────────────────────
@@ -186,8 +225,19 @@ function Signup() {
     }
   }, [user, authLoading, isProfileReady, isRoleLoading, role, navigate]);
 
-  // ─── BLOCKED SCREEN: no slug in URL ──────────────────────────────────────
-  if (!urlSlug) {
+  // ─── Derived booleans ─────────────────────────────────────────────────────
+  const isResolvingSlug = slugState === "resolving";
+
+  // ─── BLOCKED SCREEN: definitively no slug ────────────────────────────────
+  // Only show AFTER the client has mounted and we are certain there is no slug.
+  // Using slugState === "idle" (not "resolving") prevents the SSR flash where
+  // urlSlug is briefly undefined before client hydration completes.
+  const [clientMounted, setClientMounted] = useState(false);
+  useEffect(() => { setClientMounted(true); }, []);
+
+  const showBlockBanner = clientMounted && !urlSlug && slugState === "idle";
+
+  if (showBlockBanner) {
     return (
       <div className="min-h-[100dvh] bg-background flex flex-col overflow-x-hidden" dir="rtl">
         {/* Header */}
@@ -235,107 +285,92 @@ function Signup() {
 
   // ─── MAIN CUSTOMER SIGNUP FORM ────────────────────────────────────────────
 
+  /**
+   * Get the resolved laundry ID at submit time.
+   * Priority: resolvedIdRef (always fresh) → activeLaundryId state → localStorage cache.
+   */
+  const getResolvedId = (): string | null =>
+    resolvedIdRef.current ??
+    activeLaundryId ??
+    (typeof window !== "undefined" ? localStorage.getItem("activeLaundryId") : null);
+
   // ── Email/password signup ─────────────────────────────────────────────────
+  const performSubmit = async (resolvedId: string | null) => {
+    if (!resolvedId) {
+      setLoading(false);
+      return toast.error("לא ניתן היה לזהות את המכבסה. אנא נסה שוב דרך הקישור המקורי.");
+    }
+
+    setLoading(true);
+    try {
+      const result = await createUserWithEmailAndPassword(auth, email, password);
+      const fbUser = result.user;
+
+      await updateProfile(fbUser, { displayName: name });
+
+      const assignedRole = email === "talfarage3331@gmail.com" ? "admin" : "customer";
+
+      await setDoc(doc(db, "users", fbUser.uid), {
+        fullName: name,
+        email: email,
+        role: assignedRole,
+        associatedLaundryId: resolvedId,
+        createdAt: serverTimestamp(),
+      } as Record<string, unknown>);
+
+      setLoading(false);
+      toast.success("נרשמת בהצלחה");
+
+      if (assignedRole === "admin") {
+        navigate({ to: "/admin" });
+      } else {
+        navigate({ to: "/" });
+      }
+    } catch (error: unknown) {
+      setLoading(false);
+      const msg = error instanceof Error ? error.message : String(error);
+      toast.error(msg);
+    }
+  };
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !email || !password) return toast.error("יש למלא את כל השדות");
 
-    const performSubmit = async (resolvedId: string | null) => {
-      if (!resolvedId) {
-        setLoading(false);
-        return toast.error("לא ניתן היה לזהות את המכבסה. אנא נסה שוב דרך הקישור המקורי.");
-      }
-
-      setLoading(true);
-      try {
-        const result = await createUserWithEmailAndPassword(auth, email, password);
-        const fbUser = result.user;
-
-        await updateProfile(fbUser, { displayName: name });
-
-        const assignedRole = email === "talfarage3331@gmail.com" ? "admin" : "customer";
-
-        const docData: Record<string, unknown> = {
-          fullName: name,
-          email: email,
-          role: assignedRole,
-          associatedLaundryId: resolvedId,
-          createdAt: serverTimestamp(),
-        };
-
-        await setDoc(doc(db, "users", fbUser.uid), docData);
-
-        setLoading(false);
-        toast.success("נרשמת בהצלחה");
-
-        if (assignedRole === "admin") {
-          navigate({ to: "/admin" });
-        } else {
-          navigate({ to: "/" });
-        }
-      } catch (error: unknown) {
-        setLoading(false);
-        const msg = error instanceof Error ? error.message : String(error);
-        return toast.error(msg);
-      }
-    };
-
-    // If slug is still resolving, buffer the submit
-    if (!activeLaundryId) {
-      if (urlSlug && isResolvingSlug) {
-        setLoading(true);
-        pendingActionRef.current = (resolvedId) => {
-          performSubmit(resolvedId);
-        };
-        return;
-      }
-      return toast.error("לא ניתן היה לזהות את המכבסה. אנא נסה שוב דרך הקישור המקורי.");
-    }
-
-    performSubmit(activeLaundryId);
-  };
-
-  // ── Google signup ─────────────────────────────────────────────────────────
-  // Fix #4: Disable the Google button while slug is still resolving
-  const signInWithGoogle = async () => {
+    // If still resolving — queue the action and wait.
     if (isResolvingSlug) {
-      // Buffer: wait for slug resolution then run
       setLoading(true);
-      pendingActionRef.current = (resolvedId) => {
-        performGoogleSignup(resolvedId);
-      };
+      pendingActionRef.current = (id) => performSubmit(id);
       return;
     }
 
-    const resolvedId = activeLaundryId;
-    if (!resolvedId) {
+    // Resolution done (or no slug). Use ref for guaranteed freshness.
+    const id = getResolvedId();
+    if (!id && urlSlug) {
+      // Slug was present but resolved to nothing — user must retry via the link.
       return toast.error("לא ניתן היה לזהות את המכבסה. אנא נסה שוב דרך הקישור המקורי.");
     }
 
-    performGoogleSignup(resolvedId);
+    performSubmit(id);
   };
 
+  // ── Google signup ─────────────────────────────────────────────────────────
   const performGoogleSignup = async (resolvedId: string | null) => {
     setLoading(true);
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const fbUser = result.user;
 
-      if (!fbUser) {
-        setLoading(false);
-        return;
-      }
+      if (!fbUser) { setLoading(false); return; }
 
       // Check if Firestore profile already exists (returning user)
       const userDocRef = doc(db, "users", fbUser.uid);
       const userDoc = await getDoc(userDocRef);
 
       if (userDoc.exists()) {
-        // Returning user: log in normally
         const existingRole = userDoc.data().role || "customer";
         toast.success("התחברת בהצלחה");
         setLoading(false);
-
         if (existingRole === "admin") {
           navigate({ to: "/admin" });
         } else if (existingRole === "laundry") {
@@ -346,13 +381,13 @@ function Signup() {
         return;
       }
 
-      // New user via Google
+      // New user via Google — must have a resolved laundry to link to.
       if (!resolvedId) {
         await signOut(auth);
         setLoading(false);
         toast.error(
           "לא נמצא חשבון קיים במערכת. הרשמה כלקוח מתאפשרת רק דרך לינק ייעודי של המכבסה.",
-          { duration: 6000 }
+          { duration: 6000 },
         );
         return;
       }
@@ -375,6 +410,22 @@ function Signup() {
         toast.error("התחברות עם גוגל נכשלה: " + error.message);
       }
     }
+  };
+
+  const signInWithGoogle = async () => {
+    // If still resolving — queue and wait.
+    if (isResolvingSlug) {
+      setLoading(true);
+      pendingActionRef.current = (id) => performGoogleSignup(id);
+      return;
+    }
+
+    const id = getResolvedId();
+    if (!id && urlSlug) {
+      return toast.error("לא ניתן היה לזהות את המכבסה. אנא נסה שוב דרך הקישור המקורי.");
+    }
+
+    performGoogleSignup(id);
   };
 
   const isGoogleDisabled = loading || isResolvingSlug;
