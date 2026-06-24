@@ -68,11 +68,14 @@ export function useFcm() {
     return () => unsub();
   }, []);
 
-  // Foreground messages → toast + app badge
+  // Foreground messages → toast + app badge (only when authenticated)
   useEffect(() => {
     let unsub: (() => void) | undefined;
     (async () => {
       unsub = (await onForegroundMessage((payload) => {
+        // Don't show toasts to unauthenticated users (e.g. on /login page)
+        if (!auth.currentUser) return;
+
         const title = payload?.data?.title || payload?.notification?.title || "התראה חדשה";
         const body = payload?.data?.body || payload?.notification?.body || "";
         toast(title, { description: body });
