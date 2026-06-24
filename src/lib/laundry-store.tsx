@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from "react";
 import { auth, db } from "./firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import {
@@ -167,6 +167,7 @@ export const stateLabel: Record<OrderState, string> = {
 };
 
 export function LaundryProvider({ children }: { children: ReactNode }) {
+  const lastRoleRef = useRef<"admin" | "laundry" | "customer" | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   // isProfileReady stays false until the Firestore role fetch completes (prevents role flash)
@@ -280,6 +281,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         unsubscribeSnapshot();
         unsubscribeSnapshot = null;
       }
+      lastRoleRef.current = null;
 
       if (sessionUser && sessionUser.email) {
         const email: string = sessionUser.email;
@@ -334,6 +336,21 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
             }
             const storedName = localStorage.getItem(`name_override_${email}`);
             const resolvedDisplayName = storedName || dbName;
+
+            // Check if role changed in real-time
+            if (lastRoleRef.current !== null && lastRoleRef.current !== userRole) {
+              console.log("[Auth] Real-time role change detected:", lastRoleRef.current, "->", userRole);
+              lastRoleRef.current = userRole;
+              if (userRole === "laundry") {
+                window.location.href = "/laundry-dashboard";
+              } else if (userRole === "admin") {
+                window.location.href = "/admin";
+              } else {
+                window.location.href = "/";
+              }
+              return;
+            }
+            lastRoleRef.current = userRole;
 
             setRole(userRole);
             setUser({

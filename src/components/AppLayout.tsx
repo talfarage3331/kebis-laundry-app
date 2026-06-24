@@ -26,11 +26,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
     // Role-Based Access Control Redirection
     if (currentRole === "admin") {
       if (pathname !== "/admin" && !pathname.startsWith("/admin/") && pathname !== "/admin-chat") {
-        navigate({ to: "/admin" });
+        window.location.href = "/admin";
       }
     } else if (currentRole === "laundry") {
       if (pathname !== "/laundry-dashboard" && pathname !== "/admin-chat") {
-        navigate({ to: "/laundry-dashboard" });
+        window.location.href = "/laundry-dashboard";
       }
     } else {
       // customer
@@ -40,7 +40,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         pathname === "/laundry-dashboard" ||
         pathname === "/admin-chat"
       ) {
-        navigate({ to: "/" });
+        window.location.href = "/";
       }
     }
   }, [user, isFullyLoaded, role, pathname, navigate]);

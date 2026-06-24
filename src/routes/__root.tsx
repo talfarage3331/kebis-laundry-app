@@ -268,16 +268,16 @@ function RoleRouteGuard({ children }: { children: React.ReactNode }) {
 
       if (currentRole === "laundry") {
         if (isCustomerPath || isAdminPath) {
-          navigate({ to: "/laundry-dashboard", replace: true });
+          window.location.href = "/laundry-dashboard";
         }
       } else if (currentRole === "admin") {
         if (isCustomerPath) {
-          navigate({ to: "/admin", replace: true });
+          window.location.href = "/admin";
         }
       } else {
         // Customer
         if (isAdminPath || isLaundryPath) {
-          navigate({ to: "/", replace: true });
+          window.location.href = "/";
         }
       }
     } else {
