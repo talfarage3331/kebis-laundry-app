@@ -76,24 +76,40 @@ function AdminChat() {
     }
   }, [user, navigate]);
 
-  // Fetch Conversations List
+  // Fetch Conversations List — scoped strictly to this vendor's customers
   const fetchConversations = async () => {
+    if (!user?.uid) return;
     try {
-      // 1. Fetch all chat docs
-      const chatsSnap = await getDocs(collection(db, "chats"));
-      const chatDocs = chatsSnap.docs.map((d) => ({
-        id: d.id,
-        ...(d.data() as { customer_email: string; updated_at: string }),
-      }));
-
-      // 2. Fetch all user profiles to get display names
-      const usersSnap = await getDocs(collection(db, "users"));
+      // 1. Fetch only customers associated with THIS laundry vendor
+      const vendorId = user.uid;
+      const usersSnap = await getDocs(
+        query(
+          collection(db, "users"),
+          where("associatedLaundryId", "==", vendorId),
+        ),
+      );
       const customerProfiles = usersSnap.docs
         .map((d) => ({
           id: d.id,
-          ...(d.data() as { fullName: string; email: string; role: string }),
+          ...(d.data() as { fullName: string; email: string; role: string; associatedLaundryId?: string }),
         }))
         .filter((p) => p.role !== "laundry" && p.email.toLowerCase() !== user?.email.toLowerCase());
+
+      // Build a set of this vendor's customer emails for cross-filtering chats
+      const vendorCustomerEmails = new Set(customerProfiles.map((p) => p.email.toLowerCase()));
+
+      // 2. Fetch all chat docs and keep only those belonging to this vendor's customers
+      const chatsSnap = await getDocs(collection(db, "chats"));
+      const chatDocs = chatsSnap.docs
+        .map((d) => ({
+          id: d.id,
+          ...(d.data() as { customer_email: string; updated_at: string; laundryId?: string }),
+        }))
+        .filter((c) => {
+          const email = (c.customer_email || c.id).toLowerCase();
+          // Keep if laundryId field matches (new stamped docs) OR email is in this vendor's customer set
+          return c.laundryId === vendorId || vendorCustomerEmails.has(email);
+        });
 
       const profileMap = new Map<string, string>();
       customerProfiles.forEach((p) => {
@@ -167,8 +183,12 @@ function AdminChat() {
 
     fetchConversations();
 
-    // Subscribe to any changes in the chats collection to update the sidebar
-    const unsubscribe = onSnapshot(collection(db, "chats"), () => {
+    // Subscribe to changes in THIS vendor's chats only
+    const vendorChatsQuery = query(
+      collection(db, "chats"),
+      where("laundryId", "==", user.uid),
+    );
+    const unsubscribe = onSnapshot(vendorChatsQuery, () => {
       fetchConversations();
     });
 
@@ -251,10 +271,11 @@ function AdminChat() {
         isNewConv = true;
         targetEmail = activeConvId.replace("new-", "");
 
-        // 1. Create the chat doc (keyed by customer email)
+        // 1. Create the chat doc (keyed by customer email), stamped with vendor ID
         await setDoc(doc(db, "chats", targetEmail), {
           customer_email: targetEmail,
           updated_at: new Date().toISOString(),
+          laundryId: user.uid,
         });
       }
 
