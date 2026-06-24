@@ -37,8 +37,9 @@ const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
 // ─── Route definition ─────────────────────────────────────────────────────────
 export const Route = createFileRoute("/signup")({
   component: Signup,
-  validateSearch: (search: Record<string, unknown>): { slug?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { slug?: string; laundryId?: string } => ({
     slug: typeof search.slug === "string" ? search.slug : undefined,
+    laundryId: typeof search.laundryId === "string" ? search.laundryId : undefined,
   }),
 });
 
@@ -65,33 +66,47 @@ function getLiveAuth() {
 }
 
 /**
- * Read the slug from TanStack Router search params with a raw-URL fallback
- * to survive SSR hydration mismatches on Cloudflare Workers.
+ * Read the slug (or direct laundryId) from TanStack Router search params
+ * with a raw-URL fallback to survive SSR hydration mismatches on Cloudflare Workers.
+ *
+ * Returns an object with both fields so callers can distinguish between the two.
  */
-function useSlugParam(): string | undefined {
+function useSignupParams(): { slug: string | undefined; laundryId: string | undefined } {
   // `Route.useSearch()` is evaluated in component context — always safe.
-  const { slug: routerSlug } = Route.useSearch();
+  const { slug: routerSlug, laundryId: routerLaundryId } = Route.useSearch();
 
   // Client-only fallback: read directly from the live browser URL.
-  let raw: string | undefined = undefined;
+  let rawSlug: string | undefined = undefined;
+  let rawLaundryId: string | undefined = undefined;
   if (typeof window !== "undefined") {
-    const param = new URLSearchParams(window.location.search).get("slug");
-    if (param) raw = param;
+    const params = new URLSearchParams(window.location.search);
+    const s = params.get("slug");
+    if (s) rawSlug = s;
+    const l = params.get("laundryId");
+    if (l) rawLaundryId = l;
   }
 
-  const foundSlug = routerSlug || raw;
+  const foundSlug = routerSlug || rawSlug;
+  const foundLaundryId = routerLaundryId || rawLaundryId;
 
   // Persist to localStorage so we survive client-side routing transitions
   if (typeof window !== "undefined") {
     if (foundSlug) {
       localStorage.setItem("pendingLaundrySlug", foundSlug);
-    } else {
-      const fallback = localStorage.getItem("pendingLaundrySlug");
-      if (fallback) return fallback;
+    }
+    if (foundLaundryId) {
+      localStorage.setItem("pendingLaundryId", foundLaundryId);
+    }
+
+    // Fallback from localStorage if nothing found in URL
+    if (!foundSlug && !foundLaundryId) {
+      const fallbackSlug = localStorage.getItem("pendingLaundrySlug");
+      const fallbackId   = localStorage.getItem("pendingLaundryId");
+      return { slug: fallbackSlug ?? undefined, laundryId: fallbackId ?? undefined };
     }
   }
 
-  return foundSlug;
+  return { slug: foundSlug, laundryId: foundLaundryId };
 }
 
 /**
@@ -157,7 +172,62 @@ async function resolveSlugToVendor(
     console.warn("[signup] slug query failed:", e);
   }
 
+  // Strategy 3 — treat the slug as a direct Firestore document ID (vendor UID)
+  // This handles links of the form /signup?laundryId=<uid> or /signup?slug=<uid>
+  try {
+    const directSnap = await getDoc(doc(db, "users", slug));
+    if (directSnap.exists()) {
+      const data = directSnap.data();
+      const role = data.role;
+      if (role === "laundry" || role === "admin") {
+        console.log("[signup] found via direct UID doc:", directSnap.id, data);
+        return {
+          vendorId:   directSnap.id,
+          vendorName: data.businessName || data.name || data.fullName || "מכבסה",
+          vendorSlug: data.shopSlug || data.slug || slug,
+        };
+      }
+    }
+  } catch (e) {
+    console.warn("[signup] direct UID lookup failed:", e);
+  }
+
   console.warn("[signup] No vendor document found for slug:", slug);
+  return null;
+}
+
+/**
+ * Resolve a vendor directly by their Firestore document UID.
+ */
+async function resolveVendorById(
+  vendorId: string,
+): Promise<{ vendorId: string; vendorName: string; vendorSlug: string } | null> {
+  console.log("[signup] resolving vendor by UID:", vendorId);
+
+  let db: ReturnType<typeof getFirestore>;
+  try {
+    db = getDb();
+  } catch (e) {
+    console.error("[signup] Firebase not ready:", e);
+    return null;
+  }
+
+  try {
+    const snap = await getDoc(doc(db, "users", vendorId));
+    if (snap.exists()) {
+      const data = snap.data();
+      console.log("[signup] found vendor by UID:", snap.id, data);
+      return {
+        vendorId:   snap.id,
+        vendorName: data.businessName || data.name || data.fullName || "מכבסה",
+        vendorSlug: data.shopSlug || data.slug || "",
+      };
+    }
+  } catch (e) {
+    console.warn("[signup] direct UID vendor lookup failed:", e);
+  }
+
+  console.warn("[signup] No vendor found for UID:", vendorId);
   return null;
 }
 
@@ -172,8 +242,8 @@ function Signup() {
   const [password, setPassword] = useState("");
   const [loading, setLoading]   = useState(false);
 
-  // Slug — read from router or raw URL
-  const urlSlug = useSlugParam();
+  // Read slug and laundryId from router or raw URL
+  const { slug: urlSlug, laundryId: urlLaundryId } = useSignupParams();
 
   // Background resolution — purely for UX (showing laundry name, spinner).
   // The ACTUAL resolution used for registration happens inline at submit time.
@@ -184,17 +254,18 @@ function Signup() {
 
   // Background resolve for UX feedback (non-blocking, best-effort)
   useEffect(() => {
-    if (!urlSlug) return;
+    const identifier = urlLaundryId || urlSlug;
+    if (!identifier) return;
 
     // Check localStorage fast-path first
     const cachedSlug = localStorage.getItem("activeLaundrySlug");
     const cachedId   = localStorage.getItem("activeLaundryId");
-    if (cachedId && cachedSlug === urlSlug) {
+    if (cachedId && (cachedSlug === identifier || cachedId === identifier)) {
       const cachedName = localStorage.getItem("activeLaundryName") ?? null;
       resolvedVendorRef.current = {
         vendorId:   cachedId,
         vendorName: cachedName ?? "מכבסה",
-        vendorSlug: urlSlug,
+        vendorSlug: cachedSlug ?? "",
       };
       setResolvedLaundryName(cachedName);
       return;
@@ -203,7 +274,12 @@ function Signup() {
     let cancelled = false;
     setIsResolvingSlug(true);
 
-    resolveSlugToVendor(urlSlug)
+    // If we have a direct vendor UID, use it; otherwise resolve by slug
+    const resolvePromise = urlLaundryId
+      ? resolveVendorById(urlLaundryId)
+      : resolveSlugToVendor(urlSlug!);
+
+    resolvePromise
       .then((vendor) => {
         if (cancelled) return;
         if (vendor) {
@@ -218,7 +294,7 @@ function Signup() {
       .finally(() => { if (!cancelled) setIsResolvingSlug(false); });
 
     return () => { cancelled = true; };
-  }, [urlSlug]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [urlSlug, urlLaundryId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Redirect already-authenticated users
   useEffect(() => {
@@ -234,7 +310,7 @@ function Signup() {
   const [clientMounted, setClientMounted] = useState(false);
   useEffect(() => { setClientMounted(true); }, []);
 
-  const showBlockBanner = clientMounted && !urlSlug;
+  const showBlockBanner = clientMounted && !urlSlug && !urlLaundryId;
 
   // ─── Block banner (no slug) ─────────────────────────────────────────────
   if (showBlockBanner) {
@@ -276,7 +352,7 @@ function Signup() {
 
   // ─── Core: get vendor, resolving inline if needed ─────────────────────────
   /**
-   * Returns the vendor for the current slug.
+   * Returns the vendor for the current slug or laundryId.
    * Uses the background-resolved cache if available; otherwise performs a
    * fresh Firestore lookup so submit always works regardless of timing.
    */
@@ -284,22 +360,44 @@ function Signup() {
     // 1. Use background-resolved cache (instant)
     if (resolvedVendorRef.current) return resolvedVendorRef.current;
 
-    // 2. Check localStorage (from a previous page visit)
-    if (urlSlug) {
-      const cachedSlug = localStorage.getItem("activeLaundrySlug");
-      const cachedId   = localStorage.getItem("activeLaundryId");
-      if (cachedId && cachedSlug === urlSlug) {
-        const vendor = {
-          vendorId:   cachedId,
-          vendorName: localStorage.getItem("activeLaundryName") ?? "מכבסה",
-          vendorSlug: urlSlug,
-        };
-        resolvedVendorRef.current = vendor;
-        return vendor;
-      }
+    const cachedId   = localStorage.getItem("activeLaundryId");
+    const cachedSlug = localStorage.getItem("activeLaundrySlug");
+
+    // 2a. Check localStorage cache by slug
+    if (urlSlug && cachedId && cachedSlug === urlSlug) {
+      const vendor = {
+        vendorId:   cachedId,
+        vendorName: localStorage.getItem("activeLaundryName") ?? "מכבסה",
+        vendorSlug: urlSlug,
+      };
+      resolvedVendorRef.current = vendor;
+      return vendor;
+    }
+
+    // 2b. Check localStorage cache by direct vendor UID
+    if (urlLaundryId && cachedId === urlLaundryId) {
+      const vendor = {
+        vendorId:   cachedId,
+        vendorName: localStorage.getItem("activeLaundryName") ?? "מכבסה",
+        vendorSlug: cachedSlug ?? "",
+      };
+      resolvedVendorRef.current = vendor;
+      return vendor;
     }
 
     // 3. Inline resolution — the source of truth
+    // Priority: direct UID lookup > slug-based lookup
+    if (urlLaundryId) {
+      const vendor = await resolveVendorById(urlLaundryId);
+      if (vendor) {
+        resolvedVendorRef.current = vendor;
+        localStorage.setItem("activeLaundryId",   vendor.vendorId);
+        localStorage.setItem("activeLaundryName", vendor.vendorName);
+        localStorage.setItem("activeLaundrySlug", vendor.vendorSlug);
+      }
+      return vendor;
+    }
+
     if (!urlSlug) return null;
     const vendor = await resolveSlugToVendor(urlSlug);
     if (vendor) {
@@ -345,6 +443,7 @@ function Signup() {
       toast.success("נרשמת בהצלחה");
       if (typeof window !== "undefined") {
         localStorage.removeItem("pendingLaundrySlug");
+        localStorage.removeItem("pendingLaundryId");
       }
       navigate({ to: assignedRole === "admin" ? "/admin" : "/" });
     } catch (error: unknown) {
@@ -405,6 +504,7 @@ function Signup() {
       toast.success("נרשמת בהצלחה");
       if (typeof window !== "undefined") {
         localStorage.removeItem("pendingLaundrySlug");
+        localStorage.removeItem("pendingLaundryId");
       }
       navigate({ to: "/" });
     } catch (error: unknown) {

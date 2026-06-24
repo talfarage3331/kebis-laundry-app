@@ -103,6 +103,12 @@ function Login() {
     }
   }, [slug]);
 
+  useEffect(() => {
+    if (typeof window !== "undefined" && laundryId) {
+      localStorage.setItem("pendingLaundryId", laundryId);
+    }
+  }, [laundryId]);
+
   // ── Redirect already-authenticated users ─────────────────────────────────
   useEffect(() => {
     if (user && !authLoading && isProfileReady && !isRoleLoading) {
@@ -112,12 +118,15 @@ function Login() {
       } else if (currentRole === "laundry") {
         navigate({ to: "/laundry-dashboard" });
       } else {
-        // Fix #1: If a slug param is present, redirect to that shop
+        // Resolve shop to redirect customer into
         const cachedSlug = typeof window !== "undefined" ? localStorage.getItem("pendingLaundrySlug") : null;
-        const targetSlug = slug || cachedSlug;
+        const cachedId   = typeof window !== "undefined" ? localStorage.getItem("pendingLaundryId") : null;
+        const activeSlug = typeof window !== "undefined" ? localStorage.getItem("activeLaundrySlug") : null;
+        const targetSlug = slug || cachedSlug || cachedId || activeSlug;
         if (targetSlug) {
           if (typeof window !== "undefined") {
             localStorage.removeItem("pendingLaundrySlug");
+            localStorage.removeItem("pendingLaundryId");
           }
           navigate({ to: "/shop/$slug", params: { slug: targetSlug } });
         } else {
@@ -158,10 +167,13 @@ function Login() {
         } else {
           // Fix #1: redirect to shop if slug present
           const cachedSlug = typeof window !== "undefined" ? localStorage.getItem("pendingLaundrySlug") : null;
-          const targetSlug = slug || cachedSlug;
+          const cachedId   = typeof window !== "undefined" ? localStorage.getItem("pendingLaundryId") : null;
+          const activeSlug = typeof window !== "undefined" ? localStorage.getItem("activeLaundrySlug") : null;
+          const targetSlug = slug || cachedSlug || cachedId || activeSlug;
           if (targetSlug) {
             if (typeof window !== "undefined") {
               localStorage.removeItem("pendingLaundrySlug");
+              localStorage.removeItem("pendingLaundryId");
             }
             navigate({ to: "/shop/$slug", params: { slug: targetSlug } });
           } else {
@@ -196,7 +208,6 @@ function Login() {
       }
 
       const existingRole = userDoc.data().role || "customer";
-
       setLoading(false);
       toast.success("התחברת בהצלחה");
 
@@ -207,10 +218,13 @@ function Login() {
       } else {
         // Fix #1: redirect to shop if slug present
         const cachedSlug = typeof window !== "undefined" ? localStorage.getItem("pendingLaundrySlug") : null;
-        const targetSlug = slug || cachedSlug;
+        const cachedId   = typeof window !== "undefined" ? localStorage.getItem("pendingLaundryId") : null;
+        const activeSlug = typeof window !== "undefined" ? localStorage.getItem("activeLaundrySlug") : null;
+        const targetSlug = slug || cachedSlug || cachedId || activeSlug;
         if (targetSlug) {
           if (typeof window !== "undefined") {
             localStorage.removeItem("pendingLaundrySlug");
+            localStorage.removeItem("pendingLaundryId");
           }
           navigate({ to: "/shop/$slug", params: { slug: targetSlug } });
         } else {
@@ -420,10 +434,10 @@ function Login() {
               <Store className="size-4" />
               הרשם כמכבסה חדשה
             </button>
-            {slug && (
+            {(slug || laundryId) && (
               <Link
                 to="/signup"
-                search={{ slug }}
+                search={slug ? { slug } : { laundryId }}
                 className="text-sm text-primary font-bold hover:underline mt-1"
               >
                 הרשמה כלקוח דרך הקישור שלך

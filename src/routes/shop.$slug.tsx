@@ -83,7 +83,7 @@ function ShopSlugResolver() {
         const liveAuth = getLiveAuth();
         const currentUser = liveAuth.currentUser;
 
-        // Try shopSlug first, fall back to slug
+        // Try shopSlug first, fall back to slug, then fall back to a direct UID doc
         let snap = await getDocs(
           query(collection(db, "users"), where("shopSlug", "==", slug)),
         );
@@ -93,8 +93,21 @@ function ShopSlugResolver() {
           );
         }
 
-        if (!cancelled && !snap.empty) {
-          const vendorDoc = snap.docs[0];
+        // Strategy 3: treat the slug as a direct vendor UID (raw document ID)
+        let directVendorData: { id: string; data: () => Record<string, any> } | null = null;
+        if (snap.empty) {
+          const directSnap = await getDoc(doc(db, "users", slug));
+          if (directSnap.exists()) {
+            const dData = directSnap.data();
+            const dRole = dData.role;
+            if (dRole === "laundry" || dRole === "admin") {
+              directVendorData = { id: directSnap.id, data: () => dData };
+            }
+          }
+        }
+
+        if (!cancelled && (!snap.empty || directVendorData)) {
+          const vendorDoc = !snap.empty ? snap.docs[0] : directVendorData!;
           const data = vendorDoc.data();
           const vendorId = vendorDoc.id;
           const vendorName: string =
