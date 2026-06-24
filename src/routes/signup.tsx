@@ -416,18 +416,21 @@ function Signup() {
 
     setLoading(true);
     try {
-      // Always resolve the vendor fresh — this is the single authoritative lookup.
-      const vendor = await getVendorForSlug();
-      if (!vendor) {
-        toast.error("לא ניתן היה לזהות את המכבסה. אנא נסה שוב דרך הקישור המקורי.");
-        return;
-      }
-
+      // Step 1: Authenticate first so the user has Firestore read permission.
       const liveAuth = getLiveAuth();
       const result   = await createUserWithEmailAndPassword(liveAuth, email, password);
       const fbUser   = result.user;
 
       await updateProfile(fbUser, { displayName: name });
+
+      // Step 2: Now that the user is authenticated, resolve the vendor.
+      const vendor = await getVendorForSlug();
+      if (!vendor) {
+        // Rollback — delete the orphaned auth account so the user can try again.
+        await fbUser.delete();
+        toast.error("לא ניתן היה לזהות את המכבסה. אנא נסה שוב דרך הקישור המקורי.");
+        return;
+      }
 
       const assignedRole = email === "talfarage3331@gmail.com" ? "admin" : "customer";
 
@@ -458,9 +461,7 @@ function Signup() {
   const signInWithGoogle = async () => {
     setLoading(true);
     try {
-      // Resolve vendor BEFORE opening the popup so we have it ready.
-      const vendor = await getVendorForSlug();
-
+      // Step 1: Authenticate first so the user has Firestore read permission.
       const liveAuth = getLiveAuth();
       // googleProvider is a client-only singleton — safe to import at top.
       const result   = await signInWithPopup(liveAuth, googleProvider);
@@ -482,9 +483,11 @@ function Signup() {
         return;
       }
 
-      // New user — must have a vendor to link to.
+      // Step 2: New user — now authenticated, resolve vendor (Firestore permission granted).
+      const vendor = await getVendorForSlug();
       if (!vendor) {
-        await signOut(liveAuth);
+        // Rollback — delete orphaned auth account so user can retry.
+        await fbUser.delete();
         toast.error(
           "לא ניתן היה לזהות את המכבסה. אנא נסה שוב דרך הקישור המקורי.",
           { duration: 6000 },
