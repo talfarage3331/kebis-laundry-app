@@ -98,7 +98,9 @@ async function fetchBrandAssets(
       query(collection(db, "users"), where("shopSlug", "==", slug)),
     );
     if (!snap.empty) return extract(snap.docs[0].data());
-  } catch { /* continue */ }
+  } catch (e) {
+    console.error("[useBrand] Strategy 1 (shopSlug) failed:", e);
+  }
 
   // Strategy 2 — slug (legacy alias)
   try {
@@ -106,7 +108,9 @@ async function fetchBrandAssets(
       query(collection(db, "users"), where("slug", "==", slug)),
     );
     if (!snap.empty) return extract(snap.docs[0].data());
-  } catch { /* continue */ }
+  } catch (e) {
+    console.error("[useBrand] Strategy 2 (slug) failed:", e);
+  }
 
   // Strategy 3 — direct Firestore document UID
   try {
@@ -115,12 +119,25 @@ async function fetchBrandAssets(
       const data = snap.data();
       if (data.role === "laundry" || data.role === "admin") return extract(data);
     }
-  } catch { /* continue */ }
+  } catch (e) {
+    console.error("[useBrand] Strategy 3 (direct UID) failed:", e);
+  }
 
   return null;
 }
 
 // ── Hook ───────────────────────────────────────────────────────────────────
+
+declare global {
+  interface Window {
+    __LAUNDRY_BRAND__?: {
+      slug: string;
+      brandName: string | null;
+      brandLogoUrl: string | null;
+      brandColor: string | null;
+    };
+  }
+}
 
 /**
  * Resolves brand assets for the given slug.
@@ -133,11 +150,26 @@ async function fetchBrandAssets(
  * const { brandName, brandLogoUrl, brandColor, isLoading } = useBrand(slug);
  */
 export function useBrand(slug: string | undefined | null): BrandAssets {
+  console.log("[useBrand] Hook called with slug:", slug, "db is:", !!db);
+
   const [state, setState] = useState<BrandAssets>(() => {
-    // Warm start from cache (synchronous, no flash)
+    // 1. First-class: read from server-injected global variable (bypasses security rules/CORS)
+    if (typeof window !== "undefined" && window.__LAUNDRY_BRAND__ && slug && window.__LAUNDRY_BRAND__.slug === slug) {
+      const b = window.__LAUNDRY_BRAND__;
+      console.log("[useBrand] Using server-injected brand:", b);
+      return {
+        brandName:    b.brandName,
+        brandLogoUrl: b.brandLogoUrl,
+        brandColor:   b.brandColor,
+        isLoading:    false,
+      };
+    }
+
+    // 2. Warm start from cache (synchronous, no flash)
     if (slug) {
       const cached = readCache(slug);
       if (cached) {
+        console.log("[useBrand] Found cached assets for slug:", slug, cached);
         return {
           brandName:    cached.brandName,
           brandLogoUrl: cached.brandLogoUrl,
@@ -150,8 +182,21 @@ export function useBrand(slug: string | undefined | null): BrandAssets {
   });
 
   useEffect(() => {
+    console.log("[useBrand] useEffect triggered for slug:", slug, "db is:", !!db);
     if (!slug) {
       setState({ brandName: null, brandLogoUrl: null, brandColor: null, isLoading: false });
+      return;
+    }
+
+    // 1. First-class: read from server-injected global variable (skip Firestore query)
+    if (typeof window !== "undefined" && window.__LAUNDRY_BRAND__ && window.__LAUNDRY_BRAND__.slug === slug) {
+      const b = window.__LAUNDRY_BRAND__;
+      setState({
+        brandName:    b.brandName,
+        brandLogoUrl: b.brandLogoUrl,
+        brandColor:   b.brandColor,
+        isLoading:    false,
+      });
       return;
     }
 

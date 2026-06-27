@@ -152,28 +152,31 @@ function extractSlugFromRequest(url: URL): string | null {
 }
 
 /**
- * Inject branded OpenGraph meta tags into an HTML response using
- * Cloudflare's native HTMLRewriter (streaming transformer).
+ * Inject branded OpenGraph meta tags and/or a synchronous brand configuration
+ * script into an HTML response using Cloudflare's native HTMLRewriter.
  *
- * Rewrites:
- *   <title>  → branded title
- *   <head>   → appended with og:title, og:description, og:image, og:url
- *
- * Any existing og:* tags added by SSR are left in place; the injected
- * tags take precedence for crawlers because they appear last in <head>.
+ * This allows client-side React code to read the resolved brand assets
+ * instantly on mount, bypassing Firestore query rules / CORS for guests.
  */
-function rewriteOGTags(
+function rewriteHTML(
   response: Response,
+  slug: string,
   brand: { name: string; logoUrl: string | null; brandColor: string | null },
   fullUrl: string,
+  isCrawler: boolean,
 ): Response {
   const laundryName = brand.name;
   const ogTitle = `\u05de\u05db\u05d1\u05e1\u05ea ${laundryName} \u05de\u05d6\u05de\u05d9\u05e0\u05ea \u05d0\u05d5\u05ea\u05da \u05dc\u05d4\u05d6\u05de\u05d9\u05df \u05d0\u05d9\u05e1\u05d5\u05e3 \u05db\u05d1\u05d9\u05e1\u05d4 \u05d1\u05e7\u05dc\u05d9\u05e7`;
   const ogDesc = `\u05d4\u05e6\u05d8\u05e8\u05e4\u05d5 \u05dc${laundryName} \u2014 \u05e9\u05d9\u05e8\u05d5\u05ea \u05db\u05d1\u05d9\u05e1\u05d4 \u05de\u05e7\u05e6\u05d5\u05e2\u05d9 \u05e2\u05dd \u05d0\u05d9\u05e1\u05d5\u05e3, \u05de\u05e2\u05e7\u05d1 \u05d5\u05ea\u05e9\u05dc\u05d5\u05dd \u05d1\u05dc\u05d7\u05d9\u05e6\u05d4`;
 
-  // Build the tags to inject.
-  // og:image is only useful when the logo is a real HTTPS URL that crawlers
-  // can fetch. Base64 data: URIs are ignored by all major social platforms.
+  const brandData = {
+    slug,
+    brandName: brand.name,
+    brandLogoUrl: brand.logoUrl,
+    brandColor: brand.brandColor,
+  };
+  const brandScript = `\n    <script>\n      window.__LAUNDRY_BRAND__ = ${JSON.stringify(brandData)};\n    </script>\n  `;
+
   const hasRemoteLogo = brand.logoUrl?.startsWith("https://");
   const extraTags = [
     `<meta property="og:title" content="${ogTitle}" />`,
@@ -183,22 +186,28 @@ function rewriteOGTags(
     ...(hasRemoteLogo ? [`<meta property="og:image" content="${brand.logoUrl}" />`] : []),
   ].join("\n    ");
 
-  return new HTMLRewriter()
-    // Rewrite <title>
-    .on("title", {
+  const rewriter = new HTMLRewriter();
+
+  if (isCrawler) {
+    rewriter.on("title", {
       element(el) {
         el.setInnerContent(ogTitle);
       },
-    })
-    // Append OG tags at end of <head>
-    .on("head", {
-      element(el) {
-        el.onEndTag((end) => {
+    });
+  }
+
+  rewriter.on("head", {
+    element(el) {
+      el.onEndTag((end) => {
+        if (isCrawler) {
           end.before(`\n    ${extraTags}\n  `, { html: true });
-        });
-      },
-    })
-    .transform(response);
+        }
+        end.before(brandScript, { html: true });
+      });
+    },
+  });
+
+  return rewriter.transform(response);
 }
 
 export default {
@@ -231,14 +240,15 @@ export default {
         }
       }
 
-      // ── OpenGraph injection for social media crawlers ─────────────────────
-      const isCrawler = request.method === "GET" && isSocialCrawler(request);
-      const ogSlug    = isCrawler ? extractSlugFromRequest(url) : null;
+      // ── OpenGraph / Brand injection for GET requests with a slug ─────────
+      const isGet = request.method === "GET";
+      const slug  = isGet ? extractSlugFromRequest(url) : null;
 
-      if (isCrawler && ogSlug) {
+      if (isGet && slug) {
+        const isCrawler = isSocialCrawler(request);
         // Resolve brand + render HTML in parallel for minimal added latency
         const [brandResult, handler] = await Promise.all([
-          resolveSlugToBrand(ogSlug).catch(() => null),
+          resolveSlugToBrand(slug).catch(() => null),
           getServerEntry(),
         ]);
 
@@ -248,7 +258,7 @@ export default {
         // Only rewrite HTML responses
         const ct = normalized.headers.get("content-type") ?? "";
         if (brandResult && ct.includes("text/html")) {
-          return rewriteOGTags(normalized, brandResult, request.url);
+          return rewriteHTML(normalized, slug, brandResult, request.url, isCrawler);
         }
         return normalized;
       }
