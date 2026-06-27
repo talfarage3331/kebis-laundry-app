@@ -120,9 +120,19 @@ function getStatusColor(status: string) {
 }
 
 function AdminDashboard() {
-  const { user, logout } = useLaundry();
+  const { user, logout, isProfileReady } = useLaundry();
   const { resolveAddon, resolveTier } = useLaundryOptions();
   const navigate = useNavigate();
+
+  // Redirect non-admins
+  useEffect(() => {
+    if (isProfileReady) {
+      if (!user || user.role !== "admin") {
+        toast.error("אין הרשאת גישה לפאנל זה");
+        navigate({ to: "/login" });
+      }
+    }
+  }, [isProfileReady, user, navigate]);
 
   // Tab State
   const [activeTab, setActiveTab] = useState<"users" | "laundries" | "orders" | "pricing">("users");
@@ -254,8 +264,9 @@ function AdminDashboard() {
   };
 
   useEffect(() => {
+    if (!isProfileReady || !user || user.role !== "admin") return;
     fetchProfiles(true);
-  }, []);
+  }, [isProfileReady, user?.uid, user?.role]);
 
   // Helper: parse a Firestore order doc snapshot into LaundryOrder
   const parseOrderDoc = (docSnap: any): LaundryOrder | null => {
@@ -299,6 +310,7 @@ function AdminDashboard() {
   // Real-time listener — active orders ONLY (pending/accepted/collected/ready)
   // Historical orders (delivered/cancelled) are fetched on-demand via paginated getDocs
   useEffect(() => {
+    if (!isProfileReady || !user || user.role !== "admin") return;
     setOrdersLoading(true);
     const activeQ = query(
       collection(db, "orders"),
@@ -326,7 +338,7 @@ function AdminDashboard() {
       },
     );
     return () => unsub();
-  }, []);
+  }, [isProfileReady, user?.uid, user?.role]);
 
   // Fetch first page of historical orders (delivered/cancelled) on mount
   const fetchHistoricalOrders = async (reset = true) => {
@@ -374,8 +386,9 @@ function AdminDashboard() {
   };
 
   useEffect(() => {
+    if (!isProfileReady || !user || user.role !== "admin") return;
     fetchHistoricalOrders(true);
-  }, []);
+  }, [isProfileReady, user?.uid, user?.role]);
 
   // Sync selected laundry options in real-time
   useEffect(() => {
