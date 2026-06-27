@@ -46,6 +46,15 @@ export let appCheck: AppCheck | null = null;
 
 if (isBrowser && app) {
   const siteKey = import.meta.env.VITE_RECAPTCHA_V3_SITE_KEY;
+  const urlParams = new URLSearchParams(window.location.search);
+  
+  // Enable debug provider for local development or if explicitly requested via query parameter
+  const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+  if (isLocal || urlParams.get("debug_appcheck") === "true") {
+    (self as any).FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+    console.log("[Firebase] App Check local debug mode activated.");
+  }
+
   if (siteKey && siteKey !== "<your-recaptcha-v3-site-key-here>") {
     try {
       appCheck = initializeAppCheck(app, {
@@ -57,6 +66,17 @@ if (isBrowser && app) {
       console.log("[Firebase] App Check initialized successfully.");
     } catch (error) {
       console.error("[Firebase] Failed to initialize App Check:", error);
+    }
+  } else if ((self as any).FIREBASE_APPCHECK_DEBUG_TOKEN) {
+    try {
+      // If we activated the debug token but don't have a site key, still initialize App Check using the debug token
+      appCheck = initializeAppCheck(app, {
+        provider: new ReCaptchaV3Provider("DEBUG_SITE_KEY"), // ReCaptchaV3Provider will fall back to using self.FIREBASE_APPCHECK_DEBUG_TOKEN
+        isTokenAutoRefreshEnabled: true,
+      });
+      console.log("[Firebase] App Check initialized in debug mode.");
+    } catch (error) {
+      console.error("[Firebase] Failed to initialize App Check in debug mode:", error);
     }
   } else {
     console.warn(

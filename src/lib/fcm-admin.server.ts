@@ -31,12 +31,25 @@ function getServiceAccount(): ServiceAccount {
     );
   }
   let sa: ServiceAccount;
-  try {
-    sa = JSON.parse(raw) as ServiceAccount;
-  } catch {
-    throw new Error(
-      "[fcm-admin] FIREBASE_SERVICE_ACCOUNT is not valid JSON. Ensure the secret value is the full service-account JSON string.",
-    );
+  if (typeof raw === "object") {
+    sa = raw as any;
+  } else {
+    let cleaned = raw.trim();
+    // Handle double-encoded JSON strings (e.g. wrapped in external double quotes)
+    if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+      try {
+        cleaned = JSON.parse(cleaned);
+      } catch {
+        // ignore and parse normally
+      }
+    }
+    try {
+      sa = JSON.parse(cleaned) as ServiceAccount;
+    } catch (e: any) {
+      throw new Error(
+        `[fcm-admin] FIREBASE_SERVICE_ACCOUNT is not valid JSON: ${e?.message || String(e)}. Raw value length: ${raw.length}`,
+      );
+    }
   }
   if (!sa.private_key || !sa.client_email || !sa.project_id) {
     throw new Error(
