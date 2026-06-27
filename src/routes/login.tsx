@@ -382,16 +382,16 @@ function Login() {
           style={{ backgroundColor: headerBg }}
         >
           <div className="mx-auto max-w-md flex items-center gap-3">
-            <div className="size-10 sm:size-12 rounded-full bg-white/15 grid place-items-center shrink-0 overflow-hidden">
+            <div className="size-14 sm:size-16 rounded-full bg-white/10 grid place-items-center shrink-0 overflow-hidden p-1 shadow-sm">
               {brandLogoUrl ? (
                 <img
                   src={brandLogoUrl}
                   alt={headerName}
-                  className="size-full object-cover rounded-full"
+                  className="size-full object-contain rounded-full"
                   onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
                 />
               ) : (
-                <Flower2 className="size-5 sm:size-6" strokeWidth={1.75} />
+                <Flower2 className="size-7" strokeWidth={1.75} />
               )}
             </div>
             <div className="min-w-0">
