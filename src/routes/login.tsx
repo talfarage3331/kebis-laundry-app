@@ -23,7 +23,7 @@ import {
   getDocs,
 } from "firebase/firestore";
 import { generateSlug } from "@/lib/slug";
-import { ensureCustomerProfile } from "@/lib/tenant-profiles";
+import { ensureCustomerProfile, getCustomerLaundryIds } from "@/lib/tenant-profiles";
 
 // Custom Google brand icon (inline SVG)
 const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
@@ -105,6 +105,65 @@ async function resolveSlugToVendorForLogin(
   return null;
 }
 
+/**
+ * Automatically discovers a customer's active laundry if their localStorage state is blank.
+ * First checks multi-tenant sub-collection memberships, then falls back to legacy associatedLaundryId field.
+ * Returns the resolved vendor shopSlug if one was successfully discovered and stored.
+ */
+async function discoverAndSetTenant(
+  uid: string,
+  userData: any
+): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+
+  // 1. If localStorage already has an active laundry, just return it
+  const currentActiveSlug = localStorage.getItem("activeLaundrySlug");
+  if (localStorage.getItem("activeLaundryId") && currentActiveSlug) {
+    return currentActiveSlug;
+  }
+
+  let resolvedLaundryId: string | null = null;
+
+  // 2. Query multi-tenant customer memberships
+  try {
+    const tenantIds = await getCustomerLaundryIds(uid);
+    if (tenantIds && tenantIds.length > 0) {
+      resolvedLaundryId = tenantIds[0];
+    }
+  } catch (err) {
+    console.warn("[login] Error querying customer tenant memberships:", err);
+  }
+
+  // 3. Fallback to legacy associatedLaundryId
+  if (!resolvedLaundryId && userData?.associatedLaundryId) {
+    resolvedLaundryId = userData.associatedLaundryId;
+  }
+
+  if (resolvedLaundryId) {
+    try {
+      const vendorSnap = await getDoc(doc(db, "users", resolvedLaundryId));
+      if (vendorSnap.exists()) {
+        const vendorData = vendorSnap.data();
+        const vendorName = vendorData.businessName || vendorData.name || "מכבסה";
+        const vendorSlug = vendorData.shopSlug || vendorData.slug || resolvedLaundryId;
+
+        localStorage.setItem("activeLaundryId", resolvedLaundryId);
+        localStorage.setItem("activeLaundryName", vendorName);
+        localStorage.setItem("activeLaundrySlug", vendorSlug);
+        localStorage.setItem("last_visited_laundry_slug", vendorSlug);
+
+        console.log(`[login] Auto-discovered tenant: ${vendorSlug} (${resolvedLaundryId})`);
+        return vendorSlug;
+      }
+    } catch (err) {
+      console.warn("[login] Error loading discovered vendor profile:", err);
+    }
+  }
+
+  return null;
+}
+
+
 function Login() {
   const { user, loading: authLoading, isProfileReady, role, isRoleLoading } = useLaundry();
   const { laundryId, slug } = Route.useSearch();
@@ -159,20 +218,23 @@ function Login() {
       } else if (currentRole === "laundry") {
         navigate({ to: "/laundry-dashboard" });
       } else {
-        // Resolve shop to redirect customer into
-        const cachedSlug = typeof window !== "undefined" ? localStorage.getItem("pendingLaundrySlug") : null;
-        const cachedId   = typeof window !== "undefined" ? localStorage.getItem("pendingLaundryId") : null;
-        const activeSlug = typeof window !== "undefined" ? localStorage.getItem("activeLaundrySlug") : null;
-        const targetSlug = slug || cachedSlug || cachedId || activeSlug;
-        if (targetSlug) {
-          if (typeof window !== "undefined") {
-            localStorage.removeItem("pendingLaundrySlug");
-            localStorage.removeItem("pendingLaundryId");
+        const runRedirect = async () => {
+          const discoveredSlug = await discoverAndSetTenant(user.uid, user);
+          const cachedSlug = typeof window !== "undefined" ? localStorage.getItem("pendingLaundrySlug") : null;
+          const cachedId   = typeof window !== "undefined" ? localStorage.getItem("pendingLaundryId") : null;
+          const activeSlug = typeof window !== "undefined" ? localStorage.getItem("activeLaundrySlug") : null;
+          const targetSlug = slug || discoveredSlug || cachedSlug || cachedId || activeSlug;
+          if (targetSlug) {
+            if (typeof window !== "undefined") {
+              localStorage.removeItem("pendingLaundrySlug");
+              localStorage.removeItem("pendingLaundryId");
+            }
+            navigate({ to: "/shop/$slug", params: { slug: targetSlug } });
+          } else {
+            navigate({ to: "/" });
           }
-          navigate({ to: "/shop/$slug", params: { slug: targetSlug } });
-        } else {
-          navigate({ to: "/" });
-        }
+        };
+        runRedirect();
       }
     }
   }, [user, authLoading, isProfileReady, isRoleLoading, role, navigate, slug]);
@@ -258,10 +320,11 @@ function Login() {
       } else if (existingRole === "laundry") {
         navigate({ to: "/laundry-dashboard" });
       } else {
+        const discoveredSlug = await discoverAndSetTenant(fbUser.uid, userDoc.data());
         const cachedSlug = typeof window !== "undefined" ? localStorage.getItem("pendingLaundrySlug") : null;
         const cachedId   = typeof window !== "undefined" ? localStorage.getItem("pendingLaundryId") : null;
         const activeSlug = typeof window !== "undefined" ? localStorage.getItem("activeLaundrySlug") : null;
-        const targetSlug = slug || cachedSlug || cachedId || activeSlug;
+        const targetSlug = slug || discoveredSlug || cachedSlug || cachedId || activeSlug;
         if (targetSlug) {
           localStorage.removeItem("pendingLaundrySlug");
           localStorage.removeItem("pendingLaundryId");
@@ -335,10 +398,11 @@ function Login() {
       } else if (existingRole === "laundry") {
         navigate({ to: "/laundry-dashboard" });
       } else {
+        const discoveredSlug = await discoverAndSetTenant(fbUser.uid, userDoc.data());
         const cachedSlug = typeof window !== "undefined" ? localStorage.getItem("pendingLaundrySlug") : null;
         const cachedId   = typeof window !== "undefined" ? localStorage.getItem("pendingLaundryId") : null;
         const activeSlug = typeof window !== "undefined" ? localStorage.getItem("activeLaundrySlug") : null;
-        const targetSlug = slug || cachedSlug || cachedId || activeSlug;
+        const targetSlug = slug || discoveredSlug || cachedSlug || cachedId || activeSlug;
         if (targetSlug) {
           if (typeof window !== "undefined") {
             localStorage.removeItem("pendingLaundrySlug");
