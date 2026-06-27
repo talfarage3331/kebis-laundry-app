@@ -8,7 +8,7 @@
  * and send pushes — all over plain HTTPS, Workers-compatible.
  */
 
-import { getServerEnv, SERVICE_ACCOUNT_FALLBACK } from "./server-env";
+import { getServerEnv } from "./server-env";
 
 interface ServiceAccount {
   client_email: string;
@@ -22,10 +22,25 @@ const SCOPES =
 let cachedToken: { token: string; exp: number } | null = null;
 
 function getServiceAccount(): ServiceAccount {
-  const sa = SERVICE_ACCOUNT_FALLBACK;
+  const env = getServerEnv();
+  const raw = env.FIREBASE_SERVICE_ACCOUNT;
+  if (!raw) {
+    throw new Error(
+      "[fcm-admin] FIREBASE_SERVICE_ACCOUNT environment variable is not set. " +
+        "Run: wrangler secret put FIREBASE_SERVICE_ACCOUNT",
+    );
+  }
+  let sa: ServiceAccount;
+  try {
+    sa = JSON.parse(raw) as ServiceAccount;
+  } catch {
+    throw new Error(
+      "[fcm-admin] FIREBASE_SERVICE_ACCOUNT is not valid JSON. Ensure the secret value is the full service-account JSON string.",
+    );
+  }
   if (!sa.private_key || !sa.client_email || !sa.project_id) {
     throw new Error(
-      `[fcm-admin] Service account is incomplete: ` +
+      `[fcm-admin] Service account JSON is incomplete: ` +
         `project_id=${!!sa.project_id} client_email=${!!sa.client_email} private_key=${!!sa.private_key}`,
     );
   }

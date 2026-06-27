@@ -1,54 +1,230 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper function to check if the user has a specific role in the database or auth token
+
+    // ──────────────────────────────────────────────────────────────────────
+    // HELPER FUNCTIONS
+    // ──────────────────────────────────────────────────────────────────────
+
+    /** True only when the caller is authenticated. */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /**
+     * Checks a role stored in the Firebase Auth custom-claim token.
+     * We prefer the claim over a Firestore round-trip to avoid a read cost.
+     */
+    function hasTokenRole(role) {
+      return isSignedIn() && request.auth.token.role == role;
+    }
+
+    /** Fallback role check via Firestore document (1 read per rule evaluation). */
+    function hasDbRole(role) {
+      return isSignedIn()
+          && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role;
+    }
+
+    /** Combined role check — token claim first, then DB fallback. */
     function hasRole(role) {
-      return request.auth != null && (
-        request.auth.token.role == role ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role)
-      );
+      return hasTokenRole(role) || hasDbRole(role);
     }
 
-    function isAdminOrLaundry() {
-      return hasRole('admin') || hasRole('laundry');
+    function isAdmin()   { return hasRole('admin'); }
+    function isLaundry() { return hasRole('laundry'); }
+
+    /**
+     * Cost-control guard: every list() query must declare a page size ≤ 50.
+     * This prevents a single rogue client from exhausting the Free Tier
+     * with an unlimited collection scan.
+     */
+    function paginatedRead() {
+      return request.query.limit <= 50;
     }
 
-    match /pricing/{document=**} {
-      allow read: if true;
-      allow write: if isAdminOrLaundry();
-    }
 
-    match /users/{userId} {
-      allow read: if true;
-      allow write: if request.auth != null && (request.auth.uid == userId || hasRole('admin'));
-    }
-
-    // ── Multi-tenant: per-vendor customer profiles ─────────────────────────
-    // Path: laundries/{laundryId}/customers/{uid}
-    //
-    // - Customer can read & write their own profile under any laundry.
-    // - Laundry vendor (and admin) can read all their customers.
-    // - Only the customer themselves (or an admin) can write their own profile.
-    match /laundries/{laundryId}/customers/{userId} {
-      allow read: if request.auth != null && (
-        request.auth.uid == userId ||
-        hasRole('laundry') ||
-        hasRole('admin')
-      );
-      allow write: if request.auth != null && (
-        request.auth.uid == userId ||
-        hasRole('admin')
-      );
-    }
-
-    // Allow collectionGroup queries on `customers` (used by getCustomerLaundryIds)
-    match /{path=**}/customers/{userId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
-    }
-
+    // ──────────────────────────────────────────────────────────────────────
+    // GLOBAL DEFAULT DENY (explicit, belt-and-suspenders)
+    // Any path not matched by a more-specific rule below is rejected.
+    // ──────────────────────────────────────────────────────────────────────
     match /{document=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if false;
     }
+
+
+    // ──────────────────────────────────────────────────────────────────────
+    // PRICING  (public read, vendor/admin write)
+    // ──────────────────────────────────────────────────────────────────────
+    match /pricing/{document=**} {
+      allow read:  if true;
+      allow write: if isAdmin() || isLaundry();
+    }
+
+
+    // ──────────────────────────────────────────────────────────────────────
+    // USERS  /users/{uid}
+    // ──────────────────────────────────────────────────────────────────────
+    match /users/{uid} {
+      // A user can only read their own profile.
+      // Admin can read any user document (e.g. to resolve vendor configs).
+      allow get:    if isSignedIn() && (request.auth.uid == uid || isAdmin());
+
+      // List with pagination; admin-only — clients should never need a full scan.
+      allow list:   if isAdmin() && paginatedRead();
+
+      // A user can only create their own document, and the payload's uid must
+      // match so they can't spoof another user's document.
+      allow create: if isSignedIn()
+                    && request.auth.uid == uid
+                    && request.resource.data.uid == request.auth.uid;
+
+      // A user can only update their own document; admins can update any.
+      allow update: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+
+      // Only admins can delete user documents.
+      allow delete: if isAdmin();
+    }
+
+
+    // ──────────────────────────────────────────────────────────────────────
+    // ORDERS  /orders/{orderId}
+    // ──────────────────────────────────────────────────────────────────────
+    match /orders/{orderId} {
+      // --- Read helpers ---
+      // Customer can read their own order.
+      function isOrderCustomer() {
+        return isSignedIn() && request.auth.uid == resource.data.userId;
+      }
+      // Laundry vendor can read orders addressed to their laundry.
+      function isOrderVendor() {
+        return isSignedIn()
+            && (isLaundry() || isAdmin())
+            && (
+                 // On reads, match against the stored laundryId.
+                 resource.data.laundryId == request.auth.uid
+                 // Admin bypass
+                 || isAdmin()
+               );
+      }
+
+      // Single-document read
+      allow get:  if isOrderCustomer() || isOrderVendor();
+
+      // List with pagination; customer sees only their own orders,
+      // vendor sees only their laundry's orders.
+      allow list: if isSignedIn() && paginatedRead();
+
+      // Create: customer creates an order, uid must match payload to prevent spoofing.
+      allow create: if isSignedIn()
+                    && request.resource.data.userId == request.auth.uid;
+
+      // Update: customer may update their own open order;
+      //         vendor may update orders belonging to their laundry.
+      allow update: if isOrderCustomer()
+                    || (isLaundry() && resource.data.laundryId == request.auth.uid)
+                    || isAdmin();
+
+      // Delete: admin only.
+      allow delete: if isAdmin();
+    }
+
+
+    // ──────────────────────────────────────────────────────────────────────
+    // CHATS & MESSAGES (deep wildcard — sub-collections inherit the rule)
+    // /chats/{chatId}/{document=**}
+    //
+    // A chat document must carry both `userId` (the customer) and `laundryId`
+    // (the vendor's uid). Access is granted if the caller is either party.
+    // ──────────────────────────────────────────────────────────────────────
+    match /chats/{chatId} {
+      function isChatParticipant() {
+        return isSignedIn() && (
+          request.auth.uid == resource.data.userId   ||
+          request.auth.uid == resource.data.laundryId
+        );
+      }
+
+      allow get:    if isChatParticipant();
+      allow list:   if isSignedIn() && paginatedRead();
+
+      // On create the payload must contain the caller's uid as one of the parties.
+      allow create: if isSignedIn() && (
+        request.resource.data.userId   == request.auth.uid ||
+        request.resource.data.laundryId == request.auth.uid
+      );
+
+      allow update: if isChatParticipant();
+      allow delete: if isAdmin();
+
+      // ── Messages sub-collection (and any deeper sub-collections) ──────────
+      // Uses the parent chat document to determine participant membership.
+      // The recursive wildcard {document=**} inherits these rules seamlessly.
+      match /messages/{document=**} {
+        function isMsgParticipant() {
+          let chat = get(/databases/$(database)/documents/chats/$(chatId));
+          return isSignedIn() && (
+            request.auth.uid == chat.data.userId   ||
+            request.auth.uid == chat.data.laundryId
+          );
+        }
+
+        allow read:   if isMsgParticipant() && (request.query == null || paginatedRead());
+        allow create: if isMsgParticipant()
+                      && request.resource.data.senderId == request.auth.uid;
+        allow update: if isMsgParticipant();
+        allow delete: if isAdmin();
+      }
+    }
+
+
+    // ──────────────────────────────────────────────────────────────────────
+    // LAUNDRIES / per-vendor customer profiles
+    // /laundries/{laundryId}/customers/{uid}
+    // ──────────────────────────────────────────────────────────────────────
+    match /laundries/{laundryId}/customers/{userId} {
+      allow get:    if isSignedIn() && (
+        request.auth.uid == userId ||
+        (isLaundry() && request.auth.uid == laundryId) ||
+        isAdmin()
+      );
+      allow list:   if isSignedIn() && paginatedRead() && (
+        (isLaundry() && request.auth.uid == laundryId) || isAdmin()
+      );
+      allow create: if isSignedIn()
+                    && request.auth.uid == userId
+                    && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // CollectionGroup query for `customers` — used by getCustomerLaundryIds.
+    // Allows the calling user to read only their own customer documents
+    // across all laundry sub-collections.
+    match /{path=**}/customers/{userId} {
+      allow get:  if isSignedIn() && request.auth.uid == userId;
+      allow list: if isSignedIn() && request.auth.uid == userId && paginatedRead();
+    }
+
+
+    // ──────────────────────────────────────────────────────────────────────
+    // FCM TOKEN ORPHAN STORE  /fcmTokens/{id}
+    // Written server-side by the admin client (bypasses rules).
+    // Client has no access — all ops go through the Cloud Worker.
+    // ──────────────────────────────────────────────────────────────────────
+    match /fcmTokens/{id} {
+      allow read, write: if false;
+    }
+
+
+    // ──────────────────────────────────────────────────────────────────────
+    // NOTIFICATION LOGS  /notification_logs/{id}
+    // Admin-only, write happens server-side.
+    // ──────────────────────────────────────────────────────────────────────
+    match /notification_logs/{id} {
+      allow read:  if isAdmin();
+      allow write: if false;
+    }
+
   }
 }
