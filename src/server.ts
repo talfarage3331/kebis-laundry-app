@@ -2,8 +2,23 @@ import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
-
 import { setServerEnv } from "./lib/server-env";
+import { resolveSlugToBrand } from "./lib/resolve-slug.server";
+
+// ── Cloudflare HTMLRewriter ambient declaration ────────────────────────────
+// @cloudflare/workers-types is not installed; declare only what we use here.
+interface HRElement {
+  setInnerContent(content: string, options?: { html?: boolean }): void;
+  onEndTag(handler: (tag: { before(content: string, options?: { html?: boolean }): void }) => void): void;
+}
+declare class HTMLRewriter {
+  on(selector: string, handlers: {
+    element?: (el: HRElement) => void;
+    comments?: (comment: unknown) => void;
+    text?: (text: unknown) => void;
+  }): this;
+  transform(response: Response): Response;
+}
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
@@ -92,6 +107,97 @@ function isRateLimited(ip: string): boolean {
   return false;
 }
 
+// ── OpenGraph / Social Crawler logic ──────────────────────────────────────
+
+/** Known social media bot User-Agent substrings. */
+const CRAWLER_UA_PATTERNS = [
+  "facebookexternalhit",
+  "Facebot",
+  "Twitterbot",
+  "WhatsApp",
+  "TelegramBot",
+  "LinkedInBot",
+  "Slackbot",
+  "Discordbot",
+  "Googlebot",
+  "bingbot",
+  "DuckDuckBot",
+  "ia_archiver",
+  "outbrain",
+  "pinterest",
+  "vkShare",
+];
+
+function isSocialCrawler(request: Request): boolean {
+  const ua = request.headers.get("User-Agent") || "";
+  return CRAWLER_UA_PATTERNS.some((p) => ua.toLowerCase().includes(p.toLowerCase()));
+}
+
+/**
+ * Extract the laundry slug from an incoming request, supporting:
+ *   /shop/<slug>         (path-based)
+ *   /login?slug=<slug>   (query param)
+ *   /signup?slug=<slug>  (query param)
+ */
+function extractSlugFromRequest(url: URL): string | null {
+  // Path-based: /shop/<slug>
+  const pathMatch = url.pathname.match(/^\/shop\/([^/?#]+)/);
+  if (pathMatch) return decodeURIComponent(pathMatch[1]);
+
+  // Query-param based: ?slug=<slug>
+  const paramSlug = url.searchParams.get("slug");
+  if (paramSlug) return paramSlug;
+
+  return null;
+}
+
+/**
+ * Inject branded OpenGraph meta tags into an HTML response using
+ * Cloudflare's native HTMLRewriter (streaming transformer).
+ *
+ * Rewrites:
+ *   <title>  → branded title
+ *   <head>   → appended with og:title, og:description, og:image, og:url
+ *
+ * Any existing og:* tags added by SSR are left in place; the injected
+ * tags take precedence for crawlers because they appear last in <head>.
+ */
+function rewriteOGTags(
+  response: Response,
+  brand: { name: string; logoUrl: string | null; brandColor: string | null },
+  fullUrl: string,
+): Response {
+  const laundryName = brand.name;
+  const ogTitle = `\u05de\u05db\u05d1\u05e1\u05ea ${laundryName} \u05de\u05d6\u05de\u05d9\u05e0\u05ea \u05d0\u05d5\u05ea\u05da \u05dc\u05d4\u05d6\u05de\u05d9\u05df \u05d0\u05d9\u05e1\u05d5\u05e3 \u05db\u05d1\u05d9\u05e1\u05d4 \u05d1\u05e7\u05dc\u05d9\u05e7`;
+  const ogDesc = `\u05d4\u05e6\u05d8\u05e8\u05e4\u05d5 \u05dc${laundryName} \u2014 \u05e9\u05d9\u05e8\u05d5\u05ea \u05db\u05d1\u05d9\u05e1\u05d4 \u05de\u05e7\u05e6\u05d5\u05e2\u05d9 \u05e2\u05dd \u05d0\u05d9\u05e1\u05d5\u05e3, \u05de\u05e2\u05e7\u05d1 \u05d5\u05ea\u05e9\u05dc\u05d5\u05dd \u05d1\u05dc\u05d7\u05d9\u05e6\u05d4`;
+
+  // Build the tags to inject, conditionally including og:image
+  const extraTags = [
+    `<meta property="og:title" content="${ogTitle}" />`,
+    `<meta property="og:description" content="${ogDesc}" />`,
+    `<meta property="og:type" content="website" />`,
+    `<meta property="og:url" content="${fullUrl}" />`,
+    ...(brand.logoUrl ? [`<meta property="og:image" content="${brand.logoUrl}" />`] : []),
+  ].join("\n    ");
+
+  return new HTMLRewriter()
+    // Rewrite <title>
+    .on("title", {
+      element(el) {
+        el.setInnerContent(ogTitle);
+      },
+    })
+    // Append OG tags at end of <head>
+    .on("head", {
+      element(el) {
+        el.onEndTag((end) => {
+          end.before(`\n    ${extraTags}\n  `, { html: true });
+        });
+      },
+    })
+    .transform(response);
+}
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
@@ -121,6 +227,29 @@ export default {
           );
         }
       }
+
+      // ── OpenGraph injection for social media crawlers ─────────────────────
+      const isCrawler = request.method === "GET" && isSocialCrawler(request);
+      const ogSlug    = isCrawler ? extractSlugFromRequest(url) : null;
+
+      if (isCrawler && ogSlug) {
+        // Resolve brand + render HTML in parallel for minimal added latency
+        const [brandResult, handler] = await Promise.all([
+          resolveSlugToBrand(ogSlug).catch(() => null),
+          getServerEntry(),
+        ]);
+
+        const ssrResponse = await handler.fetch(request, env, ctx);
+        const normalized  = await normalizeCatastrophicSsrResponse(ssrResponse);
+
+        // Only rewrite HTML responses
+        const ct = normalized.headers.get("content-type") ?? "";
+        if (brandResult && ct.includes("text/html")) {
+          return rewriteOGTags(normalized, brandResult, request.url);
+        }
+        return normalized;
+      }
+      // ── Normal (non-crawler) request path ────────────────────────────────
 
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);

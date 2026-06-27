@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
 import { useLaundry } from "@/lib/laundry-store";
+import { useBrand } from "@/hooks/use-brand";
 import { Flower2, Building2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { googleProvider } from "@/lib/firebase";
@@ -244,6 +245,9 @@ function Signup() {
 
   // Read slug and laundryId from router or raw URL
   const { slug: urlSlug, laundryId: urlLaundryId } = useSignupParams();
+
+  // Brand assets for white-labeling (null when no slug)
+  const { brandName, brandLogoUrl, brandColor } = useBrand(urlSlug);
 
   // Background resolution — purely for UX (showing laundry name, spinner).
   // The ACTUAL resolution used for registration happens inline at submit time.
@@ -519,20 +523,41 @@ function Signup() {
     }
   };
 
+  // Resolved brand values — fall back to Kebis defaults
+  const headerBg   = brandColor || "var(--primary)";
+  const headerName = brandName  || "כביסה";
+  const btnBg      = brandColor || "";
+
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="min-h-[100dvh] bg-background flex flex-col overflow-x-hidden" dir="rtl">
 
       {/* Header */}
-      <div className="bg-primary text-primary-foreground rounded-b-[2rem] px-4 sm:px-6 pt-safe-auth pb-10">
+      <div
+        className="text-white rounded-b-[2rem] px-4 sm:px-6 pt-safe-auth pb-10"
+        style={{ backgroundColor: headerBg }}
+      >
         <div className="mx-auto max-w-md flex items-center gap-3">
-          <div className="size-10 rounded-full bg-primary-foreground/15 grid place-items-center shrink-0">
-            <Flower2 className="size-5" strokeWidth={1.75} />
+          <div className="size-10 rounded-full bg-white/15 grid place-items-center shrink-0 overflow-hidden">
+            {brandLogoUrl ? (
+              <img
+                src={brandLogoUrl}
+                alt={headerName}
+                className="size-full object-cover rounded-full"
+                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+              />
+            ) : (
+              <Flower2 className="size-5" strokeWidth={1.75} />
+            )}
           </div>
           <div>
-            <h1 className="text-2xl font-extrabold">כביסה</h1>
+            <h1 className="text-2xl font-extrabold">{headerName}</h1>
             <p className="text-xs opacity-80">
-              {resolvedLaundryName ? `הצטרפות ל${resolvedLaundryName}` : "הצטרפו אלינו"}
+              {resolvedLaundryName
+                ? `הצטרפות ל${resolvedLaundryName}`
+                : brandName
+                  ? `הצטרפות ל${brandName}`
+                  : "הצטרפו אלינו"}
             </p>
           </div>
         </div>
@@ -605,7 +630,11 @@ function Signup() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-3xl bg-lime text-lime-foreground py-4 text-base sm:text-lg font-extrabold min-h-[52px] shadow-[0_15px_40px_-15px_oklch(0.92_0.18_125/0.6)] active:scale-[0.98] transition disabled:opacity-50"
+          className="w-full rounded-3xl py-4 text-base sm:text-lg font-extrabold min-h-[52px] active:scale-[0.98] transition disabled:opacity-50"
+          style={btnBg
+            ? { backgroundColor: btnBg, color: "#fff", boxShadow: `0 15px 40px -15px ${btnBg}99` }
+            : { backgroundColor: "oklch(0.92 0.18 125)", color: "var(--lime-foreground)", boxShadow: "0 15px 40px -15px oklch(0.92 0.18 125/0.6)" }
+          }
         >
           {loading ? "נרשם..." : "הרשמה"}
         </button>

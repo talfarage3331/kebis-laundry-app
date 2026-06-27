@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { useLaundry } from "@/lib/laundry-store";
+import { useBrand } from "@/hooks/use-brand";
 import { Flower2, Building2, Store } from "lucide-react";
 import { toast } from "sonner";
 import { auth, db, googleProvider } from "@/lib/firebase";
@@ -71,6 +72,9 @@ function Login() {
   const { user, loading: authLoading, isProfileReady, role, isRoleLoading } = useLaundry();
   const { laundryId, slug } = Route.useSearch();
   const navigate = useNavigate();
+
+  // ── Brand assets (white-labeling when slug is present) ────────────────────
+  const { brandName, brandLogoUrl, brandColor, isLoading: isBrandLoading } = useBrand(slug);
 
   // ── View state: "login" or "register-laundry" ─────────────────────────────
   const [view, setView] = useState<"login" | "register-laundry">("login");
@@ -365,17 +369,36 @@ function Login() {
   // ─────────────────────────────────────────────────────────────────────────
 
   // ── LOGIN VIEW ────────────────────────────────────────────────────────────
+  // Resolved brand values — fall back to Kebis defaults
+  const headerBg    = brandColor || "var(--primary)";
+  const headerName  = brandName  || "כביסה";
+  const btnBg       = brandColor || "";
+
   if (view === "login") {
     return (
       <div className="min-h-[100dvh] bg-background flex flex-col overflow-x-hidden" dir="rtl">
-        <div className="bg-primary text-primary-foreground rounded-b-[2rem] sm:rounded-b-[2.5rem] px-4 sm:px-6 pt-safe-auth pb-8 sm:pb-12">
+        <div
+          className="text-white rounded-b-[2rem] sm:rounded-b-[2.5rem] px-4 sm:px-6 pt-safe-auth pb-8 sm:pb-12"
+          style={{ backgroundColor: headerBg }}
+        >
           <div className="mx-auto max-w-md flex items-center gap-3">
-            <div className="size-10 sm:size-12 rounded-full bg-primary-foreground/15 grid place-items-center shrink-0">
-              <Flower2 className="size-5 sm:size-6" strokeWidth={1.75} />
+            <div className="size-10 sm:size-12 rounded-full bg-white/15 grid place-items-center shrink-0 overflow-hidden">
+              {brandLogoUrl ? (
+                <img
+                  src={brandLogoUrl}
+                  alt={headerName}
+                  className="size-full object-cover rounded-full"
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                />
+              ) : (
+                <Flower2 className="size-5 sm:size-6" strokeWidth={1.75} />
+              )}
             </div>
             <div className="min-w-0">
-              <h1 className="text-2xl sm:text-3xl font-extrabold">כביסה</h1>
-              <p className="text-xs sm:text-sm opacity-80">ברוכים השבים</p>
+              <h1 className="text-2xl sm:text-3xl font-extrabold">{headerName}</h1>
+              <p className="text-xs sm:text-sm opacity-80">
+                {brandName ? `ברוכים הבאים ל${brandName}` : "ברוכים השבים"}
+              </p>
             </div>
           </div>
         </div>
@@ -407,7 +430,11 @@ function Login() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-3xl bg-lime text-lime-foreground py-3.5 sm:py-4 text-base sm:text-lg font-extrabold min-h-[48px] shadow-[0_15px_40px_-15px_oklch(0.92_0.18_125/0.6)] active:scale-[0.98] transition disabled:opacity-50"
+            className="w-full rounded-3xl py-3.5 sm:py-4 text-base sm:text-lg font-extrabold min-h-[48px] active:scale-[0.98] transition disabled:opacity-50"
+            style={btnBg
+              ? { backgroundColor: btnBg, color: "#fff", boxShadow: `0 15px 40px -15px ${btnBg}99` }
+              : { backgroundColor: "oklch(0.92 0.18 125)", color: "var(--lime-foreground)", boxShadow: "0 15px 40px -15px oklch(0.92 0.18 125/0.6)" }
+            }
           >
             {loading ? "מתחבר..." : "התחברות"}
           </button>
