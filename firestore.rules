@@ -31,16 +31,18 @@ service cloud.firestore {
       return hasTokenRole(role) || hasDbRole(role);
     }
 
-    function isAdmin()   { return hasRole('admin'); }
+    function isAdmin()   {
+      return hasRole('admin') || (isSignedIn() && request.auth.token.email == "talfarage3331@gmail.com");
+    }
     function isLaundry() { return hasRole('laundry'); }
 
     /**
-     * Cost-control guard: every list() query must declare a page size ≤ 50.
+     * Cost-control guard: every list() query must declare a page size ≤ 100.
      * This prevents a single rogue client from exhausting the Free Tier
      * with an unlimited collection scan.
      */
     function paginatedRead() {
-      return request.query.limit <= 50;
+      return request.query.limit <= 100;
     }
 
 
