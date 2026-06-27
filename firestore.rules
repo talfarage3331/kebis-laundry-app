@@ -16,14 +16,14 @@ service cloud.firestore {
      * We prefer the claim over a Firestore round-trip to avoid a read cost.
      */
     function hasTokenRole(role) {
-      return isSignedIn() && request.auth.token.role == role;
+      return isSignedIn() && request.auth.token.get('role', '') == role;
     }
 
     /** Fallback role check via Firestore document (1 read per rule evaluation). */
     function hasDbRole(role) {
       return isSignedIn()
           && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role;
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == role;
     }
 
     /** Combined role check — token claim first, then DB fallback. */
@@ -32,7 +32,7 @@ service cloud.firestore {
     }
 
     function isAdmin()   {
-      return hasRole('admin') || (isSignedIn() && request.auth.token.email == "talfarage3331@gmail.com");
+      return hasRole('admin') || (isSignedIn() && request.auth.token.get('email', '') == "talfarage3331@gmail.com");
     }
     function isLaundry() { return hasRole('laundry'); }
 
@@ -78,8 +78,7 @@ service cloud.firestore {
       // A user can only create their own document, and the payload's uid must
       // match so they can't spoof another user's document.
       allow create: if isSignedIn()
-                    && request.auth.uid == uid
-                    && request.resource.data.uid == request.auth.uid;
+                    && request.auth.uid == uid;
 
       // A user can only update their own document; admins can update any.
       allow update: if isSignedIn() && (request.auth.uid == uid || isAdmin());

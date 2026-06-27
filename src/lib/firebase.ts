@@ -45,7 +45,7 @@ const app: FirebaseApp = (isBrowser
 export let appCheck: AppCheck | null = null;
 
 if (isBrowser && app) {
-  const siteKey = import.meta.env.VITE_RECAPTCHA_V3_SITE_KEY;
+  const siteKey = import.meta.env.VITE_RECAPTCHA_V3_SITE_KEY || "6LcbmzgtAAAAAJPKgaCDrNO5qAgnoyqnx6spGtZJ";
   const urlParams = new URLSearchParams(window.location.search);
   
   // Enable debug provider for local development or if explicitly requested via query parameter
