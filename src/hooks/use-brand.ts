@@ -14,9 +14,8 @@
  */
 
 import { useState, useEffect } from "react";
-import { getApps, getApp } from "firebase/app";
+import { db } from "@/lib/firebase";
 import {
-  getFirestore,
   collection,
   query,
   where,
@@ -78,12 +77,6 @@ function writeCache(slug: string, entry: Omit<CacheEntry, "expiresAt">) {
   }
 }
 
-function getLiveDb() {
-  const apps = getApps();
-  if (!apps.length) throw new Error("Firebase app not initialised");
-  return getFirestore(apps[0]);
-}
-
 /**
  * Resolves a slug to vendor brand assets using three fallback strategies.
  * Returns null if nothing is found.
@@ -91,12 +84,7 @@ function getLiveDb() {
 async function fetchBrandAssets(
   slug: string,
 ): Promise<Omit<CacheEntry, "expiresAt"> | null> {
-  let db: ReturnType<typeof getFirestore>;
-  try {
-    db = getLiveDb();
-  } catch {
-    return null;
-  }
+  if (!db) return null;
 
   const extract = (data: Record<string, any>): Omit<CacheEntry, "expiresAt"> => ({
     brandName:    data.businessName || data.fullName || data.name || null,

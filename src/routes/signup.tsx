@@ -246,8 +246,8 @@ function Signup() {
   // Read slug and laundryId from router or raw URL
   const { slug: urlSlug, laundryId: urlLaundryId } = useSignupParams();
 
-  // Brand assets for white-labeling (null when no slug)
-  const { brandName, brandLogoUrl, brandColor } = useBrand(urlSlug);
+  // Brand assets for white-labeling (null when no slug/laundryId)
+  const { brandName, brandLogoUrl, brandColor } = useBrand(urlSlug || urlLaundryId);
 
   // Background resolution — purely for UX (showing laundry name, spinner).
   // The ACTUAL resolution used for registration happens inline at submit time.

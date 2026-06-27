@@ -73,8 +73,8 @@ function Login() {
   const { laundryId, slug } = Route.useSearch();
   const navigate = useNavigate();
 
-  // ── Brand assets (white-labeling when slug is present) ────────────────────
-  const { brandName, brandLogoUrl, brandColor, isLoading: isBrandLoading } = useBrand(slug);
+  // ── Brand assets (white-labeling when slug or laundryId is present) ──────
+  const { brandName, brandLogoUrl, brandColor, isLoading: isBrandLoading } = useBrand(slug || laundryId);
 
   // ── View state: "login" or "register-laundry" ─────────────────────────────
   const [view, setView] = useState<"login" | "register-laundry">("login");
