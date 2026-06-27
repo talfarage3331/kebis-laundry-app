@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   collection,
   doc,
@@ -11,7 +11,8 @@ import {
   onSnapshot,
   serverTimestamp,
 } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import { db, storage } from "@/lib/firebase";
 import { useLaundry } from "@/lib/laundry-store";
 import { useLaundryOptions, seedDefaultsIfEmpty } from "@/hooks/use-laundry-options";
 import { generateSlug } from "@/lib/slug";
@@ -19,15 +20,15 @@ import {
   Plus,
   Edit2,
   Trash2,
-  X,
   Check,
   Sparkles,
   Truck,
   Loader2,
-  PlusCircle,
   RefreshCw,
   Link,
   Copy,
+  Palette,
+  ImagePlus,
 } from "lucide-react";
 import {
   Dialog,
@@ -79,21 +80,30 @@ export function LaundrySettingsCRUDPanel() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  // Load shopSlug from the logged-in user's Firestore doc
+  // ── Brand Identity state ────────────────────────────────────────────
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [brandColor, setBrandColor] = useState<string>("#6B1D5C");
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [isSavingColor, setIsSavingColor] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load shopSlug + brand fields from the logged-in user's Firestore doc
   useEffect(() => {
     if (!laundryId) return;
-    const fetchSlug = async () => {
+    const fetchProfile = async () => {
       try {
         const docSnap = await getDoc(doc(db, "users", laundryId));
         if (docSnap.exists()) {
           const data = docSnap.data();
           setShopSlug(data.shopSlug || null);
+          setLogoUrl(data.logoUrl || null);
+          if (data.brandColor) setBrandColor(data.brandColor);
         }
       } catch (err) {
-        console.warn("[LaundrySettingsCRUDPanel] could not load shopSlug:", err);
+        console.warn("[LaundrySettingsCRUDPanel] could not load profile:", err);
       }
     };
-    fetchSlug();
+    fetchProfile();
   }, [laundryId]);
 
   /** Generate a unique slug from the user's name and persist it */
@@ -102,7 +112,6 @@ export function LaundrySettingsCRUDPanel() {
     setIsGenerating(true);
     try {
       const base = generateSlug(user.name);
-      // Append a short timestamp suffix to keep it unique
       const candidate = base || `shop-${laundryId.slice(0, 6)}`;
       await updateDoc(doc(db, "users", laundryId), { shopSlug: candidate });
       setShopSlug(candidate);
@@ -125,6 +134,69 @@ export function LaundrySettingsCRUDPanel() {
       setTimeout(() => setCopied(false), 2000);
     } catch {
       toast.error("שגיאה בהעתקת הקישור");
+    }
+  };
+
+  /** Upload logo to Firebase Storage, then save the download URL to Firestore */
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !laundryId) return;
+
+    // Validate type & size (max 5 MB)
+    if (!file.type.startsWith("image/")) {
+      toast.error("יש לבחור קובץ תמונה בלבד");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("הקובץ גדול מדי — מקסימום 5 מג'ב");
+      return;
+    }
+
+    const storageRef = ref(storage, `logos/${laundryId}/${Date.now()}_${file.name}`);
+    const uploadTask = uploadBytesResumable(storageRef, file);
+
+    setUploadProgress(0);
+
+    uploadTask.on(
+      "state_changed",
+      (snapshot) => {
+        setUploadProgress(Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100));
+      },
+      (error) => {
+        console.error("[logo-upload] error:", error);
+        toast.error("העלאת הלוגו נכשלה: " + error.message);
+        setUploadProgress(null);
+      },
+      async () => {
+        try {
+          const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+          await updateDoc(doc(db, "users", laundryId), { logoUrl: downloadUrl });
+          setLogoUrl(downloadUrl);
+          // Bust the use-brand localStorage cache so next page-load picks up the new logo
+          if (shopSlug) localStorage.removeItem(`brandCache_${shopSlug}`);
+          toast.success("הלוגו עודכן בהצלחה!");
+        } catch (err: any) {
+          toast.error("שגיאה בשמירת הלוגו: " + err.message);
+        } finally {
+          setUploadProgress(null);
+        }
+      }
+    );
+  };
+
+  /** Save chosen brand color to Firestore */
+  const handleSaveBrandColor = async () => {
+    if (!laundryId) return;
+    setIsSavingColor(true);
+    try {
+      await updateDoc(doc(db, "users", laundryId), { brandColor });
+      // Bust cache
+      if (shopSlug) localStorage.removeItem(`brandCache_${shopSlug}`);
+      toast.success("צבע המיתוג נשמר בהצלחה!");
+    } catch (err: any) {
+      toast.error("שגיאה בשמירת הצבע: " + err.message);
+    } finally {
+      setIsSavingColor(false);
     }
   };
 
@@ -324,6 +396,108 @@ export function LaundrySettingsCRUDPanel() {
 
   return (
     <div className="bg-card border border-muted-foreground/10 rounded-2xl p-4 sm:p-5 shadow-sm space-y-4 text-right" dir="rtl">
+
+      {/* ──── Brand Identity Card ──────────────────────────────────────────── */}
+      <div className="bg-gradient-to-br from-purple-50/80 to-fuchsia-50/60 border border-purple-200/60 rounded-2xl p-4 space-y-4">
+        {/* Header */}
+        <div className="flex items-center gap-2">
+          <div className="size-8 rounded-full bg-purple-100 grid place-items-center shrink-0">
+            <Palette className="size-4 text-purple-600" />
+          </div>
+          <div>
+            <p className="text-sm font-extrabold text-foreground">מיתוג מכבסת</p>
+            <p className="text-[10px] text-muted-foreground">לוגו וצבע מיתוג יופיעו בדפי ההתחברות ובתצוגית WhatsApp של הקישור</p>
+          </div>
+        </div>
+
+        {/* Logo upload */}
+        <div className="space-y-2">
+          <p className="text-[11px] font-bold text-slate-700">לוגו המכבסה</p>
+          <div className="flex items-center gap-3">
+            {/* Preview circle */}
+            <div className="size-16 rounded-2xl border-2 border-dashed border-purple-200 bg-white flex items-center justify-center overflow-hidden shrink-0">
+              {logoUrl ? (
+                <img src={logoUrl} alt="לוגו" className="size-full object-cover" />
+              ) : (
+                <ImagePlus className="size-6 text-purple-300" />
+              )}
+            </div>
+
+            {/* Upload controls */}
+            <div className="flex-1 space-y-1.5">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleLogoUpload}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadProgress !== null}
+                className="w-full py-2 rounded-xl bg-purple-100 text-purple-700 text-xs font-black flex items-center justify-center gap-1.5 hover:bg-purple-200 transition active:scale-95 disabled:opacity-60"
+              >
+                {uploadProgress !== null ? (
+                  <><Loader2 className="size-3.5 animate-spin" /> מעלה... {uploadProgress}%</>
+                ) : (
+                  <><ImagePlus className="size-3.5" /> {logoUrl ? "עדכן לוגו" : "העלאת לוגו"}</>
+                )}
+              </button>
+              {/* Progress bar */}
+              {uploadProgress !== null && (
+                <div className="h-1.5 rounded-full bg-purple-100 overflow-hidden">
+                  <div
+                    className="h-full bg-purple-500 transition-all duration-200"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+              )}
+              {logoUrl && (
+                <p className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
+                  <Check className="size-3" /> לוגו פעיל
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Color picker */}
+        <div className="space-y-2">
+          <p className="text-[11px] font-bold text-slate-700">צבע מיתוג ראשי</p>
+          <div className="flex items-center gap-3">
+            {/* Native color input — acts as the picker */}
+            <label className="relative shrink-0 cursor-pointer" title="בחר צבע">
+              <span
+                className="block size-10 rounded-xl border-2 border-white shadow-md transition-transform hover:scale-105 active:scale-95"
+                style={{ backgroundColor: brandColor }}
+              />
+              <input
+                type="color"
+                value={brandColor}
+                onChange={(e) => setBrandColor(e.target.value)}
+                className="sr-only"
+              />
+            </label>
+
+            {/* Hex display */}
+            <div className="flex-1 flex items-center gap-2 bg-white border border-purple-100 rounded-xl px-3 py-2">
+              <span className="font-mono text-xs font-bold text-foreground flex-1">{brandColor}</span>
+              <button
+                type="button"
+                onClick={handleSaveBrandColor}
+                disabled={isSavingColor}
+                className="text-[10px] font-black text-purple-700 bg-purple-100 hover:bg-purple-200 px-2.5 py-1 rounded-lg flex items-center gap-1 transition active:scale-95 disabled:opacity-50"
+              >
+                {isSavingColor ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
+                שמור
+              </button>
+            </div>
+          </div>
+          <p className="text-[10px] text-muted-foreground">צבע זה ישמש כרקע הכותרת וצבע הכפתור בדפי ההתחברות
+          </p>
+        </div>
+      </div>
 
       {/* ──── Shareable Link Card ───────────────────────────────────── */}
       <div className="bg-gradient-to-br from-primary/5 to-primary/10 border border-primary/20 rounded-2xl p-4 space-y-3">
