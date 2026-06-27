@@ -5,7 +5,8 @@ import { AppHeader } from "@/components/AppHeader";
 import { useLaundry, ORDER_STEPS, stateLabel, ADDONS_META, DELIVERY_TIERS_META } from "@/lib/laundry-store";
 import { useLaundryOptions, seedDefaultsIfEmpty } from "@/hooks/use-laundry-options";
 import { db } from "@/lib/firebase";
-import { collection, query, where, onSnapshot } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, setDoc } from "firebase/firestore";
+import { getCustomerProfile } from "@/lib/tenant-profiles";
 import {
   ShoppingBasket,
   ChevronLeft,
@@ -375,8 +376,12 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
   const [deliveryTier, setDeliveryTier] = useState<string>("standard");
   const [phoneNumber, setPhoneNumber] = useState("");
 
-  // ── Multi-tenant: read active tenant from context ────────────────────────────────
-  const { activeTenantId, activeTenantName } = useLaundry();
+  // ── Multi-tenant: read active tenant and user from context ──────────────────────
+  const { activeTenantId, activeTenantName, user } = useLaundry();
+
+  // 1-Click Saved Template Order states
+  const [savedOrder, setSavedOrder] = useState<any | null>(null);
+  const [saveAsTemplate, setSaveAsTemplate] = useState(false);
 
   // Laundry options hook
   const { customAddons, customTiers } = useLaundryOptions();
@@ -391,6 +396,47 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
       seedDefaultsIfEmpty(effectiveLaundryId);
     }
   }, [isOpen, effectiveLaundryId]);
+
+  // Load saved order template
+  useEffect(() => {
+    if (isOpen && user?.uid && effectiveLaundryId) {
+      const loadSavedOrder = async () => {
+        try {
+          const profile = await getCustomerProfile(user.uid, effectiveLaundryId);
+          if (profile && profile.savedOrder) {
+            setSavedOrder(profile.savedOrder);
+          } else {
+            setSavedOrder(null);
+          }
+        } catch (err) {
+          console.error("Failed to load saved order:", err);
+        }
+      };
+      loadSavedOrder();
+    } else if (!isOpen) {
+      setSavedOrder(null);
+      setSaveAsTemplate(false);
+    }
+  }, [isOpen, user?.uid, effectiveLaundryId]);
+
+  const handleApplySavedOrder = () => {
+    if (!savedOrder) return;
+    setAddressSearchQuery(savedOrder.addressSearchQuery || "");
+    setSelectedAddress(savedOrder.selectedAddress || null);
+    setHouseNumber(savedOrder.houseNumber || "");
+    setFloor(savedOrder.floor || "");
+    setApartment(savedOrder.apartment || "");
+    setEntrance(savedOrder.entrance || "");
+    setNotes(savedOrder.notes || "");
+    setRequiresWashing(!!savedOrder.requiresWashing);
+    setRequiresIroning(!!savedOrder.requiresIroning);
+    setRequiresDryCleaning(!!savedOrder.requiresDryCleaning);
+    setDeliveryMethod(savedOrder.deliveryMethod || null);
+    setSelectedAddons(savedOrder.selectedAddons || []);
+    setDeliveryTier(savedOrder.deliveryTier || "standard");
+    setPhoneNumber(savedOrder.phoneNumber || "");
+    toast.success("פרטי ההזמנה הקבועה הוחלו בהצלחה!");
+  };
 
   // Filter addons & delivery tiers for the active shop
   const shopAddonsList = customAddons.filter(a => a.laundryId === effectiveLaundryId);
@@ -720,6 +766,33 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
         effectiveLaundryId || "default_laundry"
       );
 
+      // ── 1-Click Saved Template Order storage ───────────────────────────────
+      if (saveAsTemplate && user?.uid && effectiveLaundryId) {
+        const profileRef = doc(db, "laundries", effectiveLaundryId, "customers", user.uid);
+        await setDoc(
+          profileRef,
+          {
+            savedOrder: {
+              addressSearchQuery,
+              selectedAddress,
+              houseNumber: houseNumber.trim(),
+              floor: floor.trim(),
+              apartment: apartment.trim(),
+              entrance: entrance.trim(),
+              notes,
+              requiresWashing,
+              requiresIroning,
+              requiresDryCleaning,
+              deliveryMethod,
+              selectedAddons,
+              deliveryTier,
+              phoneNumber,
+            },
+          },
+          { merge: true }
+        );
+      }
+
       setAddressSearchQuery("");
       setSelectedAddress(null);
       setHouseNumber("");
@@ -774,6 +847,17 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
             <div className="flex items-center gap-2 bg-destructive/10 border border-destructive/20 rounded-2xl px-4 py-3 text-destructive text-xs font-bold justify-center" dir="rtl">
               ⚠️ שגיאה: לא נבחרה מכבסה פעילה. יש להיכנס דרך קישור ייעודי.
             </div>
+          )}
+
+          {/* ⚡ Apply Saved Order Template Button */}
+          {savedOrder && (
+            <button
+              type="button"
+              onClick={handleApplySavedOrder}
+              className="w-full py-3 rounded-2xl bg-amber-50 text-amber-800 border border-amber-200/80 hover:bg-amber-100 hover:border-amber-300 text-xs font-bold transition-all flex items-center justify-center gap-1.5 active:scale-[0.98] select-none shadow-sm cursor-pointer"
+            >
+              <span>⚡ החל פרטי הזמנה קבועה</span>
+            </button>
           )}
 
           {/* Pickup Address Field */}
@@ -1336,6 +1420,22 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
               )}
             </div>
           </div>
+
+          {/* ⚡ Save as Template Checkbox */}
+          {user && (
+            <div className="pt-3.5 border-t border-slate-100 flex items-center gap-2.5 text-right justify-start select-none">
+              <input
+                id="checkbox-save-template"
+                type="checkbox"
+                checked={saveAsTemplate}
+                onChange={(e) => setSaveAsTemplate(e.target.checked)}
+                className="size-4.5 rounded border-muted-foreground/30 text-primary focus:ring-primary accent-primary cursor-pointer"
+              />
+              <label htmlFor="checkbox-save-template" className="text-xs sm:text-sm font-bold text-foreground cursor-pointer">
+                שמור פרטים אלו כהזמנה הקבועה שלי
+              </label>
+            </div>
+          )}
         </div>
 
         <div className="mt-4 flex flex-col-reverse sm:flex-row gap-2 sm:gap-3">

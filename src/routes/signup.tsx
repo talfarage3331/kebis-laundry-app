@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { googleProvider } from "@/lib/firebase";
 import {
   createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
   updateProfile,
@@ -24,6 +25,7 @@ import {
   getFirestore,
 } from "firebase/firestore";
 import { getApp, getApps } from "firebase/app";
+import { ensureCustomerProfile } from "@/lib/tenant-profiles";
 
 // ─── Google icon ─────────────────────────────────────────────────────────────
 const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
@@ -447,6 +449,17 @@ function Signup() {
         createdAt:            serverTimestamp(),
       } as Record<string, unknown>);
 
+      // Step 3: Create multi-tenant scoped profile
+      if (assignedRole === "customer") {
+        await ensureCustomerProfile(fbUser.uid, vendor.vendorId, {
+          uid:              fbUser.uid,
+          email:            email,
+          fullName:         name,
+          activeTenantSlug: vendor.vendorSlug,
+        });
+        localStorage.setItem("last_visited_laundry_slug", vendor.vendorSlug);
+      }
+
       toast.success("נרשמת בהצלחה");
       if (typeof window !== "undefined") {
         localStorage.removeItem("pendingLaundrySlug");
@@ -454,6 +467,47 @@ function Signup() {
       }
       navigate({ to: assignedRole === "admin" ? "/admin" : "/" });
     } catch (error: unknown) {
+      const code = (error as { code?: string }).code ?? "";
+
+      // ── Multi-tenant: existing user tries to register with a new laundry ──
+      // Instead of showing "email already in use", silently sign them in and
+      // link their global account to the new vendor.
+      if (code === "auth/email-already-in-use") {
+        try {
+          const liveAuth = getLiveAuth();
+          const loginResult = await signInWithEmailAndPassword(liveAuth, email, password);
+          const fbUser = loginResult.user;
+          const vendor = await getVendorForSlug();
+
+          if (vendor) {
+            await ensureCustomerProfile(fbUser.uid, vendor.vendorId, {
+              uid:              fbUser.uid,
+              email:            email,
+              fullName:         name || fbUser.displayName || email.split("@")[0],
+              activeTenantSlug: vendor.vendorSlug,
+            });
+            localStorage.setItem("activeLaundryId",            vendor.vendorId);
+            localStorage.setItem("activeLaundryName",          vendor.vendorName);
+            localStorage.setItem("activeLaundrySlug",          vendor.vendorSlug);
+            localStorage.setItem("last_visited_laundry_slug",  vendor.vendorSlug);
+          }
+
+          toast.success("ברוכים הבאים — הצטרפתם למכבסה בהצלחה!");
+          if (typeof window !== "undefined") {
+            localStorage.removeItem("pendingLaundrySlug");
+            localStorage.removeItem("pendingLaundryId");
+          }
+          navigate({ to: "/" });
+          return;
+        } catch {
+          // Wrong password or other error — guide them to login
+          toast.error("חשבון זה כבר קיים. אנא התחבר עם הסיסמא הנכונה שלך.", { duration: 6000 });
+          const currentSlug = urlSlug || localStorage.getItem("pendingLaundrySlug") || undefined;
+          navigate({ to: "/login", search: currentSlug ? { slug: currentSlug } : {} });
+          return;
+        }
+      }
+
       const msg = error instanceof Error ? error.message : String(error);
       toast.error(msg);
     } finally {
@@ -477,18 +531,35 @@ function Signup() {
       const userDocRef = doc(db, "users", fbUser.uid);
       const userDoc    = await getDoc(userDocRef);
 
+      // Step 2: Resolve vendor for the current slug (needed for both new and returning users)
+      const vendor = await getVendorForSlug();
+
       if (userDoc.exists()) {
-        // Returning user — just log them in.
+        // ── Returning user — multi-tenant link if they have a vendor context ──
         const existingRole = userDoc.data().role || "customer";
+
+        if (existingRole === "customer" && vendor) {
+          // Link this global account to the new vendor (idempotent)
+          await ensureCustomerProfile(fbUser.uid, vendor.vendorId, {
+            uid:              fbUser.uid,
+            email:            fbUser.email ?? "",
+            fullName:         fbUser.displayName ?? fbUser.email?.split("@")[0] ?? "לקוח",
+            activeTenantSlug: vendor.vendorSlug,
+          });
+          localStorage.setItem("activeLaundryId",           vendor.vendorId);
+          localStorage.setItem("activeLaundryName",         vendor.vendorName);
+          localStorage.setItem("activeLaundrySlug",         vendor.vendorSlug);
+          localStorage.setItem("last_visited_laundry_slug", vendor.vendorSlug);
+        }
+
         toast.success("התחברת בהצלחה");
-        if (existingRole === "admin")   navigate({ to: "/admin" });
+        if (existingRole === "admin")        navigate({ to: "/admin" });
         else if (existingRole === "laundry") navigate({ to: "/laundry-dashboard" });
-        else                            navigate({ to: "/" });
+        else                                navigate({ to: "/" });
         return;
       }
 
-      // Step 2: New user — now authenticated, resolve vendor (Firestore permission granted).
-      const vendor = await getVendorForSlug();
+      // Step 3: Brand-new user — need a vendor to register under
       if (!vendor) {
         // Rollback — delete orphaned auth account so user can retry.
         await fbUser.delete();
@@ -507,6 +578,15 @@ function Signup() {
         associatedLaundryId:  vendor.vendorId,
         createdAt:            serverTimestamp(),
       });
+
+      // Create multi-tenant scoped profile for new user
+      await ensureCustomerProfile(fbUser.uid, vendor.vendorId, {
+        uid:              fbUser.uid,
+        email:            fbUser.email ?? "",
+        fullName:         displayName,
+        activeTenantSlug: vendor.vendorSlug,
+      });
+      localStorage.setItem("last_visited_laundry_slug", vendor.vendorSlug);
 
       toast.success("נרשמת בהצלחה");
       if (typeof window !== "undefined") {

@@ -72,6 +72,8 @@ function writeCache(slug: string, entry: Omit<CacheEntry, "expiresAt">) {
   try {
     const full: CacheEntry = { ...entry, expiresAt: Date.now() + CACHE_TTL_MS };
     localStorage.setItem(cacheKey(slug), JSON.stringify(full));
+    // Capture the last visited vendor slug for PWA boot routing
+    localStorage.setItem("last_visited_laundry_slug", slug);
   } catch {
     // localStorage quota exceeded — silently ignore
   }
@@ -191,6 +193,8 @@ export function useBrand(slug: string | undefined | null): BrandAssets {
     // 1. First-class: read from server-injected global variable (skip Firestore query)
     if (typeof window !== "undefined" && window.__LAUNDRY_BRAND__ && window.__LAUNDRY_BRAND__.slug === slug) {
       const b = window.__LAUNDRY_BRAND__;
+      // Capture for PWA boot routing
+      try { localStorage.setItem("last_visited_laundry_slug", slug); } catch { /* quota */ }
       setState({
         brandName:    b.brandName,
         brandLogoUrl: b.brandLogoUrl,

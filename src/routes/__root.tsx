@@ -250,6 +250,26 @@ function RoleRouteGuard({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
 
+  // ── PWA Boot Redirect ────────────────────────────────────────────────────
+  // When the app is launched from the home screen (bare "/"), if the user has
+  // previously visited a vendor's shop we silently send them back to that shop.
+  // This fires only for unauthenticated users — authenticated users are handled
+  // by the role guard below.
+  useEffect(() => {
+    if (!isProfileReady || isRoleLoading) return;
+    if (location.pathname !== "/") return;
+    if (user) return; // logged-in users handled by role guard
+
+    const lastSlug = typeof window !== "undefined"
+      ? localStorage.getItem("last_visited_laundry_slug")
+      : null;
+
+    if (lastSlug) {
+      console.log("[PWA] Boot redirect → /shop/" + lastSlug);
+      navigate({ to: "/shop/$slug", params: { slug: lastSlug }, replace: true });
+    }
+  }, [isProfileReady, isRoleLoading, location.pathname, user, navigate]);
+
   useEffect(() => {
     // Wait until BOTH Firebase Auth AND Firestore role are resolved
     if (!isProfileReady || isRoleLoading) return;

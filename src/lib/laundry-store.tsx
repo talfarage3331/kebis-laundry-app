@@ -238,38 +238,6 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     setActiveTenantSlug(null);
   }, []);
 
-  // Enforce account lock: if customer has an associatedLaundryId, force-bind all sessions to it
-  useEffect(() => {
-    if (user?.role === "customer" && user.associatedLaundryId) {
-      if (activeTenantId !== user.associatedLaundryId || !activeTenantName) {
-        const vendorId = user.associatedLaundryId;
-        const fetchVendorName = async () => {
-          try {
-            const snap = await getDoc(doc(db, "users", vendorId));
-            if (snap.exists()) {
-              const data = snap.data();
-              const vendorName = data.businessName || data.fullName || data.name || "מכבסה";
-              const vendorSlug = data.shopSlug || "";
-
-              localStorage.setItem("activeLaundryId", vendorId);
-              localStorage.setItem("activeLaundryName", vendorName);
-              localStorage.setItem("activeLaundrySlug", vendorSlug);
-
-              setActiveTenantId(vendorId);
-              setActiveTenantName(vendorName);
-              setActiveTenantSlug(vendorSlug);
-            }
-          } catch (err) {
-            console.error("[store] failed to resolve associated laundry name:", err);
-            // Fallback sync
-            localStorage.setItem("activeLaundryId", vendorId);
-            setActiveTenantId(vendorId);
-          }
-        };
-        fetchVendorName();
-      }
-    }
-  }, [user?.role, user?.associatedLaundryId, activeTenantId, activeTenantName]);
 
   // Auth listener — real-time role sync using onSnapshot with robust error callbacks and defaulting
   useEffect(() => {

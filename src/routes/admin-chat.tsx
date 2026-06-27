@@ -20,6 +20,7 @@ import { ArrowRight, Send, Loader2, MessageSquareText, Search } from "lucide-rea
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { clearAppBadgeAndUnread } from "@/hooks/use-app-badge";
+import { getVendorCustomers } from "@/lib/tenant-profiles";
 
 export const Route = createFileRoute("/admin-chat")({ component: AdminChat });
 
@@ -80,25 +81,58 @@ function AdminChat() {
   const fetchConversations = async () => {
     if (!user?.uid) return;
     try {
-      // 1. Fetch only customers associated with THIS laundry vendor
       const vendorId = user.uid;
-      const usersSnap = await getDocs(
+
+      // ── Dual-path customer resolution ────────────────────────────────────────
+      // Path A (new): laundries/{vendorId}/customers sub-collection
+      // Path B (legacy): users where associatedLaundryId == vendorId
+      // Both are merged and de-duplicated by email.
+
+      // Path A: multi-tenant sub-collection
+      const newProfiles = await getVendorCustomers(vendorId);
+
+      // Path B: legacy users with associatedLaundryId
+      const legacySnap = await getDocs(
         query(
           collection(db, "users"),
           where("associatedLaundryId", "==", vendorId),
         ),
       );
-      const customerProfiles = usersSnap.docs
+      const legacyProfiles = legacySnap.docs
         .map((d) => ({
           id: d.id,
           ...(d.data() as { fullName: string; email: string; role: string; associatedLaundryId?: string }),
         }))
         .filter((p) => p.role !== "laundry" && p.email.toLowerCase() !== user?.email.toLowerCase());
 
-      // Build a set of this vendor's customer emails for cross-filtering chats
-      const vendorCustomerEmails = new Set(customerProfiles.map((p) => p.email.toLowerCase()));
+      // Merge: new profiles take priority; legacy fills gaps
+      const emailSeen = new Set<string>();
+      const profileMap = new Map<string, string>(); // email -> displayName
 
-      // 2. Fetch all chat docs and keep only those belonging to this vendor's customers
+      // New profiles first
+      newProfiles.forEach((p) => {
+        const key = p.email.toLowerCase();
+        emailSeen.add(key);
+        profileMap.set(key, p.fullName);
+      });
+
+      // Legacy profiles that weren't already in newProfiles
+      legacyProfiles.forEach((p) => {
+        const key = p.email.toLowerCase();
+        if (!emailSeen.has(key)) {
+          emailSeen.add(key);
+          profileMap.set(key, p.fullName);
+        }
+      });
+
+      const vendorCustomerEmails = emailSeen;
+
+      // Reconstruct customerProfiles from profileMap for placeholders
+      const customerProfiles = Array.from(profileMap.entries()).map(([email, fullName]) => ({
+        email,
+        fullName,
+      }));
+
       const chatsSnap = await getDocs(collection(db, "chats"));
       const chatDocs = chatsSnap.docs
         .map((d) => ({
@@ -110,11 +144,6 @@ function AdminChat() {
           // Keep if laundryId field matches (new stamped docs) OR email is in this vendor's customer set
           return c.laundryId === vendorId || vendorCustomerEmails.has(email);
         });
-
-      const profileMap = new Map<string, string>();
-      customerProfiles.forEach((p) => {
-        profileMap.set(p.email.toLowerCase(), p.fullName);
-      });
 
       // 3. For each chat doc, get unread count and last message from its messages subcollection
       const enriched = await Promise.all(

@@ -24,6 +24,29 @@ service cloud.firestore {
       allow write: if request.auth != null && (request.auth.uid == userId || hasRole('admin'));
     }
 
+    // ── Multi-tenant: per-vendor customer profiles ─────────────────────────
+    // Path: laundries/{laundryId}/customers/{uid}
+    //
+    // - Customer can read & write their own profile under any laundry.
+    // - Laundry vendor (and admin) can read all their customers.
+    // - Only the customer themselves (or an admin) can write their own profile.
+    match /laundries/{laundryId}/customers/{userId} {
+      allow read: if request.auth != null && (
+        request.auth.uid == userId ||
+        hasRole('laundry') ||
+        hasRole('admin')
+      );
+      allow write: if request.auth != null && (
+        request.auth.uid == userId ||
+        hasRole('admin')
+      );
+    }
+
+    // Allow collectionGroup queries on `customers` (used by getCustomerLaundryIds)
+    match /{path=**}/customers/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+    }
+
     match /{document=**} {
       allow read, write: if request.auth != null;
     }

@@ -23,6 +23,7 @@ import {
   getDocs,
 } from "firebase/firestore";
 import { generateSlug } from "@/lib/slug";
+import { ensureCustomerProfile } from "@/lib/tenant-profiles";
 
 // Custom Google brand icon (inline SVG)
 const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
@@ -66,6 +67,42 @@ async function ensureUniqueSlug(base: string): Promise<string> {
     candidate = `${base}-${attempt}`;
   }
   return `${base}-${Date.now().toString(36)}`;
+}
+
+/**
+ * Resolve a slug to vendor data for use within login.tsx.
+ * Uses the same three-strategy approach as signup.tsx.
+ */
+async function resolveSlugToVendorForLogin(
+  slug: string,
+): Promise<{ vendorId: string; vendorName: string; vendorSlug: string } | null> {
+  try {
+    // Strategy 1 — shopSlug
+    const snap1 = await getDocs(query(collection(db, "users"), where("shopSlug", "==", slug)));
+    if (!snap1.empty) {
+      const d = snap1.docs[0];
+      const data = d.data();
+      return { vendorId: d.id, vendorName: data.businessName || data.name || "מכבסה", vendorSlug: data.shopSlug || slug };
+    }
+    // Strategy 2 — slug
+    const snap2 = await getDocs(query(collection(db, "users"), where("slug", "==", slug)));
+    if (!snap2.empty) {
+      const d = snap2.docs[0];
+      const data = d.data();
+      return { vendorId: d.id, vendorName: data.businessName || data.name || "מכבסה", vendorSlug: data.slug || slug };
+    }
+    // Strategy 3 — direct UID
+    const direct = await getDoc(doc(db, "users", slug));
+    if (direct.exists()) {
+      const data = direct.data();
+      if (data.role === "laundry" || data.role === "admin") {
+        return { vendorId: direct.id, vendorName: data.businessName || data.name || "מכבסה", vendorSlug: data.shopSlug || slug };
+      }
+    }
+  } catch (e) {
+    console.warn("[login] resolveSlugToVendorForLogin error:", e);
+  }
+  return null;
 }
 
 function Login() {
@@ -149,40 +186,88 @@ function Login() {
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const fbUser = result.user;
-      if (fbUser) {
-        const userDoc = await getDoc(doc(db, "users", fbUser.uid));
-        if (!userDoc.exists()) {
-          // Block — this is the login view, not registration
+      if (!fbUser) return;
+
+      const userDoc = await getDoc(doc(db, "users", fbUser.uid));
+
+      // Resolve vendor from slug/localStorage (needed for both new and existing users)
+      const pendingSlug = slug
+        || (typeof window !== "undefined" ? localStorage.getItem("pendingLaundrySlug") : null)
+        || (typeof window !== "undefined" ? localStorage.getItem("activeLaundrySlug") : null)
+        || undefined;
+      const vendor = pendingSlug ? await resolveSlugToVendorForLogin(pendingSlug) : null;
+
+      if (!userDoc.exists()) {
+        // ── New user on login page with a vendor slug ──
+        // Instead of blocking, create their account and link them to the vendor.
+        if (!vendor) {
           await signOut(auth);
           toast.error(
-            "לא נמצא חשבון קיים במערכת. הרשמה כלקוח מתאפשרת רק דרך לינק ייעודי של המכבסה.",
+            "לא נמצא חשבון קיים. הרשמה כלקוח מתאפשרת רק דרך הקישור הייעודי של המכבסה.",
             { duration: 6000 }
           );
           return;
         }
+        // Create global identity + multi-tenant profile
+        const displayName = fbUser.displayName || fbUser.email?.split("@")[0] || "לקוח";
+        await setDoc(doc(db, "users", fbUser.uid), {
+          fullName:            displayName,
+          email:               fbUser.email || "",
+          role:                "customer",
+          associatedLaundryId: vendor.vendorId, // legacy compat
+          createdAt:           serverTimestamp(),
+        });
+        await ensureCustomerProfile(fbUser.uid, vendor.vendorId, {
+          uid:              fbUser.uid,
+          email:            fbUser.email ?? "",
+          fullName:         displayName,
+          activeTenantSlug: vendor.vendorSlug,
+        });
+        localStorage.setItem("activeLaundryId",           vendor.vendorId);
+        localStorage.setItem("activeLaundryName",         vendor.vendorName);
+        localStorage.setItem("activeLaundrySlug",         vendor.vendorSlug);
+        localStorage.setItem("last_visited_laundry_slug", vendor.vendorSlug);
+        localStorage.removeItem("pendingLaundrySlug");
+        localStorage.removeItem("pendingLaundryId");
+        toast.success("נרשמת בהצלחה");
+        navigate({ to: "/" });
+        return;
+      }
 
-        const existingRole = userDoc.data().role || "customer";
-        toast.success("התחברת בהצלחה");
+      // ── Existing user ──
+      const existingRole = userDoc.data().role || "customer";
 
-        if (existingRole === "admin") {
-          navigate({ to: "/admin" });
-        } else if (existingRole === "laundry") {
-          navigate({ to: "/laundry-dashboard" });
+      // Link to new vendor if customer + slug present
+      if (existingRole === "customer" && vendor) {
+        await ensureCustomerProfile(fbUser.uid, vendor.vendorId, {
+          uid:              fbUser.uid,
+          email:            fbUser.email ?? "",
+          fullName:         fbUser.displayName ?? fbUser.email?.split("@")[0] ?? "לקוח",
+          activeTenantSlug: vendor.vendorSlug,
+        });
+        localStorage.setItem("activeLaundryId",           vendor.vendorId);
+        localStorage.setItem("activeLaundryName",         vendor.vendorName);
+        localStorage.setItem("activeLaundrySlug",         vendor.vendorSlug);
+        localStorage.setItem("last_visited_laundry_slug", vendor.vendorSlug);
+      }
+
+      toast.success("התחברת בהצלחה");
+
+      if (existingRole === "admin") {
+        navigate({ to: "/admin" });
+      } else if (existingRole === "laundry") {
+        navigate({ to: "/laundry-dashboard" });
+      } else {
+        const cachedSlug = typeof window !== "undefined" ? localStorage.getItem("pendingLaundrySlug") : null;
+        const cachedId   = typeof window !== "undefined" ? localStorage.getItem("pendingLaundryId") : null;
+        const activeSlug = typeof window !== "undefined" ? localStorage.getItem("activeLaundrySlug") : null;
+        const targetSlug = slug || cachedSlug || cachedId || activeSlug;
+        if (targetSlug) {
+          localStorage.removeItem("pendingLaundrySlug");
+          localStorage.removeItem("pendingLaundryId");
+          navigate({ to: "/shop/$slug", params: { slug: targetSlug } });
         } else {
-          // Fix #1: redirect to shop if slug present
-          const cachedSlug = typeof window !== "undefined" ? localStorage.getItem("pendingLaundrySlug") : null;
-          const cachedId   = typeof window !== "undefined" ? localStorage.getItem("pendingLaundryId") : null;
-          const activeSlug = typeof window !== "undefined" ? localStorage.getItem("activeLaundrySlug") : null;
-          const targetSlug = slug || cachedSlug || cachedId || activeSlug;
-          if (targetSlug) {
-            if (typeof window !== "undefined") {
-              localStorage.removeItem("pendingLaundrySlug");
-              localStorage.removeItem("pendingLaundryId");
-            }
-            navigate({ to: "/shop/$slug", params: { slug: targetSlug } });
-          } else {
-            navigate({ to: "/" });
-          }
+          navigate({ to: "/" });
         }
       }
     } catch (error: unknown) {
@@ -206,12 +291,42 @@ function Login() {
       const userDoc = await getDoc(doc(db, "users", fbUser.uid));
 
       if (!userDoc.exists()) {
+        // User has Firebase Auth but no Firestore doc — redirect to signup with slug
         await signOut(auth);
         setLoading(false);
-        return toast.error("משתמש זה אינו קיים במערכת. אנא עבר לדף ההרשמה.");
+        const targetSlug = slug
+          || (typeof window !== "undefined" ? localStorage.getItem("pendingLaundrySlug") : null)
+          || undefined;
+        toast.error("משתמש זה אינו קיים במערכת. אנא עבר לדף ההרשמה.");
+        navigate({ to: "/signup", search: targetSlug ? { slug: targetSlug } : {} });
+        return;
       }
 
       const existingRole = userDoc.data().role || "customer";
+
+      // ── Multi-tenant: link customer to new vendor after login if slug present ──
+      if (existingRole === "customer") {
+        const pendingSlug = slug
+          || (typeof window !== "undefined" ? localStorage.getItem("pendingLaundrySlug") : null)
+          || (typeof window !== "undefined" ? localStorage.getItem("activeLaundrySlug") : null)
+          || undefined;
+        if (pendingSlug) {
+          const vendor = await resolveSlugToVendorForLogin(pendingSlug);
+          if (vendor) {
+            await ensureCustomerProfile(fbUser.uid, vendor.vendorId, {
+              uid:              fbUser.uid,
+              email:            email,
+              fullName:         userDoc.data().fullName || fbUser.displayName || email.split("@")[0],
+              activeTenantSlug: vendor.vendorSlug,
+            });
+            localStorage.setItem("activeLaundryId",           vendor.vendorId);
+            localStorage.setItem("activeLaundryName",         vendor.vendorName);
+            localStorage.setItem("activeLaundrySlug",         vendor.vendorSlug);
+            localStorage.setItem("last_visited_laundry_slug", vendor.vendorSlug);
+          }
+        }
+      }
+
       setLoading(false);
       toast.success("התחברת בהצלחה");
 
@@ -220,7 +335,6 @@ function Login() {
       } else if (existingRole === "laundry") {
         navigate({ to: "/laundry-dashboard" });
       } else {
-        // Fix #1: redirect to shop if slug present
         const cachedSlug = typeof window !== "undefined" ? localStorage.getItem("pendingLaundrySlug") : null;
         const cachedId   = typeof window !== "undefined" ? localStorage.getItem("pendingLaundryId") : null;
         const activeSlug = typeof window !== "undefined" ? localStorage.getItem("activeLaundrySlug") : null;
@@ -244,7 +358,7 @@ function Login() {
         code === "auth/user-not-found" ||
         code === "auth/wrong-password"
       ) {
-        return toast.error("משתמש זה אינו קיים במערכת. אנא עבר לדף ההרשמה.");
+        return toast.error("סיסמא או אימייל שגויים. אנא נסה שוב.");
       }
       return toast.error(err.message ?? "שגיאה בהתחברות");
     }
@@ -407,9 +521,32 @@ function Login() {
           onSubmit={submitLogin}
           className="mx-auto max-w-md w-full px-4 sm:px-6 mt-6 sm:mt-8 space-y-4 flex-1 pb-8"
         >
+          {/* Google — primary 1-click CTA */}
+          <button
+            id="btn-google-login"
+            type="button"
+            onClick={signInWithGoogleLogin}
+            disabled={loading}
+            className="w-full flex items-center justify-center gap-2.5 rounded-3xl bg-white text-gray-800 border border-gray-200 py-4 text-base font-bold min-h-[52px] shadow-md hover:bg-gray-50 active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden"
+          >
+            <GoogleIcon className="size-5 shrink-0" />
+            <span>התחברות עם Google</span>
+            <span className="absolute end-3 top-1/2 -translate-y-1/2 text-[10px] font-black bg-lime-100 text-lime-700 px-1.5 py-0.5 rounded-full">
+              ⚡ הכי מהיר
+            </span>
+          </button>
+
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-px bg-border" />
+            <span className="text-[11px] text-muted-foreground font-semibold">או התחברות עם אימייל</span>
+            <div className="flex-1 h-px bg-border" />
+          </div>
+
+          {/* Email */}
           <div>
             <label className="text-sm font-semibold">דוא&quot;ל</label>
             <input
+              id="input-login-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -420,6 +557,7 @@ function Login() {
           <div>
             <label className="text-sm font-semibold">סיסמה</label>
             <input
+              id="input-login-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -428,6 +566,7 @@ function Login() {
             />
           </div>
           <button
+            id="btn-login-submit"
             type="submit"
             disabled={loading}
             className="w-full rounded-3xl py-3.5 sm:py-4 text-base sm:text-lg font-extrabold min-h-[48px] active:scale-[0.98] transition disabled:opacity-50"
@@ -437,14 +576,6 @@ function Login() {
             }
           >
             {loading ? "מתחבר..." : "התחברות"}
-          </button>
-          <button
-            type="button"
-            onClick={signInWithGoogleLogin}
-            className="w-full mt-2 flex items-center justify-center gap-2 rounded-3xl bg-white text-gray-800 py-3.5 sm:py-4 text-base sm:text-lg font-semibold min-h-[48px] shadow-md hover:bg-gray-100 transition"
-          >
-            <GoogleIcon className="size-5" />
-            התחברות עם Google
           </button>
 
           {/* Fix #3: Link to switch back when in login view (link to register-laundry) */}

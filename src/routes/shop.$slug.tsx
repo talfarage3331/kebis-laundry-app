@@ -14,11 +14,11 @@ import {
   getDocs,
   doc,
   getDoc,
-  updateDoc,
 } from "firebase/firestore";
 import { Loader2 } from "lucide-react";
 import { seedDefaultsIfEmpty } from "@/hooks/use-laundry-options";
 import { useLaundry } from "@/lib/laundry-store";
+import { ensureCustomerProfile } from "@/lib/tenant-profiles";
 
 export const Route = createFileRoute("/shop/$slug")({
   component: ShopSlugResolver,
@@ -129,17 +129,30 @@ function ShopSlugResolver() {
             new StorageEvent("storage", { key: "activeLaundrySlug", newValue: slug }),
           );
 
-          // Permanently associate user if they don't have associatedLaundryId yet
+          // ── Multi-tenant: create/refresh a scoped customer profile ────────────
+          // ensureCustomerProfile is idempotent — safe to call on every visit.
+          // This is the "trap": a user visiting any vendor's /shop/:slug will
+          // automatically get a profile created under that vendor's sub-collection,
+          // allowing one global account to belong to many laundries.
           if (currentUser) {
-            const userDocRef = doc(db, "users", currentUser.uid);
-            const userDoc = await getDoc(userDocRef);
-            if (userDoc.exists()) {
-              const userData = userDoc.data();
-              if (userData.role === "customer" && !userData.associatedLaundryId) {
-                await updateDoc(userDocRef, {
-                  associatedLaundryId: vendorId,
-                });
-              }
+            const userDocSnap = await getDoc(doc(db, "users", currentUser.uid));
+            const userData = userDocSnap.exists() ? userDocSnap.data() : {};
+            const customerRole = userData.role ?? "customer";
+
+            if (customerRole === "customer") {
+              await ensureCustomerProfile(currentUser.uid, vendorId, {
+                uid: currentUser.uid,
+                email: currentUser.email ?? "",
+                fullName:
+                  userData.fullName ??
+                  userData.name ??
+                  currentUser.displayName ??
+                  "לקוח",
+                activeTenantSlug: slug,
+              });
+              // Persist for PWA boot routing (captured in use-brand.ts as well,
+              // but also set here so it's always current even if brand is cached)
+              localStorage.setItem("last_visited_laundry_slug", slug);
             }
           }
 
