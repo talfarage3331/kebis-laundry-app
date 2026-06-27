@@ -8,13 +8,13 @@ import {
 } from "firebase/app-check";
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+  apiKey: "AIzaSyBTFvdeLDkWKfUrNWCe7wWMk9VNzxwP8Ss",
+  authDomain: "kevisa-5983b.firebaseapp.com",
+  projectId: "kevisa-5983b",
+  storageBucket: "kevisa-5983b.firebasestorage.app",
+  messagingSenderId: "1009737796478",
+  appId: "1:1009737796478:web:d55807a14c66ae901bc12f",
+  measurementId: "G-1FSQBXGYE3",
 };
 
 const isBrowser = typeof window !== "undefined";
@@ -40,22 +40,30 @@ const app: FirebaseApp = (isBrowser
 //        VITE_RECAPTCHA_V3_SITE_KEY=<your-key>
 //   3. In the Firebase Console, enforce App Check on Firestore and Auth.
 //
-// In development, you can use the debug token provider by setting
-// a global before Firebase initialises:
-//   self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;  // generates a token in the console
-//
 // NOTE: App Check is a best-effort anti-abuse layer. It is NOT a substitute
 // for Firestore Security Rules — both layers must be active.
-export const appCheck: AppCheck = (isBrowser && app
-  ? initializeAppCheck(app, {
-      provider: new ReCaptchaV3Provider(
-        import.meta.env.VITE_RECAPTCHA_V3_SITE_KEY ?? "",
-      ),
-      // Automatically refresh tokens before they expire so long-running
-      // sessions are never blocked mid-use.
-      isTokenAutoRefreshEnabled: true,
-    })
-  : null) as unknown as AppCheck;
+export let appCheck: AppCheck | null = null;
+
+if (isBrowser && app) {
+  const siteKey = import.meta.env.VITE_RECAPTCHA_V3_SITE_KEY;
+  if (siteKey && siteKey !== "<your-recaptcha-v3-site-key-here>") {
+    try {
+      appCheck = initializeAppCheck(app, {
+        provider: new ReCaptchaV3Provider(siteKey),
+        // Automatically refresh tokens before they expire so long-running
+        // sessions are never blocked mid-use.
+        isTokenAutoRefreshEnabled: true,
+      });
+      console.log("[Firebase] App Check initialized successfully.");
+    } catch (error) {
+      console.error("[Firebase] Failed to initialize App Check:", error);
+    }
+  } else {
+    console.warn(
+      "[Firebase] App Check site key is missing or has placeholder value. App Check is disabled."
+    );
+  }
+}
 
 // NOTE: These are null during SSR and on the very first synchronous JS frame
 // before Firebase initialises. All consumers MUST use optional chaining:
