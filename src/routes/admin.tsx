@@ -18,6 +18,10 @@ import {
   orderBy,
   addDoc,
   serverTimestamp,
+  limit,
+  startAfter,
+  getCountFromServer,
+  type DocumentSnapshot,
 } from "firebase/firestore";
 import {
   Users,
@@ -128,6 +132,10 @@ function AdminDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
+  // Pagination for profiles
+  const [lastProfileDoc, setLastProfileDoc] = useState<DocumentSnapshot | null>(null);
+  const [hasMoreProfiles, setHasMoreProfiles] = useState(false);
+  const [loadingMoreProfiles, setLoadingMoreProfiles] = useState(false);
 
   // Edit User State
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
@@ -138,7 +146,13 @@ function AdminDashboard() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
 
-  // Global Orders State
+  // Global Orders State — active orders (real-time) + historical orders (paginated)
+  const [activeOrders, setActiveOrders] = useState<LaundryOrder[]>([]);
+  const [historicalOrders, setHistoricalOrders] = useState<LaundryOrder[]>([]);
+  const [lastHistoricalDoc, setLastHistoricalDoc] = useState<DocumentSnapshot | null>(null);
+  const [hasMoreHistorical, setHasMoreHistorical] = useState(false);
+  const [loadingMoreHistorical, setLoadingMoreHistorical] = useState(false);
+  // Combined for display when no status filter or filter = active statuses
   const [orders, setOrders] = useState<LaundryOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [orderSearchQuery, setOrderSearchQuery] = useState("");
@@ -146,6 +160,9 @@ function AdminDashboard() {
   const [orderLaundryFilter, setOrderLaundryFilter] = useState("all");
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
+  const PROFILES_PAGE_SIZE = 30;
+  const ORDERS_PAGE_SIZE = 30;
+  const ACTIVE_STATUSES = ["pending", "accepted", "collected", "ready"];
 
   // Customized pricing/addon edits on orders
   const [orderPrices, setOrderPrices] = useState<Record<string, number>>({});
@@ -176,31 +193,39 @@ function AdminDashboard() {
 
   const [isSeeding, setIsSeeding] = useState(false);
 
-  // Fetch unread chat messages count for admin (real-time via onSnapshot)
+  // Fetch unread chat messages count for admin — scoped query instead of full collectionGroup scan
   useEffect(() => {
     if (!user?.email) return;
 
-    const messagesGroup = collectionGroup(db, "messages");
-    const unsubscribe = onSnapshot(messagesGroup, (snapshot) => {
-      try {
-        const count = snapshot.docs.filter(
-          (d) => d.data().is_read === false && d.data().sender_email !== user.email,
-        ).length;
-        setUnreadChatCount(count);
-      } catch (err) {
-        console.error("Error fetching unread chat count:", err);
-      }
-    });
+    // Listen only to unread messages not sent by this user; avoids downloading all messages
+    const unreadQuery = query(
+      collectionGroup(db, "messages"),
+      where("is_read", "==", false),
+      where("sender_email", "!=", user.email),
+    );
+    const unsubscribe = onSnapshot(
+      unreadQuery,
+      (snapshot) => setUnreadChatCount(snapshot.size),
+      (err) => console.error("[admin] unread chat count error:", err),
+    );
 
     return () => unsubscribe();
   }, [user?.email]);
 
-  // Fetch Profiles
-  const fetchProfiles = async () => {
-    setIsLoading(true);
+  // Fetch Profiles — cursor-based pagination (30 per page)
+  const fetchProfiles = async (reset = true) => {
+    if (reset) {
+      setIsLoading(true);
+      setLastProfileDoc(null);
+      setHasMoreProfiles(false);
+    } else {
+      setLoadingMoreProfiles(true);
+    }
     try {
       const usersRef = collection(db, "users");
-      const q = query(usersRef, orderBy("email", "asc"));
+      const constraints: any[] = [orderBy("email", "asc"), limit(PROFILES_PAGE_SIZE)];
+      if (!reset && lastProfileDoc) constraints.push(startAfter(lastProfileDoc));
+      const q = query(usersRef, ...constraints);
       const snapshot = await getDocs(q);
 
       const data: Profile[] = snapshot.docs.map((docSnap) => ({
@@ -213,70 +238,143 @@ function AdminDashboard() {
         shopSlug: docSnap.data().shopSlug || docSnap.data().slug || "",
       }));
 
-      setProfiles(data);
+      if (reset) {
+        setProfiles(data);
+      } else {
+        setProfiles((prev) => [...prev, ...data]);
+      }
+      setLastProfileDoc(snapshot.docs[snapshot.docs.length - 1] ?? null);
+      setHasMoreProfiles(snapshot.docs.length === PROFILES_PAGE_SIZE);
     } catch (err: any) {
       toast.error("שגיאה בטעינת משתמשים: " + err.message);
     } finally {
       setIsLoading(false);
+      setLoadingMoreProfiles(false);
     }
   };
 
   useEffect(() => {
-    fetchProfiles();
+    fetchProfiles(true);
   }, []);
 
-  // Listen to ALL orders in real-time
+  // Helper: parse a Firestore order doc snapshot into LaundryOrder
+  const parseOrderDoc = (docSnap: any): LaundryOrder | null => {
+    try {
+      const data = docSnap.data() ?? {};
+      let parsedImages: string[] = [];
+      if (Array.isArray(data.images)) {
+        parsedImages = data.images.filter((img: any) => typeof img === "string");
+      } else if (typeof data.images === "string" && data.images) {
+        try {
+          const parsed = JSON.parse(data.images);
+          parsedImages = Array.isArray(parsed) ? parsed : [];
+        } catch { parsedImages = []; }
+      }
+      const order: LaundryOrder = {
+        id: docSnap.id,
+        created_at: data.created_at || data.createdAt || new Date().toISOString(),
+        status: data.status || "pending",
+        delivery_method: data.delivery_method || data.deliveryMethod || "none",
+        payment_state: data.payment_state || data.paymentState || "unpaid",
+        amount_due: Number(data.price ?? data.amount_due ?? data.amountDue ?? 0) || 0,
+        price: Number(data.price ?? data.amount_due ?? data.amountDue ?? 0) || 0,
+        basePrice: data.basePrice !== undefined ? Number(data.basePrice) : undefined,
+        user_email: data.user_email || data.userEmail || "",
+        userId: data.user_id || data.userId || "",
+        notes: data.notes || "",
+        deliveryNotes: data.deliveryNotes || data.delivery_notes || "",
+        images: parsedImages,
+        requires_ironing: !!(data.requires_ironing || data.requiresIroning),
+        requires_dry_cleaning: !!(data.requires_dry_cleaning || data.requiresDryCleaning),
+        requires_washing: !!(data.requires_washing || data.requiresWashing),
+        addons: Array.isArray(data.addons) ? data.addons : [],
+        deliveryTier: data.deliveryTier || "standard",
+        laundryId: data.laundryId || "",
+      };
+      if (order.delivery_method === "placeholder" || order.id.startsWith("placeholder")) return null;
+      return order;
+    } catch { return null; }
+  };
+
+  // Real-time listener — active orders ONLY (pending/accepted/collected/ready)
+  // Historical orders (delivered/cancelled) are fetched on-demand via paginated getDocs
   useEffect(() => {
     setOrdersLoading(true);
-    const unsub = onSnapshot(collection(db, "orders"), (snap) => {
-      const list = snap.docs.map(docSnap => {
-        const data = docSnap.data();
-        let parsedImages: string[] = [];
-        if (Array.isArray(data.images)) {
-          parsedImages = data.images.filter((img: any) => typeof img === "string");
-        } else if (typeof data.images === "string" && data.images) {
-          try {
-            const parsed = JSON.parse(data.images);
-            parsedImages = Array.isArray(parsed) ? parsed : [];
-          } catch {
-            parsedImages = [];
-          }
-        }
-
-        return {
-          id: docSnap.id,
-          created_at: data.created_at || data.createdAt || new Date().toISOString(),
-          status: data.status || "pending",
-          delivery_method: data.delivery_method || data.deliveryMethod || "none",
-          payment_state: data.payment_state || data.paymentState || "unpaid",
-          amount_due: Number(data.price ?? data.amount_due ?? data.amountDue ?? 0) || 0,
-          price: Number(data.price ?? data.amount_due ?? data.amountDue ?? 0) || 0,
-          basePrice: data.basePrice !== undefined ? Number(data.basePrice) : undefined,
-          user_email: data.user_email || data.userEmail || "",
-          userId: data.user_id || data.userId || "",
-          notes: data.notes || "",
-          deliveryNotes: data.deliveryNotes || data.delivery_notes || "",
-          images: parsedImages,
-          requires_ironing: !!(data.requires_ironing || data.requiresIroning),
-          requires_dry_cleaning: !!(data.requires_dry_cleaning || data.requiresDryCleaning),
-          requires_washing: !!(data.requires_washing || data.requiresWashing),
-          addons: Array.isArray(data.addons) ? data.addons : [],
-          deliveryTier: data.deliveryTier || "standard",
-          laundryId: data.laundryId || "",
-        } as LaundryOrder;
-      });
-
-      // Filter placeholders
-      const filtered = list.filter(o => o.delivery_method !== "placeholder" && !o.id.startsWith("placeholder"));
-      
-      // Sort desc by creation date
-      filtered.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      
-      setOrders(filtered);
-      setOrdersLoading(false);
-    });
-
+    const activeQ = query(
+      collection(db, "orders"),
+      where("status", "in", ACTIVE_STATUSES),
+      orderBy("created_at", "desc"),
+      limit(100), // safety cap — active orders are inherently bounded
+    );
+    const unsub = onSnapshot(
+      activeQ,
+      (snap) => {
+        const parsed = snap.docs.map(parseOrderDoc).filter(Boolean) as LaundryOrder[];
+        setActiveOrders(parsed);
+        // Merge with existing historical for the unified display array
+        setOrders((prev) => {
+          const historical = prev.filter(o => !ACTIVE_STATUSES.includes(o.status));
+          return [...parsed, ...historical].sort(
+            (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          );
+        });
+        setOrdersLoading(false);
+      },
+      (err) => {
+        console.error("[admin] active orders listener error:", err);
+        setOrdersLoading(false);
+      },
+    );
     return () => unsub();
+  }, []);
+
+  // Fetch first page of historical orders (delivered/cancelled) on mount
+  const fetchHistoricalOrders = async (reset = true) => {
+    if (reset) {
+      setLastHistoricalDoc(null);
+      setHasMoreHistorical(false);
+    } else {
+      setLoadingMoreHistorical(true);
+    }
+    try {
+      const constraints: any[] = [
+        where("status", "in", ["delivered", "cancelled"]),
+        orderBy("created_at", "desc"),
+        limit(ORDERS_PAGE_SIZE),
+      ];
+      if (!reset && lastHistoricalDoc) constraints.push(startAfter(lastHistoricalDoc));
+      const q = query(collection(db, "orders"), ...constraints);
+      const snap = await getDocs(q);
+      const parsed = snap.docs.map(parseOrderDoc).filter(Boolean) as LaundryOrder[];
+      if (reset) {
+        setHistoricalOrders(parsed);
+        setOrders((prev) => {
+          const active = prev.filter(o => ACTIVE_STATUSES.includes(o.status));
+          return [...active, ...parsed].sort(
+            (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          );
+        });
+      } else {
+        setHistoricalOrders((prev) => [...prev, ...parsed]);
+        setOrders((prev) => {
+          const active = prev.filter(o => ACTIVE_STATUSES.includes(o.status));
+          const allHistorical = [...prev.filter(o => !ACTIVE_STATUSES.includes(o.status)), ...parsed];
+          return [...active, ...allHistorical].sort(
+            (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          );
+        });
+      }
+      setLastHistoricalDoc(snap.docs[snap.docs.length - 1] ?? null);
+      setHasMoreHistorical(snap.docs.length === ORDERS_PAGE_SIZE);
+    } catch (err: any) {
+      console.error("[admin] fetchHistoricalOrders error:", err);
+    } finally {
+      setLoadingMoreHistorical(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchHistoricalOrders(true);
   }, []);
 
   // Sync selected laundry options in real-time
@@ -978,48 +1076,64 @@ function AdminDashboard() {
                     לא נמצאו משתמשים התואמים את הסינון.
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    {filteredProfiles.filter(p => p.role !== "laundry").map((profile) => (
-                      <div
-                        key={profile.id}
-                        className="bg-card border border-muted-foreground/10 rounded-3xl p-3 sm:p-4 flex items-center justify-between gap-2 shadow-sm transition-all hover:shadow-md"
-                      >
-                        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-                          <div className="size-10 sm:size-12 shrink-0 rounded-2xl bg-lavender text-primary font-black text-base sm:text-lg flex items-center justify-center">
-                            {(profile.fullName || "?")[0]}
+                  <>
+                    <div className="space-y-3">
+                      {filteredProfiles.filter(p => p.role !== "laundry").map((profile) => (
+                        <div
+                          key={profile.id}
+                          className="bg-card border border-muted-foreground/10 rounded-3xl p-3 sm:p-4 flex items-center justify-between gap-2 shadow-sm transition-all hover:shadow-md"
+                        >
+                          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                            <div className="size-10 sm:size-12 shrink-0 rounded-2xl bg-lavender text-primary font-black text-base sm:text-lg flex items-center justify-center">
+                              {(profile.fullName || "?")[0]}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <h3 className="font-extrabold text-foreground text-xs sm:text-sm truncate">
+                                {profile.fullName || "משתמש ללא שם"}
+                              </h3>
+                              <p className="text-[10px] sm:text-xs text-muted-foreground leading-normal mt-0.5 truncate" style={{ overflowWrap: "anywhere" }}>
+                                {profile.email}
+                              </p>
+                              <span className={`inline-block mt-1.5 sm:mt-2 px-2 sm:px-2.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold ${getRoleBadge(profile.role)}`}>
+                                {getRoleLabel(profile.role)}
+                              </span>
+                            </div>
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <h3 className="font-extrabold text-foreground text-xs sm:text-sm truncate">
-                              {profile.fullName || "משתמש ללא שם"}
-                            </h3>
-                            <p className="text-[10px] sm:text-xs text-muted-foreground leading-normal mt-0.5 truncate" style={{ overflowWrap: "anywhere" }}>
-                              {profile.email}
-                            </p>
-                            <span className={`inline-block mt-1.5 sm:mt-2 px-2 sm:px-2.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold ${getRoleBadge(profile.role)}`}>
-                              {getRoleLabel(profile.role)}
-                            </span>
-                          </div>
-                        </div>
 
-                        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-                          <button
-                            onClick={() => openEditModal(profile)}
-                            className="size-10 sm:size-9 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 flex items-center justify-center transition active:scale-95"
-                            title="ערוך פרופיל"
-                          >
-                            <Edit2 className="size-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteProfile(profile.id, profile.email)}
-                            className="size-10 sm:size-9 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20 flex items-center justify-center transition active:scale-95"
-                            title="מחק משתמש"
-                          >
-                            <Trash2 className="size-4" />
-                          </button>
+                          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                            <button
+                              onClick={() => openEditModal(profile)}
+                              className="size-10 sm:size-9 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 flex items-center justify-center transition active:scale-95"
+                              title="ערוך פרופיל"
+                            >
+                              <Edit2 className="size-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteProfile(profile.id, profile.email)}
+                              className="size-10 sm:size-9 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20 flex items-center justify-center transition active:scale-95"
+                              title="מחק משתמש"
+                            >
+                              <Trash2 className="size-4" />
+                            </button>
+                          </div>
                         </div>
+                      ))}
+                    </div>
+                    {/* Load More — profiles */}
+                    {hasMoreProfiles && (
+                      <div className="pt-2 flex justify-center">
+                        <button
+                          onClick={() => fetchProfiles(false)}
+                          disabled={loadingMoreProfiles}
+                          className="px-6 py-2.5 rounded-full text-xs font-bold bg-primary/10 text-primary hover:bg-primary/20 transition disabled:opacity-50 active:scale-95"
+                        >
+                          {loadingMoreProfiles ? (
+                            <span className="flex items-center gap-2"><Loader2 className="size-3.5 animate-spin" /> טוען...</span>
+                          ) : "טען עוד משתמשים"}
+                        </button>
                       </div>
-                    ))}
-                  </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -1229,6 +1343,20 @@ function AdminDashboard() {
                             <div className="space-y-3">
                               {unassignedOrders.map(order => renderOrderCard(order))}
                             </div>
+                          </div>
+                        )}
+                        {/* Load More — historical orders */}
+                        {hasMoreHistorical && (
+                          <div className="flex justify-center pt-2">
+                            <button
+                              onClick={() => fetchHistoricalOrders(false)}
+                              disabled={loadingMoreHistorical}
+                              className="px-6 py-2.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 transition disabled:opacity-50 active:scale-95"
+                            >
+                              {loadingMoreHistorical ? (
+                                <span className="flex items-center gap-2"><Loader2 className="size-3.5 animate-spin" /> טוען...</span>
+                              ) : "טען עוד הזמנות בוצעו"}
+                            </button>
                           </div>
                         )}
                       </div>

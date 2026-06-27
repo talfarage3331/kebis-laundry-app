@@ -6,7 +6,7 @@ import { useLaundry, stateLabel, normalizeStatus } from "@/lib/laundry-store";
 import { LogOut, User as UserIcon, Mail, Loader2, ShoppingBasket, ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
-import { collection, query, where, getDocs } from "firebase/firestore";
+import { collection, query, where, getDocs, orderBy, limit, startAfter, type DocumentSnapshot } from "firebase/firestore";
 import {
   Dialog,
   DialogContent,
@@ -205,51 +205,73 @@ function Profile() {
   const [orders, setOrders] = useState<any[]>([]);
   const [fetchingOrders, setFetchingOrders] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
+  // Pagination for user order history
+  const [lastVisibleDoc, setLastVisibleDoc] = useState<DocumentSnapshot | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const ORDERS_PAGE_SIZE = 10;
+
+  const fetchOrders = async (reset = true) => {
+    if (!user?.email) return;
+    if (reset) {
+      setFetchingOrders(true);
+      setLastVisibleDoc(null);
+      setHasMore(false);
+    } else {
+      setLoadingMore(true);
+    }
+    try {
+      const constraints: any[] = [
+        where("user_email", "==", user.email),
+        orderBy("created_at", "desc"),
+        limit(ORDERS_PAGE_SIZE),
+      ];
+      if (!reset && lastVisibleDoc) {
+        constraints.push(startAfter(lastVisibleDoc));
+      }
+
+      const q = query(collection(db, "orders"), ...constraints);
+      const snapshot = await getDocs(q);
+      const parsed = snapshot.docs
+        .map((doc) => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            created_at: data.created_at || data.createdAt || new Date().toISOString(),
+            status: normalizeStatus(data.status),
+            delivery_method: data.delivery_method || data.deliveryMethod || "none",
+            payment_state: data.payment_state || data.paymentState || "unpaid",
+            amount_due:
+              data.amount_due !== undefined
+                ? data.amount_due
+                : data.amountDue !== undefined
+                  ? data.amountDue
+                  : 0,
+            user_email: data.user_email || data.userEmail || user.email,
+            notes: data.notes || "",
+            images: data.images || [],
+          };
+        })
+        .filter((o) => o.delivery_method !== "placeholder" && !o.id.startsWith("placeholder"));
+
+      if (reset) {
+        setOrders(parsed);
+      } else {
+        setOrders((prev) => [...prev, ...parsed]);
+      }
+
+      setLastVisibleDoc(snapshot.docs[snapshot.docs.length - 1] ?? null);
+      setHasMore(snapshot.docs.length === ORDERS_PAGE_SIZE);
+    } catch (err) {
+      console.error("Error fetching orders in profile:", err);
+    } finally {
+      setFetchingOrders(false);
+      setLoadingMore(false);
+    }
+  };
 
   useEffect(() => {
-    if (!user?.email) return;
-
-    const fetchOrders = async () => {
-      setFetchingOrders(true);
-      try {
-        const q = query(collection(db, "orders"), where("user_email", "==", user.email));
-        const snapshot = await getDocs(q);
-        const filtered = snapshot.docs
-          .map((doc) => {
-            const data = doc.data();
-            return {
-              id: doc.id,
-              created_at: data.created_at || data.createdAt || new Date().toISOString(),
-              status: normalizeStatus(data.status),
-              delivery_method: data.delivery_method || data.deliveryMethod || "none",
-              payment_state: data.payment_state || data.paymentState || "unpaid",
-              amount_due:
-                data.amount_due !== undefined
-                  ? data.amount_due
-                  : data.amountDue !== undefined
-                    ? data.amountDue
-                    : 0,
-              user_email: data.user_email || data.userEmail || user.email,
-              notes: data.notes || "",
-              images: data.images || [],
-            };
-          })
-          .filter((o) => o.delivery_method !== "placeholder" && !o.id.startsWith("placeholder"));
-
-        // Sort by created_at descending
-        filtered.sort(
-          (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime(),
-        );
-
-        setOrders(filtered);
-      } catch (err) {
-        console.error("Error fetching orders in profile:", err);
-      } finally {
-        setFetchingOrders(false);
-      }
-    };
-
-    fetchOrders();
+    fetchOrders(true);
   }, [user]);
 
   return (
@@ -372,6 +394,19 @@ function Profile() {
               </div>
               {orders.length > 3 && (
                 <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-background to-transparent" />
+              )}
+              {hasMore && (
+                <div className="flex justify-center pt-3">
+                  <button
+                    onClick={() => fetchOrders(false)}
+                    disabled={loadingMore}
+                    className="px-5 py-2 rounded-full text-xs font-bold bg-primary/10 text-primary hover:bg-primary/20 transition disabled:opacity-50 active:scale-95"
+                  >
+                    {loadingMore ? (
+                      <span className="flex items-center gap-1.5"><Loader2 className="size-3 animate-spin" /> טוען...</span>
+                    ) : "טען עוד הזמנות"}
+                  </button>
+                </div>
               )}
             </div>
           )}

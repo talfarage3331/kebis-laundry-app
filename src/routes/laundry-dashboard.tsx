@@ -6,7 +6,7 @@ import { LaundrySettingsCRUDPanel } from "@/components/LaundrySettingsCRUDPanel"
 import { useLaundryOptions } from "@/hooks/use-laundry-options";
 import { useLaundry, normalizeStatus, type OrderState, ADDONS_META, DELIVERY_TIERS_META } from "@/lib/laundry-store";
 import { db } from "@/lib/firebase";
-import { collection, query, where, onSnapshot, doc, updateDoc } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, updateDoc, getDocs, limit, startAfter, type DocumentSnapshot } from "firebase/firestore";
 import {
   LogOut,
   RefreshCw,
@@ -129,6 +129,13 @@ function LaundryDashboard() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   });
+  // Pagination for historical orders (delivered)
+  const [historicalOrders, setHistoricalOrders]       = useState<LaundryOrder[]>([]);
+  const [lastHistoricalDoc, setLastHistoricalDoc]     = useState<DocumentSnapshot | null>(null);
+  const [hasMoreHistorical, setHasMoreHistorical]     = useState(false);
+  const [loadingMoreHistorical, setLoadingMoreHistorical] = useState(false);
+  const HISTORY_PAGE_SIZE = 30;
+  const ACTIVE_STATUSES   = ["pending", "accepted", "collected", "ready", "cancelled"];
 
   const getAvailableMonths = () => {
     const HEBREW_MONTHS = [
@@ -205,19 +212,20 @@ function LaundryDashboard() {
   }
   const activeCustomers = Object.values(customerStatsMap).sort((a, b) => b.orderCount - a.orderCount);
 
-  /* unread chat count */
+  /* unread chat count — scoped to this vendor's chats, not the whole collection */
   useEffect(() => {
-    if (!user?.email) return;
-    const q = query(collection(db, "chats"));
+    if (!user?.email || !user?.uid) return;
+    const q = query(collection(db, "chats"), where("laundryId", "==", user.uid));
     const unsub = onSnapshot(q, (snapshot) => {
       let count = 0;
       snapshot.docs.forEach((d) => { if (d.data().unreadCount) count += d.data().unreadCount; });
       setUnreadChatCount(count);
     });
     return () => unsub();
-  }, [user?.email]);
+  }, [user?.email, user?.uid]);
 
-  /* orders real-time listener — strict multi-tenant isolation */
+  /* orders real-time listener — ACTIVE orders only (pending/accepted/collected/ready/cancelled)
+     Historical 'delivered' orders are fetched on-demand via paginated getDocs */
   useEffect(() => {
     if (!user?.uid) return;
     setIsLoading(true);
@@ -294,15 +302,17 @@ function LaundryDashboard() {
       setIsLoading(false);
     };
 
-    // Query 1 — STRICT: orders explicitly bound to this laundry user
+    // Query 1 — STRICT: active orders explicitly bound to this laundry user
     const qStrict = query(
       collection(db, "orders"),
       where("laundryId", "==", user.uid),
+      where("status", "in", ACTIVE_STATUSES),
     );
-    // Query 2 — LEGACY backward-compat: orders with no laundryId assigned
+    // Query 2 — LEGACY backward-compat: active orders with no laundryId assigned
     const qLegacy = query(
       collection(db, "orders"),
       where("laundryId", "==", ""),
+      where("status", "in", ACTIVE_STATUSES),
     );
 
     const unsubStrict = onSnapshot(qStrict, processSnapshot, (err) => {
@@ -337,6 +347,91 @@ function LaundryDashboard() {
       window.removeEventListener("storage", onStorage);
     };
   }, [user?.uid]);
+
+  /* fetchHistoricalOrders — paginated one-time fetch for delivered orders */
+  const fetchHistoricalOrders = async (reset = true) => {
+    if (!user?.uid) return;
+    if (reset) {
+      setLastHistoricalDoc(null);
+      setHasMoreHistorical(false);
+    } else {
+      setLoadingMoreHistorical(true);
+    }
+    try {
+      const parseDoc = (docSnap: any): LaundryOrder | null => {
+        try {
+          const o = docSnap.data() ?? {};
+          let parsedImages: string[] = [];
+          const rawImages = o.images;
+          if (Array.isArray(rawImages)) parsedImages = rawImages.filter((img: any) => typeof img === "string");
+          else if (typeof rawImages === "string" && rawImages) {
+            try { const parsed = JSON.parse(rawImages); parsedImages = Array.isArray(parsed) ? parsed : []; } catch { parsedImages = []; }
+          }
+          const createdAt = safeIso(o.created_at ?? o.createdAt);
+          const order: LaundryOrder = {
+            id: docSnap.id, created_at: createdAt,
+            status: normalizeStatus(o.status),
+            delivery_method: o.delivery_method ?? o.deliveryMethod ?? "none",
+            payment_state: o.payment_state ?? o.paymentState ?? "unpaid",
+            amount_due: Number(o.price ?? o.amount_due ?? o.amountDue ?? 0) || 0,
+            price: Number(o.price ?? o.amount_due ?? o.amountDue ?? 0) || 0,
+            user_email: o.user_email ?? o.userEmail ?? "",
+            userId: o.user_id ?? o.userId ?? "",
+            notes: o.notes ?? "", deliveryNotes: o.deliveryNotes ?? o.delivery_notes ?? "",
+            images: parsedImages,
+            requires_ironing: !!(o.requires_ironing || o.requiresIroning),
+            requires_dry_cleaning: !!(o.requires_dry_cleaning || o.requiresDryCleaning),
+            requires_washing: !!(o.requires_washing || o.requiresWashing),
+            invoices: o.invoiceUrl ? [{ id: `inv-${docSnap.id}`, date: createdAt, name: o.invoiceName ?? "invoice.pdf", data: o.invoiceUrl }] : [],
+            addons: Array.isArray(o.addons) ? o.addons : [],
+            deliveryTier: o.deliveryTier || "standard",
+            basePrice: o.basePrice !== undefined ? Number(o.basePrice) : undefined,
+            laundryId: o.laundryId || "",
+          };
+          if (order.delivery_method === "placeholder" || order.id.startsWith("placeholder")) return null;
+          return order;
+        } catch { return null; }
+      };
+
+      const buildConstraints = (laundryId: string) => {
+        const base: any[] = [
+          where("laundryId", "==", laundryId),
+          where("status", "==", "delivered"),
+          limit(HISTORY_PAGE_SIZE),
+        ];
+        if (!reset && lastHistoricalDoc) base.push(startAfter(lastHistoricalDoc));
+        return base;
+      };
+
+      const [strictSnap, legacySnap] = await Promise.all([
+        getDocs(query(collection(db, "orders"), ...buildConstraints(user.uid))),
+        getDocs(query(collection(db, "orders"), where("laundryId", "==", ""), where("status", "==", "delivered"), limit(HISTORY_PAGE_SIZE))),
+      ]);
+
+      const allDocs = [...strictSnap.docs, ...legacySnap.docs];
+      const parsed = allDocs.map(parseDoc).filter(Boolean) as LaundryOrder[];
+      const lastDoc = strictSnap.docs[strictSnap.docs.length - 1] ?? null;
+
+      if (reset) {
+        setHistoricalOrders(parsed);
+      } else {
+        setHistoricalOrders((prev) => [...prev, ...parsed]);
+      }
+      setLastHistoricalDoc(lastDoc);
+      setHasMoreHistorical(parsed.length === HISTORY_PAGE_SIZE);
+    } catch (err) {
+      console.error("[laundry-dashboard] fetchHistoricalOrders error:", err);
+    } finally {
+      setLoadingMoreHistorical(false);
+    }
+  };
+
+  // Fetch historical orders when switching to History tab
+  useEffect(() => {
+    if (activeTab === "delivered") {
+      fetchHistoricalOrders(true);
+    }
+  }, [activeTab, user?.uid]);
 
   /* ── Firestore helpers ──────────────────────────────────────────── */
   const updateOrderStatus = async (orderId: string, newStatus: string) => {
@@ -501,15 +596,16 @@ function LaundryDashboard() {
   };
 
   /* ── filtering ──────────────────────────────────────────────────── */
-  const filteredOrders = orders.filter((o) => {
-    if (activeTab === "active") {
-      if (o.status === "delivered") return false;
-      if (subFilter === "treatment") return ["accepted","pending","collected"].includes(o.status);
-      if (subFilter === "ready")     return o.status === "ready";
-      return true;
-    }
-    return o.status === "delivered";
-  });
+  // Active tab: filter from real-time orders state (active statuses)
+  // Delivered/history tab: use paginated historicalOrders state
+  const filteredOrders = activeTab === "delivered"
+    ? historicalOrders
+    : orders.filter((o) => {
+        if (o.status === "delivered") return false;
+        if (subFilter === "treatment") return ["accepted","pending","collected"].includes(o.status);
+        if (subFilter === "ready")     return o.status === "ready";
+        return true;
+      });
 
   /* ── render ─────────────────────────────────────────────────────── */
   if (user?.role === "laundry" && user?.status === "pending_approval") {
@@ -1218,6 +1314,20 @@ function LaundryDashboard() {
                       </div>
                     );
                   })}
+                </div>
+              )}
+              {/* Load More — history tab */}
+              {activeTab === "delivered" && hasMoreHistorical && (
+                <div className="flex justify-center pt-3">
+                  <button
+                    onClick={() => fetchHistoricalOrders(false)}
+                    disabled={loadingMoreHistorical}
+                    className="px-6 py-2.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 transition disabled:opacity-50 active:scale-95"
+                  >
+                    {loadingMoreHistorical ? (
+                      <span className="flex items-center gap-2"><span className="animate-spin rounded-full size-3.5 border-2 border-current border-t-transparent inline-block" /> טוען...</span>
+                    ) : "טען עוד הזמנות היסטוריה"}
+                  </button>
                 </div>
               )}
             </>

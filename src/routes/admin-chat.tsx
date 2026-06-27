@@ -15,6 +15,10 @@ import {
   orderBy,
   onSnapshot,
   writeBatch,
+  limit,
+  startAfter,
+  getCountFromServer,
+  type DocumentSnapshot,
 } from "firebase/firestore";
 import { ArrowRight, Send, Loader2, MessageSquareText, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -53,6 +57,10 @@ function AdminChat() {
   const [loadingList, setLoadingList] = useState(true);
   const [loadingChat, setLoadingChat] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [hasOlderMessages, setHasOlderMessages] = useState(false);
+  const [oldestDoc, setOldestDoc] = useState<DocumentSnapshot | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const CHAT_PAGE_SIZE = 30;
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -133,34 +141,55 @@ function AdminChat() {
         fullName,
       }));
 
-      const chatsSnap = await getDocs(collection(db, "chats"));
-      const chatDocs = chatsSnap.docs
-        .map((d) => ({
+      // Scoped Chats fetching: get vendor-specific chats first, then legacy customer chats in batches
+      const chatDocsMap = new Map<string, any>();
+      const q1 = query(collection(db, "chats"), where("laundryId", "==", vendorId));
+      const snap1 = await getDocs(q1);
+      snap1.forEach(d => {
+        chatDocsMap.set(d.id.toLowerCase(), {
           id: d.id,
-          ...(d.data() as { customer_email: string; updated_at: string; laundryId?: string }),
-        }))
-        .filter((c) => {
-          const email = (c.customer_email || c.id).toLowerCase();
-          // Keep if laundryId field matches (new stamped docs) OR email is in this vendor's customer set
-          return c.laundryId === vendorId || vendorCustomerEmails.has(email);
+          ...d.data()
         });
+      });
+
+      const legacyEmails = Array.from(vendorCustomerEmails).filter(email => {
+        return !chatDocsMap.has(email.toLowerCase());
+      });
+
+      for (let i = 0; i < legacyEmails.length; i += 30) {
+        const chunk = legacyEmails.slice(i, i + 30);
+        if (chunk.length > 0) {
+          const q2 = query(collection(db, "chats"), where("customer_email", "in", chunk));
+          const snap2 = await getDocs(q2);
+          snap2.forEach(d => {
+            chatDocsMap.set(d.id.toLowerCase(), {
+              id: d.id,
+              ...d.data()
+            });
+          });
+        }
+      }
+
+      const chatDocs = Array.from(chatDocsMap.values());
 
       // 3. For each chat doc, get unread count and last message from its messages subcollection
       const enriched = await Promise.all(
         chatDocs.map(async (conv) => {
           const messagesRef = collection(db, "chats", conv.id, "messages");
 
-          // Get all messages to compute unread count and last message
-          const allMsgsSnap = await getDocs(query(messagesRef, orderBy("created_at", "desc")));
-          const allMsgs = allMsgsSnap.docs.map((d) => d.data());
+          // Highly optimized: Retrieve only the last message content
+          const lastMsgQuery = query(messagesRef, orderBy("created_at", "desc"), limit(1));
+          const lastMsgSnap = await getDocs(lastMsgQuery);
+          const lastMessage = lastMsgSnap.docs.length > 0 ? lastMsgSnap.docs[0].data().content : "אין הודעות";
 
-          // Unread count: messages not from admin that are unread
-          const unreadCount = allMsgs.filter(
-            (m) => !m.is_read && m.sender_email !== user?.email,
-          ).length;
-
-          // Last message
-          const lastMessage = allMsgs.length > 0 ? allMsgs[0].content : "אין הודעות";
+          // Highly optimized: Retrieve unread count via server-side aggregation count()
+          const unreadQuery = query(
+            messagesRef,
+            where("is_read", "==", false),
+            where("sender_email", "!=", user?.email),
+          );
+          const unreadSnap = await getCountFromServer(unreadQuery);
+          const unreadCount = unreadSnap.data().count;
 
           const customerEmail = conv.customer_email || conv.id;
           const name = profileMap.get(customerEmail.toLowerCase()) || customerEmail.split("@")[0];
@@ -240,18 +269,25 @@ function AdminChat() {
     // activeConvId is the customer_email (the chat doc ID)
     const customerEmail = activeConvId;
     const messagesRef = collection(db, "chats", customerEmail, "messages");
-    const messagesQuery = query(messagesRef, orderBy("created_at", "asc"));
+    const messagesQuery = query(messagesRef, orderBy("created_at", "desc"), limit(CHAT_PAGE_SIZE));
 
     setLoadingChat(true);
 
     const unsubscribe = onSnapshot(messagesQuery, async (snapshot) => {
-      const msgs: ChatMessage[] = snapshot.docs.map((d) => ({
-        id: d.id,
-        ...(d.data() as Omit<ChatMessage, "id">),
-      }));
+      // snapshot comes newest-first; reverse to display oldest-first
+      const msgs: ChatMessage[] = snapshot.docs
+        .map((d) => ({
+          id: d.id,
+          ...(d.data() as Omit<ChatMessage, "id">),
+        }))
+        .reverse();
 
       setMessages(msgs);
       setLoadingChat(false);
+      setHasOlderMessages(snapshot.docs.length === CHAT_PAGE_SIZE);
+      if (snapshot.docs.length > 0) {
+        setOldestDoc(snapshot.docs[snapshot.docs.length - 1]); // oldest = last in desc list
+      }
 
       // Mark unread messages from customer as read
       const unreadDocs = snapshot.docs.filter((d) => {
@@ -272,6 +308,38 @@ function AdminChat() {
       unsubscribe();
     };
   }, [activeConvId, user]);
+
+  const loadOlderMessages = async () => {
+    if (!activeConvId || !oldestDoc || loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      const customerEmail = activeConvId;
+      const messagesRef = collection(db, "chats", customerEmail, "messages");
+      const olderQuery = query(
+        messagesRef,
+        orderBy("created_at", "desc"),
+        startAfter(oldestDoc),
+        limit(CHAT_PAGE_SIZE)
+      );
+      const snapshot = await getDocs(olderQuery);
+      if (snapshot.docs.length > 0) {
+        const olderMsgs: ChatMessage[] = snapshot.docs
+          .map((d) => ({ id: d.id, ...d.data() } as ChatMessage))
+          .reverse();
+
+        setMessages((prev) => [...olderMsgs, ...prev]);
+        setOldestDoc(snapshot.docs[snapshot.docs.length - 1]);
+        setHasOlderMessages(snapshot.docs.length === CHAT_PAGE_SIZE);
+      } else {
+        setHasOlderMessages(false);
+      }
+    } catch (err) {
+      console.error("Error loading older messages:", err);
+      toast.error("שגיאה בטעינת הודעות קודמות");
+    } finally {
+      setLoadingOlder(false);
+    }
+  };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -510,6 +578,19 @@ function AdminChat() {
                   </div>
                 ) : (
                   <>
+                    {hasOlderMessages && (
+                      <div className="flex justify-center pb-2">
+                        <button
+                          onClick={loadOlderMessages}
+                          disabled={loadingOlder}
+                          className="px-4 py-1.5 rounded-full text-[10px] font-extrabold bg-muted text-muted-foreground hover:bg-muted/80 border border-muted-foreground/15 transition disabled:opacity-50 active:scale-95"
+                        >
+                          {loadingOlder ? (
+                            <span className="flex items-center gap-1"><Loader2 className="size-3 animate-spin" /> טוען...</span>
+                          ) : "הצג הודעות קודמות"}
+                        </button>
+                      </div>
+                    )}
                     {messages.map((msg) => {
                       const isAdmin = msg.sender_email === user?.email;
                       return (

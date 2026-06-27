@@ -13,6 +13,10 @@ import {
   query,
   orderBy,
   onSnapshot,
+  getDocs,
+  limit,
+  startAfter,
+  type DocumentSnapshot,
 } from "firebase/firestore";
 import { ArrowRight, Send, Loader2, MessageSquareText } from "lucide-react";
 import { toast } from "sonner";
@@ -35,7 +39,11 @@ function Chat() {
   const [newMessage, setNewMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [chatReady, setChatReady] = useState(false);
+  const [hasOlderMessages, setHasOlderMessages] = useState(false);
+  const [oldestDoc, setOldestDoc] = useState<DocumentSnapshot | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const CHAT_PAGE_SIZE = 30;
 
   // Scroll to bottom
   const scrollToBottom = () => {
@@ -73,20 +81,25 @@ function Chat() {
 
         setChatReady(true);
 
-        // Subscribe to real-time messages
+        // Subscribe to real-time messages — restricted to last 30 (desc), reversed for display
         const messagesRef = collection(db, "chats", user.email, "messages");
-        const messagesQuery = query(messagesRef, orderBy("created_at", "asc"));
+        const messagesQuery = query(messagesRef, orderBy("created_at", "desc"), limit(CHAT_PAGE_SIZE));
 
         unsubscribe = onSnapshot(
           messagesQuery,
           (snapshot) => {
-            const msgs: ChatMessage[] = snapshot.docs.map((d) => ({
-              id: d.id,
-              ...d.data(),
-            })) as ChatMessage[];
+            // snapshot comes newest-first; reverse to display oldest-first
+            const msgs: ChatMessage[] = snapshot.docs
+              .map((d) => ({ id: d.id, ...d.data() } as ChatMessage))
+              .reverse();
 
             setMessages(msgs);
             setLoading(false);
+            // Detect if older messages might exist
+            setHasOlderMessages(snapshot.docs.length === CHAT_PAGE_SIZE);
+            if (snapshot.docs.length > 0) {
+              setOldestDoc(snapshot.docs[snapshot.docs.length - 1]); // oldest = last in desc list
+            }
 
             // Mark unread messages from admin as read
             snapshot.docs.forEach((d) => {
@@ -115,6 +128,37 @@ function Chat() {
       if (unsubscribe) unsubscribe();
     };
   }, [user]);
+
+  const loadOlderMessages = async () => {
+    if (!user || !oldestDoc || loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      const messagesRef = collection(db, "chats", user.email, "messages");
+      const olderQuery = query(
+        messagesRef,
+        orderBy("created_at", "desc"),
+        startAfter(oldestDoc),
+        limit(CHAT_PAGE_SIZE)
+      );
+      const snapshot = await getDocs(olderQuery);
+      if (snapshot.docs.length > 0) {
+        const olderMsgs: ChatMessage[] = snapshot.docs
+          .map((d) => ({ id: d.id, ...d.data() } as ChatMessage))
+          .reverse();
+
+        setMessages((prev) => [...olderMsgs, ...prev]);
+        setOldestDoc(snapshot.docs[snapshot.docs.length - 1]);
+        setHasOlderMessages(snapshot.docs.length === CHAT_PAGE_SIZE);
+      } else {
+        setHasOlderMessages(false);
+      }
+    } catch (err) {
+      console.error("Error loading older messages:", err);
+      toast.error("שגיאה בטעינת הודעות קודמות");
+    } finally {
+      setLoadingOlder(false);
+    }
+  };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -224,6 +268,19 @@ function Chat() {
             </div>
           ) : (
             <>
+              {hasOlderMessages && (
+                <div className="flex justify-center pb-2">
+                  <button
+                    onClick={loadOlderMessages}
+                    disabled={loadingOlder}
+                    className="px-4 py-1.5 rounded-full text-[10px] font-extrabold bg-muted text-muted-foreground hover:bg-muted/80 border border-muted-foreground/15 transition disabled:opacity-50 active:scale-95"
+                  >
+                    {loadingOlder ? (
+                      <span className="flex items-center gap-1"><Loader2 className="size-3 animate-spin" /> טוען...</span>
+                    ) : "הצג הודעות קודמות"}
+                  </button>
+                </div>
+              )}
               {messages.map((msg) => {
                 const isCustomer = msg.sender_email === user?.email;
                 return (
