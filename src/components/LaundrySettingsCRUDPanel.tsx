@@ -11,8 +11,7 @@ import {
   onSnapshot,
   serverTimestamp,
 } from "firebase/firestore";
-import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
-import { db, storage } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
 import { useLaundry } from "@/lib/laundry-store";
 import { useLaundryOptions, seedDefaultsIfEmpty } from "@/hooks/use-laundry-options";
 import { generateSlug } from "@/lib/slug";
@@ -83,8 +82,8 @@ export function LaundrySettingsCRUDPanel() {
   // ── Brand Identity state ────────────────────────────────────────────
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [brandColor, setBrandColor] = useState<string>("#6B1D5C");
-  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
-  const [isSavingColor, setIsSavingColor] = useState(false);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [isSavingColor, setIsSavingColor]     = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load shopSlug + brand fields from the logged-in user's Firestore doc
@@ -137,51 +136,53 @@ export function LaundrySettingsCRUDPanel() {
     }
   };
 
-  /** Upload logo to Firebase Storage, then save the download URL to Firestore */
+  /**
+   * Convert selected image to Base64 via FileReader and save directly to
+   * Firestore under users/{laundryId}.logoUrl.
+   *
+   * Max 500 KB — keeps Firestore documents lightweight and avoids Firebase
+   * Storage CORS issues entirely.
+   */
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    // Reset so the same file can be re-selected after an error
+    e.target.value = "";
     if (!file || !laundryId) return;
 
-    // Validate type & size (max 5 MB)
     if (!file.type.startsWith("image/")) {
       toast.error("יש לבחור קובץ תמונה בלבד");
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("הקובץ גדול מדי — מקסימום 5 מג'ב");
+    // 500 KB limit keeps Firestore doc size manageable
+    if (file.size > 500 * 1024) {
+      toast.error("הקובץ גדול מדי — מקסימום 500 קילובייט. דחס את התמונה לפני ההעלאה.");
       return;
     }
 
-    const storageRef = ref(storage, `logos/${laundryId}/${Date.now()}_${file.name}`);
-    const uploadTask = uploadBytesResumable(storageRef, file);
+    setIsUploadingLogo(true);
+    const reader = new FileReader();
 
-    setUploadProgress(0);
+    reader.onerror = () => {
+      toast.error("שגיאה בקריאת הקובץ");
+      setIsUploadingLogo(false);
+    };
 
-    uploadTask.on(
-      "state_changed",
-      (snapshot) => {
-        setUploadProgress(Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100));
-      },
-      (error) => {
-        console.error("[logo-upload] error:", error);
-        toast.error("העלאת הלוגו נכשלה: " + error.message);
-        setUploadProgress(null);
-      },
-      async () => {
-        try {
-          const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
-          await updateDoc(doc(db, "users", laundryId), { logoUrl: downloadUrl });
-          setLogoUrl(downloadUrl);
-          // Bust the use-brand localStorage cache so next page-load picks up the new logo
-          if (shopSlug) localStorage.removeItem(`brandCache_${shopSlug}`);
-          toast.success("הלוגו עודכן בהצלחה!");
-        } catch (err: any) {
-          toast.error("שגיאה בשמירת הלוגו: " + err.message);
-        } finally {
-          setUploadProgress(null);
-        }
+    reader.onload = async () => {
+      const base64 = reader.result as string; // data:<mime>;base64,<data>
+      try {
+        await updateDoc(doc(db, "users", laundryId), { logoUrl: base64 });
+        setLogoUrl(base64);
+        // Bust the use-brand localStorage cache so next visit picks up the new logo
+        if (shopSlug) localStorage.removeItem(`brandCache_${shopSlug}`);
+        toast.success("הלוגו עודכן בהצלחה!");
+      } catch (err: any) {
+        toast.error("שגיאה בשמירת הלוגו: " + err.message);
+      } finally {
+        setIsUploadingLogo(false);
       }
-    );
+    };
+
+    reader.readAsDataURL(file);
   };
 
   /** Save chosen brand color to Firestore */
@@ -435,24 +436,16 @@ export function LaundrySettingsCRUDPanel() {
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={uploadProgress !== null}
+                disabled={isUploadingLogo}
                 className="w-full py-2 rounded-xl bg-purple-100 text-purple-700 text-xs font-black flex items-center justify-center gap-1.5 hover:bg-purple-200 transition active:scale-95 disabled:opacity-60"
               >
-                {uploadProgress !== null ? (
-                  <><Loader2 className="size-3.5 animate-spin" /> מעלה... {uploadProgress}%</>
+                {isUploadingLogo ? (
+                  <><Loader2 className="size-3.5 animate-spin" /> שומר...</>
                 ) : (
                   <><ImagePlus className="size-3.5" /> {logoUrl ? "עדכן לוגו" : "העלאת לוגו"}</>
                 )}
               </button>
-              {/* Progress bar */}
-              {uploadProgress !== null && (
-                <div className="h-1.5 rounded-full bg-purple-100 overflow-hidden">
-                  <div
-                    className="h-full bg-purple-500 transition-all duration-200"
-                    style={{ width: `${uploadProgress}%` }}
-                  />
-                </div>
-              )}
+              <p className="text-[10px] text-muted-foreground">PNG / JPG / WebP עד 500 קילובייט</p>
               {logoUrl && (
                 <p className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
                   <Check className="size-3" /> לוגו פעיל

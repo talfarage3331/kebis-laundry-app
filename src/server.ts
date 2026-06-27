@@ -171,13 +171,16 @@ function rewriteOGTags(
   const ogTitle = `\u05de\u05db\u05d1\u05e1\u05ea ${laundryName} \u05de\u05d6\u05de\u05d9\u05e0\u05ea \u05d0\u05d5\u05ea\u05da \u05dc\u05d4\u05d6\u05de\u05d9\u05df \u05d0\u05d9\u05e1\u05d5\u05e3 \u05db\u05d1\u05d9\u05e1\u05d4 \u05d1\u05e7\u05dc\u05d9\u05e7`;
   const ogDesc = `\u05d4\u05e6\u05d8\u05e8\u05e4\u05d5 \u05dc${laundryName} \u2014 \u05e9\u05d9\u05e8\u05d5\u05ea \u05db\u05d1\u05d9\u05e1\u05d4 \u05de\u05e7\u05e6\u05d5\u05e2\u05d9 \u05e2\u05dd \u05d0\u05d9\u05e1\u05d5\u05e3, \u05de\u05e2\u05e7\u05d1 \u05d5\u05ea\u05e9\u05dc\u05d5\u05dd \u05d1\u05dc\u05d7\u05d9\u05e6\u05d4`;
 
-  // Build the tags to inject, conditionally including og:image
+  // Build the tags to inject.
+  // og:image is only useful when the logo is a real HTTPS URL that crawlers
+  // can fetch. Base64 data: URIs are ignored by all major social platforms.
+  const hasRemoteLogo = brand.logoUrl?.startsWith("https://");
   const extraTags = [
     `<meta property="og:title" content="${ogTitle}" />`,
     `<meta property="og:description" content="${ogDesc}" />`,
     `<meta property="og:type" content="website" />`,
     `<meta property="og:url" content="${fullUrl}" />`,
-    ...(brand.logoUrl ? [`<meta property="og:image" content="${brand.logoUrl}" />`] : []),
+    ...(hasRemoteLogo ? [`<meta property="og:image" content="${brand.logoUrl}" />`] : []),
   ].join("\n    ");
 
   return new HTMLRewriter()
