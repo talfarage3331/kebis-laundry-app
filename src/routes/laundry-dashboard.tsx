@@ -18,6 +18,7 @@ import {
   MessageSquareText,
   ArrowRight,
   XCircle,
+  Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -124,7 +125,7 @@ function LaundryDashboard() {
   const [unreadChatCount, setUnreadChatCount]         = useState(0);
   const [expandedOrderId, setExpandedOrderId]         = useState<string | null>(null);
   const [subFilter, setSubFilter]                     = useState<"all" | "treatment" | "ready">("all");
-  const [viewMode, setViewMode]                       = useState<"workboard" | "summary">("workboard");
+  const [viewMode, setViewMode]                       = useState<"orders" | "settings" | "analytics">("orders");
   const [selectedMonth, setSelectedMonth]             = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -595,6 +596,30 @@ function LaundryDashboard() {
         return true;
       });
 
+  const onboardingLinkBlock = (
+    <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm mb-4">
+      <div>
+        <h3 className="font-bold text-primary flex items-center gap-2">
+          לינק לצירוף לקוחות
+        </h3>
+        <p className="text-[11px] text-muted-foreground mt-1">
+          שלח את הלינק הבא ללקוחות שלך כדי שיזמינו ישירות מהמכבסה שלך.
+        </p>
+      </div>
+      <button
+        onClick={() => {
+          const link = `${window.location.origin}/login?laundryId=${user?.uid || ""}`;
+          navigator.clipboard.writeText(link);
+          toast.success("הלינק הועתק בהצלחה!");
+        }}
+        className="shrink-0 inline-flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-bold hover:bg-primary/90 transition active:scale-95"
+      >
+        <Copy className="size-4" />
+        העתק לינק
+      </button>
+    </div>
+  );
+
   /* ── render ─────────────────────────────────────────────────────── */
   if (user?.role === "laundry" && user?.status === "pending_approval") {
     return (
@@ -636,24 +661,34 @@ function LaundryDashboard() {
             </h1>
             <div className="flex bg-background/50 p-1 rounded-xl border border-muted-foreground/10">
               <button
-                onClick={() => setViewMode("workboard")}
+                onClick={() => setViewMode("orders")}
                 className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                  viewMode === "workboard"
+                  viewMode === "orders"
                     ? "bg-primary text-primary-foreground shadow"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                לוח עבודה
+                הזמנות
               </button>
               <button
-                onClick={() => setViewMode("summary")}
+                onClick={() => setViewMode("settings")}
                 className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                  viewMode === "summary"
+                  viewMode === "settings"
                     ? "bg-primary text-primary-foreground shadow"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                סיכום חודשי
+                תקשורת ומידע
+              </button>
+              <button
+                onClick={() => setViewMode("analytics")}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                  viewMode === "analytics"
+                    ? "bg-primary text-primary-foreground shadow"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                נתונים ואנליטיקה
               </button>
             </div>
           </div>
@@ -668,7 +703,7 @@ function LaundryDashboard() {
 
         <main className="px-3 sm:px-5 mt-4 space-y-3 max-w-full">
 
-          {viewMode === "summary" ? (
+          {viewMode === "analytics" && (
             <div className="space-y-4">
               {/* Dynamic Month Selector */}
               <div className="bg-card border border-muted-foreground/10 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
@@ -745,26 +780,12 @@ function LaundryDashboard() {
                 )}
               </div>
             </div>
-          ) : (
-            <>
-              {/* ── Stats strip ──────────────────────────────────────────── */}
-              <section className="grid grid-cols-5 gap-1.5">
-                {[
-                  { label: "ממתינים", count: orders.filter((o) => o.status === "pending").length,   color: "text-purple-600 bg-purple-50 border-purple-100" },
-                  { label: "התקבלו",  count: orders.filter((o) => o.status === "accepted").length,  color: "text-blue-600   bg-blue-50   border-blue-100"   },
-                  { label: "נאספו",   count: orders.filter((o) => o.status === "collected").length, color: "text-amber-600  bg-amber-50  border-amber-100"  },
-                  { label: "מוכנים",  count: orders.filter((o) => o.status === "ready").length,     color: "text-lime-foreground bg-lime/10 border-lime/20" },
-                  { label: "נמסרו",   count: orders.filter((o) => o.status === "delivered").length, color: "text-slate-600  bg-slate-50  border-slate-100"  },
-                  { label: "מוכנים",  count: orders.filter((o) => o.status === "ready").length,       color: "text-lime-foreground bg-lime/10 border-lime/20" },
-                  { label: "הושלמו",  count: orders.filter((o) => o.status === "delivered").length,   color: "text-slate-600  bg-slate-50  border-slate-100"  },
-                ].map((stat, idx) => (
-                  <div key={idx} className={`border rounded-xl p-2 flex flex-col items-center text-center ${stat.color}`}>
-                    <span className="text-sm font-black leading-none">{stat.count}</span>
-                    <span className="text-[9px] font-bold opacity-75 mt-0.5">{stat.label}</span>
-                  </div>
-                ))}
-              </section>
+          )}
 
+          {viewMode === "settings" && (
+            <div className="space-y-4">
+              {onboardingLinkBlock}
+              
               {/* ── Chat link ────────────────────────────────────────────── */}
               <button
                 onClick={() => navigate({ to: "/admin-chat" })}
@@ -789,6 +810,30 @@ function LaundryDashboard() {
 
               {/* Laundry Settings Panel */}
               <LaundrySettingsCRUDPanel />
+            </div>
+          )}
+
+          {viewMode === "orders" && (
+            <div className="space-y-4">
+              {onboardingLinkBlock}
+              
+              {/* ── Stats strip ──────────────────────────────────────────── */}
+              <section className="grid grid-cols-5 gap-1.5">
+                {[
+                  { label: "ממתינים", count: orders.filter((o) => o.status === "pending").length,   color: "text-purple-600 bg-purple-50 border-purple-100" },
+                  { label: "התקבלו",  count: orders.filter((o) => o.status === "accepted").length,  color: "text-blue-600   bg-blue-50   border-blue-100"   },
+                  { label: "נאספו",   count: orders.filter((o) => o.status === "collected").length, color: "text-amber-600  bg-amber-50  border-amber-100"  },
+                  { label: "מוכנים",  count: orders.filter((o) => o.status === "ready").length,     color: "text-lime-foreground bg-lime/10 border-lime/20" },
+                  { label: "נמסרו",   count: orders.filter((o) => o.status === "delivered").length, color: "text-slate-600  bg-slate-50  border-slate-100"  },
+                  { label: "מוכנים",  count: orders.filter((o) => o.status === "ready").length,       color: "text-lime-foreground bg-lime/10 border-lime/20" },
+                  { label: "הושלמו",  count: orders.filter((o) => o.status === "delivered").length,   color: "text-slate-600  bg-slate-50  border-slate-100"  },
+                ].map((stat, idx) => (
+                  <div key={idx} className={`border rounded-xl p-2 flex flex-col items-center text-center ${stat.color}`}>
+                    <span className="text-sm font-black leading-none">{stat.count}</span>
+                    <span className="text-[9px] font-bold opacity-75 mt-0.5">{stat.label}</span>
+                  </div>
+                ))}
+              </section>
 
               {/* ── Tabs ─────────────────────────────────────────────────── */}
               <div className="flex gap-1.5">
@@ -1318,7 +1363,7 @@ function LaundryDashboard() {
                   </button>
                 </div>
               )}
-            </>
+            </div>
           )}
 
         </main>

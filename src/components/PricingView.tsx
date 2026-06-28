@@ -10,6 +10,7 @@ import { useMemo } from "react";
 import { X, Tag } from "lucide-react";
 import { usePricing, resolveCategoryMeta, type PricingItem } from "@/hooks/use-pricing";
 import { useCategories, type Category } from "@/hooks/use-categories";
+import { useLaundry } from "@/lib/laundry-store";
 
 // ─── Skeleton loader ──────────────────────────────────────────────────────────
 
@@ -112,7 +113,8 @@ interface PricingViewProps {
 }
 
 export function PricingView({ onClose }: PricingViewProps) {
-  const { items, loading: pricingLoading, error } = usePricing();
+  const { activeTenantId } = useLaundry();
+  const { items, loading: pricingLoading, error } = usePricing(activeTenantId ?? null);
   const { categories, loading: categoriesLoading } = useCategories();
 
   const loading = pricingLoading || categoriesLoading;
