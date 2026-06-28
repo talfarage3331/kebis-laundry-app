@@ -114,6 +114,8 @@ function LaundryDashboard() {
   const { resolveTier } = useLaundryOptions(user?.uid);
   const navigate = useNavigate();
 
+  const [wizardCompleteState, setWizardCompleteState] = useState<{ completed: boolean; status?: string }>({ completed: false });
+
   const [orders, setOrders]                           = useState<LaundryOrder[]>([]);
   const [isLoading, setIsLoading]                     = useState(true);
   const [activeTab, setActiveTab]                     = useState("active");
@@ -622,11 +624,14 @@ function LaundryDashboard() {
   );
 
   /* ── render ─────────────────────────────────────────────────────── */
-  if (user?.role === "laundry" && (user?.status === "pending_setup" || !user?.onboardingCompleted)) {
-    return <OnboardingWizard laundryId={user.uid} onComplete={() => {}} />;
+  const effectiveStatus = wizardCompleteState.completed && wizardCompleteState.status ? wizardCompleteState.status : user?.status;
+  const isPendingSetup = effectiveStatus === "pending_setup" || (!user?.onboardingCompleted && !wizardCompleteState.completed);
+
+  if (user?.role === "laundry" && isPendingSetup) {
+    return <OnboardingWizard laundryId={user.uid} onComplete={(status) => setWizardCompleteState({ completed: true, status })} />;
   }
 
-  if (user?.role === "laundry" && user?.status === "pending_approval") {
+  if (user?.role === "laundry" && effectiveStatus === "pending_approval") {
     return (
       <div className="min-h-screen bg-background flex flex-col justify-center items-center px-4 py-12 text-center dir-rtl" dir="rtl">
         <div className="max-w-md w-full space-y-6 bg-card border border-muted-foreground/10 p-8 rounded-3xl shadow-lg">
