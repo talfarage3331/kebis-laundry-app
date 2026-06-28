@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { collection, doc, writeBatch, serverTimestamp } from "firebase/firestore";
+import { collection, doc, writeBatch, serverTimestamp, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { toast } from "sonner";
 import { Check, Loader2, ArrowLeft, ArrowRight, Plus, Trash2, Tag, Shirt, Sparkles, Wind } from "lucide-react";
@@ -218,9 +218,20 @@ export function OnboardingWizard({ laundryId, onComplete }: OnboardingWizardProp
 
       // 4. Complete Onboarding Status
       const userRef = doc(db, "users", laundryId);
+      const userSnap = await getDoc(userRef);
+      
+      let nextStatus = "pending_approval";
+      if (userSnap.exists()) {
+        const data = userSnap.data();
+        // If they were already approved or active previously, keep their status
+        if (data.status === "approved" || data.status === "active") {
+          nextStatus = data.status;
+        }
+      }
+
       batch.update(userRef, {
         onboardingCompleted: true,
-        status: "pending_approval",
+        status: nextStatus,
         updatedAt: serverTimestamp(),
       });
 
