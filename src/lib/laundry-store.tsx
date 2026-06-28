@@ -43,6 +43,8 @@ export interface User {
   status?: "pending_setup" | "pending_approval" | "approved" | "suspended";
   onboardingCompleted?: boolean;
   associatedLaundryId?: string;
+  fastDeliveryEnabled?: boolean;
+  expressDeliveryEnabled?: boolean;
 }
 
 interface Store {
@@ -276,6 +278,8 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
             let associatedLaundryId: string | undefined = undefined;
             let userStatus: "pending_setup" | "pending_approval" | "approved" | "suspended" | undefined = undefined;
             let onboardingCompleted: boolean | undefined = undefined;
+            let fastDeliveryEnabled: boolean = true;
+            let expressDeliveryEnabled: boolean = true;
 
             if (userDocSnap.exists()) {
               const data = userDocSnap.data();
@@ -284,6 +288,8 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
               associatedLaundryId = data.associatedLaundryId;
               userStatus = data.status;
               onboardingCompleted = data.onboardingCompleted;
+              fastDeliveryEnabled = data.fastDeliveryEnabled ?? true;
+              expressDeliveryEnabled = data.expressDeliveryEnabled ?? true;
             } else {
               // Create user profile document in background
               setDoc(
@@ -332,6 +338,8 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
               status: userStatus,
               onboardingCompleted: onboardingCompleted,
               associatedLaundryId: associatedLaundryId,
+              fastDeliveryEnabled,
+              expressDeliveryEnabled,
             });
             setIsRoleLoading(false);
             setIsProfileReady(true);

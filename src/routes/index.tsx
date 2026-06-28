@@ -383,12 +383,18 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
   const [savedOrder, setSavedOrder] = useState<any | null>(null);
   const [saveAsTemplate, setSaveAsTemplate] = useState(false);
 
-  // Laundry options hook — scoped to the active vendor tenant
-  const { customAddons, customTiers } = useLaundryOptions(activeTenantId ?? null);
-
   // Determine the effective laundry ID to use:
   const effectiveLaundryId = activeTenantId ?? "";
   const effectiveLaundryName = activeTenantName ?? "מכבסה";
+
+  // Laundry options hook — scoped to the active vendor tenant
+  const {
+    fastDeliveryEnabled,
+    expressDeliveryEnabled,
+    loading: optionsLoading,
+    customAddons,
+    customTiers
+  } = useLaundryOptions(effectiveLaundryId);
 
   // Seed default options if the laundry shop has none
   useEffect(() => {
@@ -464,6 +470,20 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
       shopTiers[k] = v;
     });
   }
+
+  // Filter out disabled delivery speeds
+  Object.keys(shopTiers).forEach((key) => {
+    const t = shopTiers[key];
+    const isSuper = key === "super_express" || key.includes("סופר-אקספרס") || key.includes("מהיום להיום");
+    const isExpress = !isSuper && (key === "express" || key.includes("express") || key.includes("אקספרס") || key.includes("מהיר") || key.includes("24"));
+    
+    if (isExpress && !fastDeliveryEnabled) {
+      delete shopTiers[key];
+    }
+    if (isSuper && !expressDeliveryEnabled) {
+      delete shopTiers[key];
+    }
+  });
 
   const toggleAddon = (key: string) => {
     setSelectedAddons((prev) =>

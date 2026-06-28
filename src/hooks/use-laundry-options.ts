@@ -26,6 +26,8 @@ export function useLaundryOptions(laundryId?: string | null) {
   const { user, role } = useLaundry();
   const [customAddons, setCustomAddons] = useState<CustomAddon[]>([]);
   const [customTiers, setCustomDeliveryTiers] = useState<CustomDeliveryTier[]>([]);
+  const [fastDeliveryEnabled, setFastDeliveryEnabled] = useState(true);
+  const [expressDeliveryEnabled, setExpressDeliveryEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -99,9 +101,28 @@ export function useLaundryOptions(laundryId?: string | null) {
       }
     );
 
+    let unsubVendor: (() => void) | undefined;
+    if (effectiveLaundryId) {
+      unsubVendor = onSnapshot(
+        doc(db, "users", effectiveLaundryId),
+        (snap) => {
+          if (snap.exists()) {
+            const data = snap.data();
+            setFastDeliveryEnabled(data.fastDeliveryEnabled ?? true);
+            setExpressDeliveryEnabled(data.expressDeliveryEnabled ?? true);
+          }
+        },
+        (err) => console.warn("[useLaundryOptions] vendor listener failed:", err)
+      );
+    } else {
+      setFastDeliveryEnabled(true);
+      setExpressDeliveryEnabled(true);
+    }
+
     return () => {
       unsubAddons();
       unsubTiers();
+      if (unsubVendor) unsubVendor();
     };
   }, [laundryId, user, role]);
 
@@ -127,7 +148,7 @@ export function useLaundryOptions(laundryId?: string | null) {
     return DELIVERY_TIERS_META[key] || { label: key, price: 0, desc: "" };
   };
 
-  return { customAddons, customTiers, resolveAddon, resolveTier, loading };
+  return { customAddons, customTiers, resolveAddon, resolveTier, fastDeliveryEnabled, expressDeliveryEnabled, loading };
 }
 
 

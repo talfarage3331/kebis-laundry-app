@@ -318,6 +318,23 @@ function LaundryDashboard() {
       setIsLoading(false);
     });
 
+    const exportToExcel = () => {
+    // ... logic unchanged ...
+  };
+
+  const toggleDeliveryAvailability = async (type: "fast" | "express") => {
+    if (!user?.uid) return;
+    const field = type === "fast" ? "fastDeliveryEnabled" : "expressDeliveryEnabled";
+    const currentVal = user[field] ?? true;
+    
+    try {
+      await updateDoc(doc(db, "users", user.uid), { [field]: !currentVal });
+      toast.success("זמינות המשלוח עודכנה בהצלחה");
+    } catch (e: any) {
+      toast.error("שגיאה בעדכון זמינות: " + e.message);
+    }
+  };
+
     const onStorage = () => {
       try {
         const raw = localStorage.getItem("laundry_notifications") || "[]";
@@ -794,6 +811,53 @@ function LaundryDashboard() {
 
           {viewMode === "settings" && (
             <div className="space-y-4">
+              {/* ── Quick Availability Toggles ───────────────────────────────── */}
+              <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm mb-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="size-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center font-black text-lg">
+                    ⚡
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-black text-slate-800">ניהול זמינות מהירה</h2>
+                    <p className="text-xs text-slate-500">הפעל או כבה זמנית קבלת הזמנות דחופות</p>
+                  </div>
+                </div>
+                
+                <div className="space-y-3">
+                  <div className={`p-4 rounded-xl border flex items-center justify-between transition-all ${(user?.fastDeliveryEnabled ?? true) ? "bg-slate-50 border-primary/30" : "bg-white border-slate-100 opacity-70"}`}>
+                    <div>
+                      <h3 className="font-bold text-slate-800 text-sm">משלוח מהיר (תוך 24 שעות)</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">זמינות לקבלת הזמנות מהירות רגילות</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        className="sr-only peer"
+                        checked={user?.fastDeliveryEnabled ?? true}
+                        onChange={() => toggleDeliveryAvailability("fast")}
+                      />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-[-100%] peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                    </label>
+                  </div>
+
+                  <div className={`p-4 rounded-xl border flex items-center justify-between transition-all ${(user?.expressDeliveryEnabled ?? true) ? "bg-slate-50 border-primary/30" : "bg-white border-slate-100 opacity-70"}`}>
+                    <div>
+                      <h3 className="font-bold text-slate-800 text-sm">משלוח אקספרס (מהיום להיום)</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">זמינות לקבלת הזמנות סופר-דחופות</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        className="sr-only peer"
+                        checked={user?.expressDeliveryEnabled ?? true}
+                        onChange={() => toggleDeliveryAvailability("express")}
+                      />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-[-100%] peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
               {onboardingLinkBlock}
               
               {/* ── Chat link ────────────────────────────────────────────── */}
