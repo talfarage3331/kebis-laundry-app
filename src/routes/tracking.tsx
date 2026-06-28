@@ -244,7 +244,7 @@ function OrderCard({
   isExpanded: boolean;
   onToggle: () => void;
 }) {
-  const { resolveAddon, resolveTier } = useLaundryOptions();
+  const { resolveAddon, resolveTier } = useLaundryOptions(order?.laundryId);
   // Delivery-aware steps
   const steps = getOrderSteps(order.delivery_method);
   const currentIdx = steps.findIndex((s) => s.key === order.status);

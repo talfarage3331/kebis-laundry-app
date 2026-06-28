@@ -109,7 +109,7 @@ function safeIso(val: any): string {
 /* ─── main component ─────────────────────────────────────────────── */
 function LaundryDashboard() {
   const { user, logout } = useLaundry();
-  const { resolveTier } = useLaundryOptions();
+  const { resolveTier } = useLaundryOptions(user?.uid);
   const navigate = useNavigate();
 
   const [orders, setOrders]                           = useState<LaundryOrder[]>([]);
@@ -302,25 +302,15 @@ function LaundryDashboard() {
       setIsLoading(false);
     };
 
-    // Query 1 — STRICT: active orders explicitly bound to this laundry user
+    // Query — STRICT: active orders explicitly bound to this laundry user
     const qStrict = query(
       collection(db, "orders"),
       where("laundryId", "==", user.uid),
       where("status", "in", ACTIVE_STATUSES),
     );
-    // Query 2 — LEGACY backward-compat: active orders with no laundryId assigned
-    const qLegacy = query(
-      collection(db, "orders"),
-      where("laundryId", "==", ""),
-      where("status", "in", ACTIVE_STATUSES),
-    );
 
     const unsubStrict = onSnapshot(qStrict, processSnapshot, (err) => {
       console.error("[laundry-dashboard] strict query error:", err);
-      setIsLoading(false);
-    });
-    const unsubLegacy = onSnapshot(qLegacy, processSnapshot, (err) => {
-      console.error("[laundry-dashboard] legacy query error:", err);
       setIsLoading(false);
     });
 
@@ -343,7 +333,6 @@ function LaundryDashboard() {
     window.addEventListener("storage", onStorage);
     return () => {
       unsubStrict();
-      unsubLegacy();
       window.removeEventListener("storage", onStorage);
     };
   }, [user?.uid]);
@@ -403,12 +392,11 @@ function LaundryDashboard() {
         return base;
       };
 
-      const [strictSnap, legacySnap] = await Promise.all([
-        getDocs(query(collection(db, "orders"), ...buildConstraints(user.uid))),
-        getDocs(query(collection(db, "orders"), where("laundryId", "==", ""), where("status", "==", "delivered"), limit(HISTORY_PAGE_SIZE))),
-      ]);
+      const strictSnap = await getDocs(
+        query(collection(db, "orders"), ...buildConstraints(user.uid))
+      );
 
-      const allDocs = [...strictSnap.docs, ...legacySnap.docs];
+      const allDocs = strictSnap.docs;
       const parsed = allDocs.map(parseDoc).filter(Boolean) as LaundryOrder[];
       const lastDoc = strictSnap.docs[strictSnap.docs.length - 1] ?? null;
 

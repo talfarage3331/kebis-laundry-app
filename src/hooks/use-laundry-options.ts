@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { collection, onSnapshot, query, where, getDocs, doc, writeBatch } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { ADDONS_META, DELIVERY_TIERS_META } from "@/lib/laundry-store";
+import { useLaundry, ADDONS_META, DELIVERY_TIERS_META } from "@/lib/laundry-store";
 
 export interface CustomAddon {
   id: string;
@@ -22,49 +22,88 @@ export interface CustomDeliveryTier {
   desc: string;
 }
 
-export function useLaundryOptions() {
+export function useLaundryOptions(laundryId?: string | null) {
+  const { user, role } = useLaundry();
   const [customAddons, setCustomAddons] = useState<CustomAddon[]>([]);
   const [customTiers, setCustomDeliveryTiers] = useState<CustomDeliveryTier[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubAddons = onSnapshot(collection(db, "laundry_addons"), (snap) => {
-      const list = snap.docs.map(d => {
-        const data = d.data();
-        return {
-          id: d.id,
-          key: data.key || d.id,
-          laundryId: data.laundryId || "",
-          label: data.label || "",
-          price: Number(data.price) || 0,
-          group: data.group || "",
-          desc: data.desc || "",
-        } as CustomAddon;
-      });
-      setCustomAddons(list);
-    });
+    let effectiveLaundryId = laundryId;
+    if (!effectiveLaundryId && user) {
+      if (role === "laundry") {
+        effectiveLaundryId = user.uid;
+      } else if (role === "customer" && user.associatedLaundryId) {
+        effectiveLaundryId = user.associatedLaundryId;
+      }
+    }
 
-    const unsubTiers = onSnapshot(collection(db, "laundry_delivery_tiers"), (snap) => {
-      const list = snap.docs.map(d => {
-        const data = d.data();
-        return {
-          id: d.id,
-          key: data.key || d.id,
-          laundryId: data.laundryId || "",
-          label: data.label || "",
-          price: Number(data.price) || 0,
-          desc: data.desc || "",
-        } as CustomDeliveryTier;
-      });
-      setCustomDeliveryTiers(list);
+    if (!effectiveLaundryId && role !== "admin") {
+      setCustomAddons([]);
+      setCustomDeliveryTiers([]);
       setLoading(false);
-    });
+      return;
+    }
+
+    const addonsRef = collection(db, "laundry_addons");
+    const addonsQuery = effectiveLaundryId
+      ? query(addonsRef, where("laundryId", "==", effectiveLaundryId))
+      : addonsRef;
+
+    const unsubAddons = onSnapshot(
+      addonsQuery,
+      (snap) => {
+        const list = snap.docs.map(d => {
+          const data = d.data();
+          return {
+            id: d.id,
+            key: data.key || d.id,
+            laundryId: data.laundryId || "",
+            label: data.label || "",
+            price: Number(data.price) || 0,
+            group: data.group || "",
+            desc: data.desc || "",
+          } as CustomAddon;
+        });
+        setCustomAddons(list);
+      },
+      (err) => {
+        console.warn("[useLaundryOptions] addons listener failed:", err);
+      }
+    );
+
+    const tiersRef = collection(db, "laundry_delivery_tiers");
+    const tiersQuery = effectiveLaundryId
+      ? query(tiersRef, where("laundryId", "==", effectiveLaundryId))
+      : tiersRef;
+
+    const unsubTiers = onSnapshot(
+      tiersQuery,
+      (snap) => {
+        const list = snap.docs.map(d => {
+          const data = d.data();
+          return {
+            id: d.id,
+            key: data.key || d.id,
+            laundryId: data.laundryId || "",
+            label: data.label || "",
+            price: Number(data.price) || 0,
+            desc: data.desc || "",
+          } as CustomDeliveryTier;
+        });
+        setCustomDeliveryTiers(list);
+        setLoading(false);
+      },
+      (err) => {
+        console.warn("[useLaundryOptions] tiers listener failed:", err);
+      }
+    );
 
     return () => {
       unsubAddons();
       unsubTiers();
     };
-  }, []);
+  }, [laundryId, user, role]);
 
   const resolveAddon = (key: string, laundryId?: string) => {
     if (laundryId) {
@@ -90,6 +129,7 @@ export function useLaundryOptions() {
 
   return { customAddons, customTiers, resolveAddon, resolveTier, loading };
 }
+
 
 export async function seedDefaultsIfEmpty(laundryId: string) {
   if (!laundryId) return;

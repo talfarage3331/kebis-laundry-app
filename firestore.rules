@@ -56,11 +56,11 @@ service cloud.firestore {
 
 
     // ──────────────────────────────────────────────────────────────────────
-    // PRICING  (public read, vendor/admin write)
+    // PRICING  (public read, admin write)
     // ──────────────────────────────────────────────────────────────────────
     match /pricing/{document=**} {
       allow read:  if true;
-      allow write: if isAdmin() || isLaundry();
+      allow write: if isAdmin();
     }
 
 
@@ -69,11 +69,15 @@ service cloud.firestore {
     // ──────────────────────────────────────────────────────────────────────
     match /users/{uid} {
       // A user can only read their own profile.
-      // Admin can read any user document (e.g. to resolve vendor configs).
-      allow get:    if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      // Admin can read any user document.
+      // Laundry profile is public read (so landing page can load shop assets).
+      allow get:    if (isSignedIn() && (request.auth.uid == uid || isAdmin()))
+                    || (resource != null && resource.data.get('role', '') == 'laundry');
 
-      // List with pagination; admin-only — clients should never need a full scan.
-      allow list:   if isAdmin() && paginatedRead();
+      // List with pagination: admin-only, laundry vendor searching their own customers, or public list of laundry vendors.
+      allow list:   if (isAdmin() && paginatedRead())
+                    || (paginatedRead() && resource.data.get('role', '') == 'laundry')
+                    || (isSignedIn() && isLaundry() && paginatedRead() && resource.data.get('associatedLaundryId', '') == request.auth.uid);
 
       // A user can only create their own document, and the payload's uid must
       // match so they can't spoof another user's document.
@@ -95,7 +99,10 @@ service cloud.firestore {
       // --- Read helpers ---
       // Customer can read their own order.
       function isOrderCustomer() {
-        return isSignedIn() && request.auth.uid == resource.data.userId;
+        return isSignedIn() && (
+          request.auth.uid == resource.data.userId
+          || request.auth.token.get('email', '') == resource.data.get('user_email', '')
+        );
       }
       // Laundry vendor can read orders addressed to their laundry.
       function isOrderVendor() {
@@ -114,7 +121,12 @@ service cloud.firestore {
 
       // List with pagination; customer sees only their own orders,
       // vendor sees only their laundry's orders.
-      allow list: if isSignedIn() && paginatedRead();
+      allow list: if isSignedIn() && paginatedRead() && (
+        isAdmin()
+        || (isLaundry() && request.query.filters.laundryId == request.auth.uid)
+        || request.query.filters.user_email == request.auth.token.get('email', '')
+        || request.query.filters.userId == request.auth.uid
+      );
 
       // Create: customer creates an order, uid must match payload to prevent spoofing.
       allow create: if isSignedIn()
@@ -136,43 +148,54 @@ service cloud.firestore {
     // /chats/{chatId}/{document=**}
     //
     // A chat document must carry both `userId` (the customer) and `laundryId`
-    // (the vendor's uid). Access is granted if the caller is either party.
+    // (the vendor's uid) or `customer_email`. Access is granted if the caller is either party.
     // ──────────────────────────────────────────────────────────────────────
     match /chats/{chatId} {
-      function isChatParticipant() {
+      function isChatParticipant(data) {
         return isSignedIn() && (
-          request.auth.uid == resource.data.userId   ||
-          request.auth.uid == resource.data.laundryId
+          request.auth.token.get('email', '') == chatId
+          || request.auth.token.get('email', '') == data.get('customer_email', '')
+          || request.auth.uid == data.get('laundryId', '')
+          || request.auth.uid == data.get('userId', '')
         );
       }
 
-      allow get:    if isChatParticipant();
-      allow list:   if isSignedIn() && paginatedRead();
-
-      // On create the payload must contain the caller's uid as one of the parties.
-      allow create: if isSignedIn() && (
-        request.resource.data.userId   == request.auth.uid ||
-        request.resource.data.laundryId == request.auth.uid
+      allow get:    if isChatParticipant(resource.data);
+      allow list:   if isSignedIn() && paginatedRead() && (
+        isAdmin()
+        || (isLaundry() && request.query.filters.laundryId == request.auth.uid)
+        || request.query.filters.customer_email == request.auth.token.get('email', '')
       );
 
-      allow update: if isChatParticipant();
+      // On create the payload must contain the caller's identity.
+      allow create: if isSignedIn() && (
+        isChatParticipant(request.resource.data)
+        && (isLaundry() || request.resource.data.customer_email == request.auth.token.get('email', ''))
+      );
+
+      allow update: if isChatParticipant(resource.data) && (
+        isChatParticipant(request.resource.data)
+        && (resource.data.customer_email == request.resource.data.customer_email)
+      );
       allow delete: if isAdmin();
 
       // ── Messages sub-collection (and any deeper sub-collections) ──────────
       // Uses the parent chat document to determine participant membership.
-      // The recursive wildcard {document=**} inherits these rules seamlessly.
       match /messages/{document=**} {
         function isMsgParticipant() {
           let chat = get(/databases/$(database)/documents/chats/$(chatId));
           return isSignedIn() && (
-            request.auth.uid == chat.data.userId   ||
-            request.auth.uid == chat.data.laundryId
+            request.auth.token.get('email', '') == chatId
+            || request.auth.token.get('email', '') == chat.data.get('customer_email', '')
+            || request.auth.uid == chat.data.get('laundryId', '')
+            || request.auth.uid == chat.data.get('userId', '')
+            || isAdmin()
           );
         }
 
         allow read:   if isMsgParticipant() && (request.query == null || paginatedRead());
         allow create: if isMsgParticipant()
-                      && request.resource.data.senderId == request.auth.uid;
+                      && request.resource.data.sender_email == request.auth.token.get('email', '');
         allow update: if isMsgParticipant();
         allow delete: if isAdmin();
       }
@@ -194,7 +217,7 @@ service cloud.firestore {
       );
       allow create: if isSignedIn()
                     && request.auth.uid == userId
-                    && request.resource.data.userId == request.auth.uid;
+                    && request.resource.data.uid == request.auth.uid;
       allow update: if isSignedIn() && (request.auth.uid == userId || isAdmin());
       allow delete: if isAdmin();
     }
@@ -209,6 +232,42 @@ service cloud.firestore {
     // CollectionGroup query for `messages` — used by admin dashboard to count unread messages.
     match /{path=**}/messages/{messageId} {
       allow read: if isAdmin();
+    }
+
+
+    // ──────────────────────────────────────────────────────────────────────
+    // LAUNDRY ADDONS & DELIVERY TIERS
+    // ──────────────────────────────────────────────────────────────────────
+    match /laundry_addons/{addonId} {
+      allow read: if true;
+      allow create, update: if isAdmin() || (isLaundry() && request.resource.data.laundryId == request.auth.uid);
+      allow delete: if isAdmin() || (isLaundry() && resource.data.laundryId == request.auth.uid);
+    }
+
+    match /laundry_delivery_tiers/{tierId} {
+      allow read: if true;
+      allow create, update: if isAdmin() || (isLaundry() && request.resource.data.laundryId == request.auth.uid);
+      allow delete: if isAdmin() || (isLaundry() && resource.data.laundryId == request.auth.uid);
+    }
+
+
+    // ──────────────────────────────────────────────────────────────────────
+    // VENDOR PRICING OVERRIDES  /vendor-pricing/{overrideId}
+    // overrideId format: laundryId_itemId
+    // ──────────────────────────────────────────────────────────────────────
+    match /vendor-pricing/{overrideId} {
+      allow read:  if true;
+      allow create, update: if isAdmin() || (isLaundry() && request.resource.data.laundryId == request.auth.uid);
+      allow delete: if isAdmin() || (isLaundry() && resource.data.laundryId == request.auth.uid);
+    }
+
+
+    // ──────────────────────────────────────────────────────────────────────
+    // NOTIFICATIONS  /notifications/{id}
+    // ──────────────────────────────────────────────────────────────────────
+    match /notifications/{id} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow write: if isAdmin();
     }
 
 

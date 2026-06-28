@@ -30,7 +30,7 @@ const methods = [
 
 function Payments() {
   const { user, invoices } = useLaundry();
-  const { resolveAddon, resolveTier } = useLaundryOptions();
+  const { resolveAddon, resolveTier } = useLaundryOptions(user?.associatedLaundryId ?? null);
   const navigate = useNavigate();
   const [method, setMethod] = useState<string>("bit");
 

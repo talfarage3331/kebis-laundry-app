@@ -159,7 +159,11 @@ function AdminChat() {
       for (let i = 0; i < legacyEmails.length; i += 30) {
         const chunk = legacyEmails.slice(i, i + 30);
         if (chunk.length > 0) {
-          const q2 = query(collection(db, "chats"), where("customer_email", "in", chunk));
+          const q2 = query(
+            collection(db, "chats"),
+            where("laundryId", "==", vendorId),
+            where("customer_email", "in", chunk),
+          );
           const snap2 = await getDocs(q2);
           snap2.forEach(d => {
             chatDocsMap.set(d.id.toLowerCase(), {

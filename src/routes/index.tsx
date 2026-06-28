@@ -383,8 +383,8 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
   const [savedOrder, setSavedOrder] = useState<any | null>(null);
   const [saveAsTemplate, setSaveAsTemplate] = useState(false);
 
-  // Laundry options hook
-  const { customAddons, customTiers } = useLaundryOptions();
+  // Laundry options hook — scoped to the active vendor tenant
+  const { customAddons, customTiers } = useLaundryOptions(activeTenantId ?? null);
 
   // Determine the effective laundry ID to use:
   const effectiveLaundryId = activeTenantId ?? "";
