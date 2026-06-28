@@ -333,26 +333,26 @@ function LaundryDashboard() {
     // ... logic unchanged ...
   };
 
-  const toggleDeliveryAvailability = async (type: "fast" | "express") => {
+  const toggleDeliveryAvailability = async (type: "fast" | "express", checked: boolean) => {
     if (!user?.uid) return;
     const isFast = type === "fast";
     const field = isFast ? "fastDeliveryEnabled" : "expressDeliveryEnabled";
     
     // Optimistic toggle
     const prevVal = isFast ? fastDeliveryEnabled : expressDeliveryEnabled;
-    const newVal = !prevVal;
     
-    if (isFast) setFastDeliveryEnabled(newVal);
-    else setExpressDeliveryEnabled(newVal);
+    if (isFast) setFastDeliveryEnabled(checked);
+    else setExpressDeliveryEnabled(checked);
     
     try {
-      await updateDoc(doc(db, "users", user.uid), { [field]: newVal });
+      await updateDoc(doc(db, "users", user.uid), { [field]: checked });
       toast.success("זמינות המשלוח עודכנה בהצלחה");
     } catch (e: any) {
       // Revert on error
       if (isFast) setFastDeliveryEnabled(prevVal);
       else setExpressDeliveryEnabled(prevVal);
       toast.error("שגיאה בעדכון זמינות: " + e.message);
+      console.error("Toggle update failed:", e);
     }
   };
 
@@ -845,7 +845,7 @@ function LaundryDashboard() {
                 </div>
                 
                 <div className="space-y-3">
-                  <div className={`p-4 rounded-xl border flex items-center justify-between transition-all ${(user?.fastDeliveryEnabled ?? true) ? "bg-slate-50 border-primary/30" : "bg-white border-slate-100 opacity-70"}`}>
+                  <div className={`p-4 rounded-xl border flex items-center justify-between transition-all ${fastDeliveryEnabled ? "bg-slate-50 border-primary/30" : "bg-white border-slate-100 opacity-70"}`}>
                     <div>
                       <h3 className="font-bold text-slate-800 text-sm">משלוח מהיר (תוך 24 שעות)</h3>
                       <p className="text-xs text-slate-500 mt-0.5">זמינות לקבלת הזמנות מהירות רגילות</p>
@@ -855,13 +855,13 @@ function LaundryDashboard() {
                         type="checkbox" 
                         className="sr-only peer"
                         checked={fastDeliveryEnabled}
-                        onChange={() => toggleDeliveryAvailability("fast")}
+                        onChange={(e) => toggleDeliveryAvailability("fast", e.target.checked)}
                       />
                       <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-[-100%] peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
                     </label>
                   </div>
 
-                  <div className={`p-4 rounded-xl border flex items-center justify-between transition-all ${(user?.expressDeliveryEnabled ?? true) ? "bg-slate-50 border-primary/30" : "bg-white border-slate-100 opacity-70"}`}>
+                  <div className={`p-4 rounded-xl border flex items-center justify-between transition-all ${expressDeliveryEnabled ? "bg-slate-50 border-primary/30" : "bg-white border-slate-100 opacity-70"}`}>
                     <div>
                       <h3 className="font-bold text-slate-800 text-sm">משלוח אקספרס (מהיום להיום)</h3>
                       <p className="text-xs text-slate-500 mt-0.5">זמינות לקבלת הזמנות סופר-דחופות</p>
@@ -871,7 +871,7 @@ function LaundryDashboard() {
                         type="checkbox" 
                         className="sr-only peer"
                         checked={expressDeliveryEnabled}
-                        onChange={() => toggleDeliveryAvailability("express")}
+                        onChange={(e) => toggleDeliveryAvailability("express", e.target.checked)}
                       />
                       <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-[-100%] peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
                     </label>
