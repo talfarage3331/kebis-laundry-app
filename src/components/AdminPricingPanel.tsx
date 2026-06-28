@@ -3,15 +3,14 @@
  *
  * Every pricing item lives exclusively in `/laundries/{laundryId}/pricing/{itemId}`.
  * - Admin: sees a laundry selector; all mutations apply to the selected laundry only.
- * - Laundry vendor: auto-scoped to their own uid; can add, edit, delete items freely.
+ * - Laundry vendor: auto-scoped to their own uid; can add, edit, and delete items freely.
  * - No global price list. No cross-vendor side effects.
  *
- * Migration helper: "Seed Default Catalog" button seeds the BASELINE_PRICING_ITEMS
- * into the selected laundry's subcollection (only when it is empty), giving each
- * laundry a starting catalog when they first open the panel.
+ * Edit modal exposes every field: name, price, unit, category (with inline "add new"),
+ * description, and availability toggle.
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   collection,
   doc,
@@ -19,7 +18,6 @@ import {
   updateDoc,
   deleteDoc,
   serverTimestamp,
-  getDocs,
   writeBatch,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -34,6 +32,8 @@ import {
   Loader2,
   Store,
   Database,
+  X,
+  PenLine,
 } from "lucide-react";
 import {
   Dialog,
@@ -90,7 +90,7 @@ function AvailabilityToggle({
       role="switch"
       aria-checked={value}
       onClick={() => onChange(!value)}
-      className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
       style={{ background: value ? "var(--primary)" : "var(--muted-foreground)" }}
     >
       <span
@@ -101,26 +101,71 @@ function AvailabilityToggle({
   );
 }
 
-// ─── Edit / Add modal ─────────────────────────────────────────────────────────
+// ─── Full item edit / add modal ───────────────────────────────────────────────
 
 interface ItemFormProps {
   open: boolean;
-  initial: Omit<PricingItem, "id"> | null;
-  editingId: string | null;
+  /** Pass `null` for "add new"; pass the full item for "edit" */
+  item: PricingItem | null;
   laundryId: string;
   onClose: () => void;
 }
 
-function ItemFormModal({ open, initial, editingId, laundryId, onClose }: ItemFormProps) {
-  const [form, setForm] = useState<Omit<PricingItem, "id">>(initial ?? EMPTY_FORM);
+function ItemFormModal({ open, item, laundryId, onClose }: ItemFormProps) {
+  const isEditing = item !== null;
+
+  const { categories, addCategory } = useCategories();
+
+  // Initialise form from item (edit) or defaults (add)
+  const [form, setForm] = useState<Omit<PricingItem, "id">>(() =>
+    item ? { ...item } : { ...EMPTY_FORM },
+  );
   const [saving, setSaving] = useState(false);
-  const { categories } = useCategories();
+
+  // "Add new category" inline state
+  const [showNewCat, setShowNewCat] = useState(false);
+  const [newCatLabel, setNewCatLabel] = useState("");
+  const [newCatEmoji, setNewCatEmoji] = useState("🏷️");
+  const [addingCat, setAddingCat] = useState(false);
+
+  // Re-sync form whenever the item prop changes (e.g. user clicks Edit on a different row)
+  useEffect(() => {
+    setForm(item ? { ...item } : { ...EMPTY_FORM });
+    setShowNewCat(false);
+    setNewCatLabel("");
+    setNewCatEmoji("🏷️");
+  }, [item, open]);
 
   const set = <K extends keyof Omit<PricingItem, "id">>(
     key: K,
     value: Omit<PricingItem, "id">[K],
   ) => setForm((prev) => ({ ...prev, [key]: value }));
 
+  // ── Add new category inline ───────────────────────────────────────────────
+  const handleAddCategory = async () => {
+    if (!newCatLabel.trim()) return;
+    setAddingCat(true);
+    try {
+      await addCategory(newCatLabel.trim(), newCatEmoji || "🏷️");
+      // Find the newly added category by its label so we can pre-select it
+      // (categories list updates via onSnapshot; we wait a tick)
+      const label = newCatLabel.trim();
+      setTimeout(() => {
+        const match = categories.find((c) => c.label_he === label);
+        if (match) set("category", match.id);
+      }, 600);
+      toast.success(`הקטגוריה "${newCatLabel}" נוספה`);
+      setShowNewCat(false);
+      setNewCatLabel("");
+      setNewCatEmoji("🏷️");
+    } catch (err: unknown) {
+      toast.error("שגיאה בהוספת קטגוריה: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setAddingCat(false);
+    }
+  };
+
+  // ── Save item ─────────────────────────────────────────────────────────────
   const handleSave = async () => {
     if (!form.name_he.trim()) {
       toast.error("נא להזין שם פריט");
@@ -134,26 +179,26 @@ function ItemFormModal({ open, initial, editingId, laundryId, onClose }: ItemFor
     setSaving(true);
     try {
       const pricingCol = collection(db, "laundries", laundryId, "pricing");
-      if (editingId) {
-        await updateDoc(doc(pricingCol, editingId), {
-          ...form,
-          price: Number(form.price),
-          updatedAt: serverTimestamp(),
-        });
-        toast.success("הפריט עודכן בהצלחה");
+      const payload = {
+        name_he:        form.name_he.trim(),
+        category:       form.category,
+        price:          Number(form.price),
+        description_he: form.description_he.trim(),
+        unit:           form.unit.trim() || "לפריט",
+        isAvailable:    form.isAvailable,
+        updatedAt:      serverTimestamp(),
+      };
+
+      if (isEditing && item) {
+        await updateDoc(doc(pricingCol, item.id), payload);
+        toast.success("הפריט עודכן בהצלחה ✓");
       } else {
-        await addDoc(pricingCol, {
-          ...form,
-          price: Number(form.price),
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-        toast.success("הפריט נוסף למחירון");
+        await addDoc(pricingCol, { ...payload, createdAt: serverTimestamp() });
+        toast.success("הפריט נוסף למחירון ✓");
       }
       onClose();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error("שגיאה בשמירה: " + msg);
+      toast.error("שגיאה בשמירה: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setSaving(false);
     }
@@ -162,89 +207,172 @@ function ItemFormModal({ open, initial, editingId, laundryId, onClose }: ItemFor
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        className="max-w-md w-[96%] rounded-2xl p-5 text-right dir-rtl bg-background/95 border-none shadow-[0_20px_50px_rgba(0,0,0,0.15)] focus:outline-none max-h-[90dvh] overflow-y-auto"
+        className="max-w-lg w-[96%] rounded-2xl p-0 text-right bg-background border border-border shadow-[0_24px_64px_rgba(0,0,0,0.18)] focus:outline-none max-h-[92dvh] flex flex-col overflow-hidden"
         dir="rtl"
       >
-        <DialogHeader className="space-y-1 text-right">
-          <DialogTitle className="text-lg font-black flex items-center gap-2">
-            <Tag className="size-5 text-primary" />
-            {editingId ? "עריכת פריט" : "הוספת פריט חדש"}
+        {/* ── Header ─────────────────────────────────────────── */}
+        <DialogHeader className="px-5 pt-5 pb-4 border-b border-border shrink-0">
+          <DialogTitle className="text-base font-black flex items-center gap-2">
+            <span className="size-8 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+              {isEditing ? (
+                <PenLine className="size-4 text-primary" />
+              ) : (
+                <Plus className="size-4 text-primary" />
+              )}
+            </span>
+            {isEditing ? `עריכת פריט: ${item?.name_he}` : "הוספת פריט חדש"}
           </DialogTitle>
-          <DialogDescription className="text-sm text-muted-foreground text-right">
-            {editingId ? "שנה את פרטי הפריט במחירון" : "הוסף שירות חדש למחירון הלקוחות"}
+          <DialogDescription className="text-xs text-muted-foreground mt-1">
+            {isEditing
+              ? "ערוך את כל פרטי הפריט ולחץ שמור"
+              : "מלא את כל הפרטים ולחץ הוסף"}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 mt-4">
-          {/* Name */}
+        {/* ── Scrollable body ────────────────────────────────── */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+
+          {/* 1 · Item name */}
           <div className="space-y-1.5">
-            <label className="text-xs font-bold block">שם הפריט (עברית)</label>
+            <label className="text-xs font-bold block text-foreground">
+              שם הפריט <span className="text-destructive">*</span>
+            </label>
             <Input
               value={form.name_he}
               onChange={(e) => set("name_he", e.target.value)}
-              placeholder="לדוגמה: חולצה רגילה"
-              className="text-right"
+              placeholder="לדוגמה: גיהוץ חולצה מכופתרת"
+              className="text-right h-11"
+              autoFocus
             />
           </div>
 
-          {/* Category */}
+          {/* 2 · Category */}
           <div className="space-y-1.5">
-            <label className="text-xs font-bold block">קטגוריה</label>
-            <select
-              value={form.category}
-              onChange={(e) => set("category", e.target.value)}
-              className="w-full h-11 px-3 rounded-xl border border-muted-foreground/20 bg-background text-foreground text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary text-right appearance-none"
-              dir="rtl"
-            >
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.emoji} {c.label_he}
-                </option>
-              ))}
-            </select>
+            <label className="text-xs font-bold block text-foreground">קטגוריה</label>
+
+            {!showNewCat ? (
+              <div className="flex gap-2">
+                <select
+                  value={form.category}
+                  onChange={(e) => set("category", e.target.value)}
+                  className="flex-1 h-11 px-3 rounded-xl border border-muted-foreground/20 bg-background text-foreground text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary text-right appearance-none"
+                  dir="rtl"
+                >
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.emoji} {c.label_he}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setShowNewCat(true)}
+                  className="h-11 px-3 rounded-xl border border-dashed border-muted-foreground/30 text-xs font-bold text-muted-foreground hover:border-primary hover:text-primary transition shrink-0 flex items-center gap-1"
+                >
+                  <Plus className="size-3" />
+                  חדשה
+                </button>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 space-y-2">
+                <p className="text-xs font-bold text-primary">קטגוריה חדשה</p>
+                <div className="flex gap-2">
+                  <Input
+                    value={newCatLabel}
+                    onChange={(e) => setNewCatLabel(e.target.value)}
+                    placeholder="שם הקטגוריה (עברית)"
+                    className="flex-1 text-right h-9 text-sm"
+                    autoFocus
+                    onKeyDown={(e) => e.key === "Enter" && handleAddCategory()}
+                  />
+                  <Input
+                    value={newCatEmoji}
+                    onChange={(e) => setNewCatEmoji(e.target.value)}
+                    placeholder="🏷️"
+                    className="w-14 text-center h-9 text-base"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleAddCategory}
+                    disabled={addingCat || !newCatLabel.trim()}
+                    className="flex-1 h-8 rounded-lg bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center gap-1 disabled:opacity-50 transition active:scale-95"
+                  >
+                    {addingCat ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
+                    הוסף קטגוריה
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowNewCat(false); setNewCatLabel(""); setNewCatEmoji("🏷️"); }}
+                    className="h-8 px-3 rounded-lg border border-muted-foreground/20 text-xs font-bold text-muted-foreground hover:text-foreground transition"
+                  >
+                    ביטול
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Price + Unit */}
+          {/* 3 · Price + Unit (side by side) */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <label className="text-xs font-bold block">מחיר (₪)</label>
-              <Input
-                type="number"
-                min={0}
-                step={0.5}
-                value={form.price}
-                onChange={(e) => set("price", parseFloat(e.target.value) || 0)}
-                className="text-right"
-              />
+              <label className="text-xs font-bold block text-foreground">
+                מחיר (₪) <span className="text-destructive">*</span>
+              </label>
+              <div className="relative">
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-muted-foreground">₪</span>
+                <Input
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  value={form.price === 0 ? "" : form.price}
+                  onChange={(e) => set("price", parseFloat(e.target.value) || 0)}
+                  placeholder="0"
+                  className="text-right pr-7 h-11"
+                />
+              </div>
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-bold block">יחידה</label>
-              <Input
+              <label className="text-xs font-bold block text-foreground">יחידת מדידה</label>
+              <select
                 value={form.unit}
                 onChange={(e) => set("unit", e.target.value)}
-                placeholder='לדוגמה: לפריט, לק"ג'
-                className="text-right"
-              />
+                className="w-full h-11 px-3 rounded-xl border border-muted-foreground/20 bg-background text-foreground text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary text-right appearance-none"
+                dir="rtl"
+              >
+                {["לפריט", 'לק"ג', "לחליפה", "לסט", 'למ"ר', "לסל כביסה", "לשעה"].map((u) => (
+                  <option key={u} value={u}>{u}</option>
+                ))}
+                {/* Show current value even if not in list */}
+                {!["לפריט", 'לק"ג', "לחליפה", "לסט", 'למ"ר', "לסל כביסה", "לשעה"].includes(form.unit) && (
+                  <option value={form.unit}>{form.unit}</option>
+                )}
+              </select>
             </div>
           </div>
 
-          {/* Description */}
+          {/* 4 · Description (multiline) */}
           <div className="space-y-1.5">
-            <label className="text-xs font-bold block">תיאור (עברית)</label>
-            <Input
+            <label className="text-xs font-bold block text-foreground">
+              פירוט / תיאור השירות
+            </label>
+            <textarea
               value={form.description_he}
               onChange={(e) => set("description_he", e.target.value)}
-              placeholder="תיאור קצר של השירות..."
-              className="text-right"
+              placeholder="תיאור קצר שיוצג ללקוחות (אופציונלי)..."
+              rows={3}
+              className="w-full px-3 py-2.5 rounded-xl border border-muted-foreground/20 bg-background text-foreground text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary text-right resize-none"
+              dir="rtl"
             />
           </div>
 
-          {/* Availability */}
-          <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40 border border-border">
+          {/* 5 · Availability */}
+          <div className="flex items-center justify-between p-3.5 rounded-xl bg-muted/40 border border-border">
             <div>
               <p className="text-sm font-bold">זמין ללקוחות</p>
-              <p className="text-[11px] text-muted-foreground">
-                {form.isAvailable ? "מוצג במחירון" : "מוסתר מהמחירון"}
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                {form.isAvailable ? "מוצג במחירון הציבורי" : "מוסתר מהמחירון"}
               </p>
             </div>
             <AvailabilityToggle
@@ -254,23 +382,86 @@ function ItemFormModal({ open, initial, editingId, laundryId, onClose }: ItemFor
           </div>
         </div>
 
-        {/* Buttons */}
-        <div className="flex gap-2 mt-5">
+        {/* ── Footer buttons ──────────────────────────────────── */}
+        <div className="px-5 py-4 border-t border-border flex gap-2 shrink-0 bg-muted/20">
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || !form.name_he.trim()}
             className="flex-1 h-11 rounded-2xl bg-primary text-primary-foreground text-sm font-bold flex items-center justify-center gap-2 active:scale-95 transition disabled:opacity-50"
           >
-            {saving ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Check className="size-4" />
-            )}
-            {saving ? "שומר..." : "שמור"}
+            {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+            {saving ? "שומר..." : isEditing ? "שמור שינויים" : "הוסף למחירון"}
           </button>
           <button
             onClick={onClose}
-            className="h-11 px-5 rounded-2xl border border-muted-foreground/20 text-sm font-bold active:scale-95 transition"
+            disabled={saving}
+            className="h-11 px-5 rounded-2xl border border-muted-foreground/20 text-sm font-bold active:scale-95 transition hover:bg-muted/40"
+          >
+            ביטול
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Delete confirmation modal ─────────────────────────────────────────────────
+
+interface DeleteConfirmProps {
+  item: PricingItem | null;
+  laundryId: string;
+  onClose: () => void;
+}
+
+function DeleteConfirmModal({ item, laundryId, onClose }: DeleteConfirmProps) {
+  const [deleting, setDeleting] = useState(false);
+
+  const handleConfirm = async () => {
+    if (!item) return;
+    setDeleting(true);
+    try {
+      await deleteDoc(doc(db, "laundries", laundryId, "pricing", item.id));
+      toast.success(`"${item.name_he}" נמחק`);
+      onClose();
+    } catch (err: unknown) {
+      toast.error("שגיאה במחיקה: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <Dialog open={!!item} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent
+        className="max-w-sm w-[92%] rounded-2xl p-5 bg-background border border-border shadow-xl focus:outline-none"
+        dir="rtl"
+      >
+        <DialogHeader>
+          <DialogTitle className="text-base font-black text-right flex items-center gap-2">
+            <span className="size-8 rounded-xl bg-destructive/10 flex items-center justify-center shrink-0">
+              <Trash2 className="size-4 text-destructive" />
+            </span>
+            מחיקת פריט
+          </DialogTitle>
+          <DialogDescription className="text-right text-sm text-muted-foreground mt-2">
+            האם אתה בטוח שברצונך למחוק את{" "}
+            <span className="font-bold text-foreground">"{item?.name_he}"</span>?{" "}
+            פעולה זו בלתי הפיכה.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex gap-2 mt-4">
+          <button
+            onClick={handleConfirm}
+            disabled={deleting}
+            className="flex-1 h-11 rounded-2xl bg-destructive text-destructive-foreground text-sm font-bold flex items-center justify-center gap-2 active:scale-95 transition disabled:opacity-50"
+          >
+            {deleting ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+            {deleting ? "מוחק..." : "כן, מחק"}
+          </button>
+          <button
+            onClick={onClose}
+            disabled={deleting}
+            className="h-11 px-5 rounded-2xl border border-muted-foreground/20 text-sm font-bold active:scale-95 transition hover:bg-muted/40"
           >
             ביטול
           </button>
@@ -286,97 +477,112 @@ export function AdminPricingPanel({ laundries = [] }: AdminPricingPanelProps) {
   const { user, role } = useLaundry();
   const [expanded, setExpanded] = useState(false);
 
-  // For admins: starts on the first laundry in the list (or null while loading).
-  // For vendors: locked to their own uid.
+  // For admins: the laundry chosen in the dropdown (auto-selects first when list loads).
+  // For vendors: permanently locked to their own uid — never changeable.
   const [selectedLaundryId, setSelectedLaundryId] = useState<string | null>(null);
+  const initializedRef = useRef(false);
 
   useEffect(() => {
     if (role === "laundry" && user?.uid) {
+      // Vendor — always their own UID
       setSelectedLaundryId(user.uid);
-    } else if (role === "admin" && laundries.length > 0 && !selectedLaundryId) {
-      setSelectedLaundryId(laundries[0].id);
+      initializedRef.current = true;
+    } else if (role === "admin") {
+      // Admin — auto-pick first laundry as soon as the list arrives, but don't
+      // override an already-made manual selection.
+      if (!initializedRef.current && laundries.length > 0) {
+        setSelectedLaundryId(laundries[0].id);
+        initializedRef.current = true;
+      }
     }
   }, [role, user?.uid, laundries]);
 
   const { items, loading, error } = usePricing(selectedLaundryId);
+  const { categories } = useCategories();
 
-  // Category management state
-  const { categories, addCategory, deleteCategory } = useCategories();
+  // ── Category manager (admin only, inside panel) ────────────────────────────
+  const { addCategory, deleteCategory } = useCategories();
   const [newCatLabel, setNewCatLabel] = useState("");
   const [newCatEmoji, setNewCatEmoji] = useState("👕");
   const [isAddingCat, setIsAddingCat] = useState(false);
 
-  // Seed state
-  const [isSeeding, setIsSeeding] = useState(false);
-
   const handleCreateCategory = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCatLabel.trim()) {
-      toast.error("נא להזין שם קטגוריה");
-      return;
-    }
+    if (!newCatLabel.trim()) { toast.error("נא להזין שם קטגוריה"); return; }
     setIsAddingCat(true);
     try {
       await addCategory(newCatLabel, newCatEmoji);
-      toast.success("הקטגוריה נוספה בהצלחה");
+      toast.success("הקטגוריה נוספה");
       setNewCatLabel("");
       setNewCatEmoji("👕");
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error("שגיאה בהוספת קטגוריה: " + msg);
+      toast.error("שגיאה: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setIsAddingCat(false);
     }
   };
 
   const handleDeleteCategory = async (id: string, label: string) => {
-    if (!confirm(`האם אתה בטוח שברצונך למחוק את הקטגוריה "${label}"?`)) return;
+    if (!confirm(`למחוק את הקטגוריה "${label}"?`)) return;
     try {
       await deleteCategory(id);
-      toast.success(`הקטגוריה "${label}" נמחקה בהצלחה`);
+      toast.success(`"${label}" נמחקה`);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error("שגיאה במחיקת קטגוריה: " + msg);
+      toast.error("שגיאה: " + (err instanceof Error ? err.message : String(err)));
     }
   };
 
-  // Modal state
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingInitial, setEditingInitial] = useState<Omit<PricingItem, "id"> | null>(null);
+  // ── Seed baseline ──────────────────────────────────────────────────────────
+  const [isSeeding, setIsSeeding] = useState(false);
 
-  // Inline price edit state
+  const handleSeedBaseline = useCallback(async () => {
+    if (!selectedLaundryId) return;
+    if (items.length > 0) {
+      toast.error("המחירון כבר מכיל פריטים. ניתן לזרוע ברירת מחדל רק למחירון ריק.");
+      return;
+    }
+    setIsSeeding(true);
+    try {
+      const pricingCol = collection(db, "laundries", selectedLaundryId, "pricing");
+      const batch = writeBatch(db);
+      BASELINE_PRICING_ITEMS.forEach((item) => {
+        batch.set(doc(pricingCol), {
+          ...item,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      });
+      await batch.commit();
+      toast.success(`נטענו ${BASELINE_PRICING_ITEMS.length} פריטי ברירת מחדל`);
+    } catch (err: unknown) {
+      toast.error("שגיאה: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsSeeding(false);
+    }
+  }, [selectedLaundryId, items.length]);
+
+  // ── Inline price edit ──────────────────────────────────────────────────────
   const [draftPrices, setDraftPrices] = useState<Record<string, string>>({});
   const [savingPrice, setSavingPrice] = useState<string | null>(null);
 
-  const openAdd = () => {
-    setEditingId(null);
-    setEditingInitial({ ...EMPTY_FORM });
-    setModalOpen(true);
-  };
-
-  const openEdit = (item: PricingItem) => {
-    const { id, ...rest } = item;
-    setEditingId(id);
-    setEditingInitial({ ...rest });
-    setModalOpen(true);
-  };
-
-  const closeModal = () => {
-    setModalOpen(false);
-    setEditingId(null);
-    setEditingInitial(null);
-  };
-
-  const handleDelete = async (item: PricingItem) => {
+  const handleSaveInlinePrice = async (item: PricingItem) => {
     if (!selectedLaundryId) return;
-    if (!confirm(`למחוק את "${item.name_he}"? פעולה זו בלתי הפיכה.`)) return;
+    const raw = draftPrices[item.id];
+    if (raw === undefined) return;
+    const parsed = parseFloat(raw);
+    if (isNaN(parsed) || parsed < 0) { toast.error("מחיר לא תקין"); return; }
+    setSavingPrice(item.id);
     try {
-      await deleteDoc(doc(db, "laundries", selectedLaundryId, "pricing", item.id));
-      toast.success("הפריט נמחק");
+      await updateDoc(doc(db, "laundries", selectedLaundryId, "pricing", item.id), {
+        price: parsed,
+        updatedAt: serverTimestamp(),
+      });
+      toast.success("מחיר עודכן");
+      setDraftPrices((prev) => { const n = { ...prev }; delete n[item.id]; return n; });
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error("שגיאה במחיקה: " + msg);
+      toast.error("שגיאה: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setSavingPrice(null);
     }
   };
 
@@ -387,72 +593,26 @@ export function AdminPricingPanel({ laundries = [] }: AdminPricingPanelProps) {
         isAvailable: !item.isAvailable,
         updatedAt: serverTimestamp(),
       });
-      toast.success(item.isAvailable ? "הפריט הוסתר" : "הפריט הופעל");
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error("שגיאה בעדכון: " + msg);
+      toast.error("שגיאה: " + (err instanceof Error ? err.message : String(err)));
     }
   };
 
-  const handleSaveInlinePrice = async (item: PricingItem) => {
-    if (!selectedLaundryId) return;
-    const raw = draftPrices[item.id];
-    if (raw === undefined) return;
-    const parsed = parseFloat(raw);
-    if (isNaN(parsed) || parsed < 0) {
-      toast.error("מחיר לא תקין");
-      return;
-    }
-    setSavingPrice(item.id);
-    try {
-      await updateDoc(doc(db, "laundries", selectedLaundryId, "pricing", item.id), {
-        price: parsed,
-        updatedAt: serverTimestamp(),
-      });
-      toast.success("מחיר עודכן");
-      setDraftPrices((prev) => {
-        const next = { ...prev };
-        delete next[item.id];
-        return next;
-      });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error("שגיאה בעדכון מחיר: " + msg);
-    } finally {
-      setSavingPrice(null);
-    }
-  };
+  // ── Modal state ────────────────────────────────────────────────────────────
+  const [editItem, setEditItem] = useState<PricingItem | null>(null);
+  const [deleteItem, setDeleteItem] = useState<PricingItem | null>(null);
+  const [modalMode, setModalMode] = useState<"add" | "edit" | null>(null);
 
-  /** Seeds the baseline catalog into the selected laundry's subcollection (only when empty). */
-  const handleSeedBaseline = useCallback(async () => {
-    if (!selectedLaundryId) return;
-    if (items.length > 0) {
-      toast.error("המחירון כבר מכיל פריטים. הנחת ברירת מחדל מוגבלת למחירונים ריקים בלבד.");
-      return;
-    }
-    setIsSeeding(true);
-    try {
-      const pricingCol = collection(db, "laundries", selectedLaundryId, "pricing");
-      const batch = writeBatch(db);
-      BASELINE_PRICING_ITEMS.forEach((item) => {
-        const ref = doc(pricingCol);
-        batch.set(ref, { ...item, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
-      });
-      await batch.commit();
-      toast.success(`נטענו ${BASELINE_PRICING_ITEMS.length} פריטי ברירת מחדל למחירון`);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error("שגיאה בטעינת ברירות מחדל: " + msg);
-    } finally {
-      setIsSeeding(false);
-    }
-  }, [selectedLaundryId, items.length]);
+  const openAdd = () => { setEditItem(null); setModalMode("add"); };
+  const openEdit = (item: PricingItem) => { setEditItem(item); setModalMode("edit"); };
+  const closeModal = () => { setModalMode(null); setEditItem(null); };
 
+  // ── Derived ────────────────────────────────────────────────────────────────
   const availableCount = items.filter((i) => i.isAvailable).length;
   const selectedLaundryName =
     role === "laundry"
-      ? (user as any)?.businessName ?? "מכבסה שלי"
-      : laundries.find((l) => l.id === selectedLaundryId)?.name ?? selectedLaundryId ?? "—";
+      ? ((user as any)?.businessName ?? "מכבסה שלי")
+      : (laundries.find((l) => l.id === selectedLaundryId)?.name ?? selectedLaundryId ?? "—");
 
   return (
     <>
@@ -468,7 +628,7 @@ export function AdminPricingPanel({ laundries = [] }: AdminPricingPanelProps) {
           <div className="text-right min-w-0">
             <span className="block text-sm sm:text-base truncate">ניהול מחירונים</span>
             <span className="text-[10px] sm:text-xs opacity-80 font-semibold block mt-0.5">
-              {loading ? "טוען..." : `${items.length} פריטים, ${availableCount} פעילים`}
+              {loading ? "טוען..." : `${items.length} פריטים · ${availableCount} פעילים`}
             </span>
           </div>
         </div>
@@ -483,59 +643,61 @@ export function AdminPricingPanel({ laundries = [] }: AdminPricingPanelProps) {
       {expanded && (
         <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
 
-          {/* Laundry selector (admin only) */}
-          {laundries.length > 0 && role === "admin" && (
+          {/* Laundry selector — admin only */}
+          {role === "admin" && (
             <div className="px-4 py-3 border-b border-border bg-primary/5 flex items-center gap-3" dir="rtl">
               <Store className="size-4 text-primary shrink-0" />
               <label className="text-xs font-bold text-foreground shrink-0">בחר מכבסה:</label>
-              <select
-                value={selectedLaundryId ?? ""}
-                onChange={(e) => {
-                  setSelectedLaundryId(e.target.value || null);
-                  setDraftPrices({});
-                }}
-                className="flex-1 h-9 px-3 rounded-xl border border-muted-foreground/20 bg-background text-foreground text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary text-right appearance-none"
-                dir="rtl"
-              >
-                <option value="">— בחר מכבסה —</option>
-                {laundries.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    🏪 {l.name}
-                  </option>
-                ))}
-              </select>
+              {laundries.length === 0 ? (
+                <span className="text-xs text-muted-foreground italic">אין מכבסות רשומות במערכת</span>
+              ) : (
+                <select
+                  value={selectedLaundryId ?? ""}
+                  onChange={(e) => {
+                    setSelectedLaundryId(e.target.value || null);
+                    setDraftPrices({});
+                  }}
+                  className="flex-1 h-9 px-3 rounded-xl border border-muted-foreground/20 bg-background text-foreground text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary text-right appearance-none"
+                  dir="rtl"
+                >
+                  <option value="">— בחר מכבסה —</option>
+                  {laundries.map((l) => (
+                    <option key={l.id} value={l.id}>🏪 {l.name}</option>
+                  ))}
+                </select>
+              )}
             </div>
           )}
 
           {/* No selection guard */}
           {!selectedLaundryId && (
-            <div className="py-12 text-center text-muted-foreground text-sm">
-              <p className="text-3xl mb-2">🏪</p>
-              בחר מכבסה כדי לנהל את המחירון שלה
+            <div className="py-14 text-center text-muted-foreground text-sm">
+              <p className="text-4xl mb-3">🏪</p>
+              <p className="font-semibold">בחר מכבסה כדי לנהל את המחירון שלה</p>
             </div>
           )}
 
           {selectedLaundryId && (
             <>
               {/* Toolbar */}
-              <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
-                <span className="text-sm font-black text-foreground">
-                  מחירון: {selectedLaundryName}
-                </span>
-                <div className="flex items-center gap-2">
-                  {/* Seed baseline (only when empty) */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30" dir="rtl">
+                <div className="min-w-0">
+                  <p className="text-sm font-black text-foreground truncate">
+                    {selectedLaundryName}
+                  </p>
+                  {role === "admin" && (
+                    <p className="text-[10px] text-muted-foreground mt-0.5">מזהה: {selectedLaundryId}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
                   {items.length === 0 && !loading && (
                     <button
                       onClick={handleSeedBaseline}
                       disabled={isSeeding}
                       className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-amber-100 text-amber-700 hover:bg-amber-200 transition active:scale-95 disabled:opacity-50"
                     >
-                      {isSeeding ? (
-                        <Loader2 className="size-3.5 animate-spin" />
-                      ) : (
-                        <Database className="size-3.5" />
-                      )}
-                      טען קטלוג ברירת מחדל
+                      {isSeeding ? <Loader2 className="size-3.5 animate-spin" /> : <Database className="size-3.5" />}
+                      טען ברירת מחדל
                     </button>
                   )}
                   <button
@@ -548,66 +710,54 @@ export function AdminPricingPanel({ laundries = [] }: AdminPricingPanelProps) {
                 </div>
               </div>
 
-              {/* Quick Category Manager (admin only) */}
+              {/* Quick Category Manager — admin only */}
               {role === "admin" && (
-                <div className="px-4 py-3 border-b border-border bg-muted/10 flex flex-col gap-3 text-right dir-rtl" dir="rtl">
-                  <span className="text-xs font-bold text-muted-foreground block">ניהול קטגוריות מהיר</span>
+                <div className="px-4 py-3 border-b border-border bg-muted/10" dir="rtl">
+                  <span className="text-xs font-bold text-muted-foreground block mb-2">ניהול קטגוריות</span>
                   <form onSubmit={handleCreateCategory} className="flex gap-2 items-center">
-                    <div className="flex-1 flex gap-2">
-                      <Input
-                        value={newCatLabel}
-                        onChange={(e) => setNewCatLabel(e.target.value)}
-                        placeholder="שם קטגוריה חדשה (לדוגמה: נעליים)"
-                        className="text-right text-xs bg-background"
-                        disabled={isAddingCat}
-                      />
-                      <Input
-                        value={newCatEmoji}
-                        onChange={(e) => setNewCatEmoji(e.target.value)}
-                        placeholder="אימוג׳י (👕)"
-                        className="w-16 text-center text-xs bg-background"
-                        disabled={isAddingCat}
-                      />
-                    </div>
+                    <Input
+                      value={newCatLabel}
+                      onChange={(e) => setNewCatLabel(e.target.value)}
+                      placeholder="שם קטגוריה חדשה"
+                      className="text-right text-xs bg-background flex-1"
+                      disabled={isAddingCat}
+                    />
+                    <Input
+                      value={newCatEmoji}
+                      onChange={(e) => setNewCatEmoji(e.target.value)}
+                      placeholder="👕"
+                      className="w-14 text-center text-xs bg-background"
+                      disabled={isAddingCat}
+                    />
                     <button
                       type="submit"
-                      disabled={isAddingCat}
-                      className="h-10 px-3 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition text-xs font-bold shrink-0 flex items-center gap-1 cursor-pointer"
+                      disabled={isAddingCat || !newCatLabel.trim()}
+                      className="h-9 px-3 rounded-xl bg-primary text-primary-foreground text-xs font-bold shrink-0 flex items-center gap-1 disabled:opacity-50 transition active:scale-95"
                     >
-                      {isAddingCat ? (
-                        <Loader2 className="size-3 animate-spin" />
-                      ) : (
-                        <Plus className="size-3" />
-                      )}
-                      <span>+ הוסף קטגוריה חדשה</span>
+                      {isAddingCat ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />}
+                      הוסף
                     </button>
                   </form>
-
-                  {/* List of existing categories */}
-                  <div className="flex flex-wrap gap-1.5 items-center mt-1">
-                    <span className="text-[11px] font-bold text-muted-foreground ml-1">קטגוריות קיימות:</span>
+                  <div className="flex flex-wrap gap-1.5 mt-2">
                     {categories.map((c) => (
                       <div
                         key={c.id}
-                        className={`flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full border border-border/40 ${c.colorClass}`}
+                        className={`flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full border border-border/40 ${c.colorClass}`}
                       >
                         <span>{c.emoji}</span>
                         <span>{c.label_he}</span>
                         {["washing", "ironing", "dry_cleaning", "special"].includes(c.id) ? (
-                          <span
-                            className="text-muted-foreground/35 mr-1 p-0.5 flex items-center justify-center cursor-not-allowed"
-                            title="קטגוריית בסיס (לא ניתן למחוק)"
-                          >
-                            <Trash2 className="size-3" />
+                          <span className="opacity-25 ml-0.5 cursor-not-allowed" title="קטגוריית בסיס">
+                            <X className="size-2.5" />
                           </span>
                         ) : (
                           <button
                             type="button"
                             onClick={() => handleDeleteCategory(c.id, c.label_he)}
-                            className="hover:text-destructive transition mr-1 cursor-pointer p-0.5 rounded-full hover:bg-black/5 flex items-center justify-center"
-                            title={`מחק את ${c.label_he}`}
+                            className="ml-0.5 hover:text-destructive transition rounded-full"
+                            title={`מחק ${c.label_he}`}
                           >
-                            <Trash2 className="size-3" />
+                            <X className="size-2.5" />
                           </button>
                         )}
                       </div>
@@ -618,60 +768,57 @@ export function AdminPricingPanel({ laundries = [] }: AdminPricingPanelProps) {
 
               {/* Loading */}
               {loading && (
-                <div className="py-12 flex justify-center">
+                <div className="py-14 flex justify-center">
                   <Loader2 className="size-7 text-primary animate-spin" />
                 </div>
               )}
 
               {/* Error */}
               {error && !loading && (
-                <p className="text-center py-8 text-sm text-destructive">{error}</p>
+                <p className="text-center py-10 text-sm text-destructive font-semibold">{error}</p>
               )}
 
               {/* Empty */}
               {!loading && !error && items.length === 0 && (
-                <div className="py-12 text-center text-muted-foreground text-sm">
-                  <p className="text-3xl mb-2">🏷️</p>
-                  <p className="font-semibold mb-1">המחירון ריק</p>
-                  <p className="text-xs">לחץ "טען קטלוג ברירת מחדל" כדי להתחיל, או הוסף פריטים ידנית.</p>
+                <div className="py-14 text-center text-muted-foreground text-sm">
+                  <p className="text-4xl mb-3">🏷️</p>
+                  <p className="font-bold text-foreground mb-1">המחירון ריק</p>
+                  <p className="text-xs">לחץ "טען ברירת מחדל" כדי להוסיף פריטים מוכנים, או לחץ "הוסף פריט".</p>
                 </div>
               )}
 
-              {/* Rows */}
+              {/* Item rows */}
               {!loading && !error && items.length > 0 && (
                 <div className="divide-y divide-border">
                   {items.map((item) => {
                     const meta = resolveCategoryMeta(item.category, categories);
                     const draftPrice = draftPrices[item.id];
-                    const displayPrice =
-                      draftPrice !== undefined ? draftPrice : String(item.price);
-                    const isDirty =
-                      draftPrice !== undefined && parseFloat(draftPrice) !== item.price;
+                    const displayPrice = draftPrice !== undefined ? draftPrice : String(item.price);
+                    const isDirty = draftPrice !== undefined && parseFloat(draftPrice) !== item.price;
 
                     return (
                       <div
                         key={item.id}
-                        className={`flex items-center gap-2 px-4 py-3 transition ${
+                        className={`flex items-center gap-2 px-3 sm:px-4 py-3 transition-colors hover:bg-muted/20 ${
                           item.isAvailable ? "" : "opacity-50"
                         }`}
+                        dir="rtl"
                       >
-                        {/* Category dot */}
+                        {/* Category chip */}
                         <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${meta.colorClass}`}
+                          className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${meta.colorClass}`}
+                          title={meta.label_he}
                         >
                           {meta.emoji}
                         </span>
 
                         {/* Name + description */}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-bold text-foreground truncate">
-                            {item.name_he}
-                          </p>
+                        <div className="flex-1 min-w-0 text-right">
+                          <p className="text-sm font-bold text-foreground truncate">{item.name_he}</p>
                           {item.description_he && (
-                            <p className="text-[11px] text-muted-foreground truncate">
-                              {item.description_he}
-                            </p>
+                            <p className="text-[11px] text-muted-foreground truncate">{item.description_he}</p>
                           )}
+                          <p className="text-[10px] text-muted-foreground/60">{meta.label_he}</p>
                         </div>
 
                         {/* Inline price input */}
@@ -686,16 +833,11 @@ export function AdminPricingPanel({ laundries = [] }: AdminPricingPanelProps) {
                               setDraftPrices((prev) => ({ ...prev, [item.id]: e.target.value }))
                             }
                             onBlur={() => isDirty && handleSaveInlinePrice(item)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") e.currentTarget.blur();
-                            }}
+                            onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
                             className="w-16 text-right text-sm font-black border border-muted-foreground/20 rounded-lg px-2 py-1 bg-background focus:outline-none focus:ring-2 focus:ring-primary"
-                            style={{ fontSize: 14 }}
                           />
-                          <span className="text-[10px] text-muted-foreground">{item.unit}</span>
-                          {savingPrice === item.id && (
-                            <Loader2 className="size-3.5 text-primary animate-spin" />
-                          )}
+                          <span className="text-[10px] text-muted-foreground hidden sm:inline">{item.unit}</span>
+                          {savingPrice === item.id && <Loader2 className="size-3.5 text-primary animate-spin" />}
                         </div>
 
                         {/* Availability toggle */}
@@ -704,7 +846,7 @@ export function AdminPricingPanel({ laundries = [] }: AdminPricingPanelProps) {
                           onChange={() => handleToggleAvailable(item)}
                         />
 
-                        {/* Actions */}
+                        {/* Edit & Delete */}
                         <div className="flex gap-1 shrink-0">
                           <button
                             onClick={() => openEdit(item)}
@@ -714,7 +856,7 @@ export function AdminPricingPanel({ laundries = [] }: AdminPricingPanelProps) {
                             <Edit2 className="size-3.5" />
                           </button>
                           <button
-                            onClick={() => handleDelete(item)}
+                            onClick={() => setDeleteItem(item)}
                             className="size-8 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20 flex items-center justify-center transition active:scale-90"
                             title="מחק פריט"
                           >
@@ -731,14 +873,23 @@ export function AdminPricingPanel({ laundries = [] }: AdminPricingPanelProps) {
         </div>
       )}
 
-      {/* ── Form modal ──────────────────────────────────────────── */}
-      {modalOpen && editingInitial !== null && selectedLaundryId && (
+      {/* ── Edit / Add modal ────────────────────────────────────── */}
+      {modalMode !== null && selectedLaundryId && (
         <ItemFormModal
-          open={modalOpen}
-          initial={editingInitial}
-          editingId={editingId}
+          key={editItem?.id ?? "new"}
+          open={modalMode !== null}
+          item={modalMode === "edit" ? editItem : null}
           laundryId={selectedLaundryId}
           onClose={closeModal}
+        />
+      )}
+
+      {/* ── Delete confirm modal ─────────────────────────────────── */}
+      {deleteItem && selectedLaundryId && (
+        <DeleteConfirmModal
+          item={deleteItem}
+          laundryId={selectedLaundryId}
+          onClose={() => setDeleteItem(null)}
         />
       )}
     </>
