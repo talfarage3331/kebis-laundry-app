@@ -625,7 +625,7 @@ function LaundryDashboard() {
 
   /* ── render ─────────────────────────────────────────────────────── */
   const effectiveStatus = wizardCompleteState.completed && wizardCompleteState.status ? wizardCompleteState.status : user?.status;
-  const isPendingSetup = effectiveStatus === "pending_setup" || (!user?.onboardingCompleted && !wizardCompleteState.completed);
+  const isPendingSetup = effectiveStatus === "pending_setup" && (!user?.onboardingCompleted && !wizardCompleteState.completed);
 
   if (user?.role === "laundry" && isPendingSetup) {
     return <OnboardingWizard laundryId={user.uid} onComplete={(status) => setWizardCompleteState({ completed: true, status })} />;

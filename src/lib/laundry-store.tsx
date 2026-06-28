@@ -275,6 +275,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
 
             let associatedLaundryId: string | undefined = undefined;
             let userStatus: "pending_setup" | "pending_approval" | "approved" | "suspended" | undefined = undefined;
+            let onboardingCompleted: boolean | undefined = undefined;
 
             if (userDocSnap.exists()) {
               const data = userDocSnap.data();
@@ -282,6 +283,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
               userRole = data.role || userRole;
               associatedLaundryId = data.associatedLaundryId;
               userStatus = data.status;
+              onboardingCompleted = data.onboardingCompleted;
             } else {
               // Create user profile document in background
               setDoc(
@@ -328,6 +330,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
               email: email,
               role: userRole,
               status: userStatus,
+              onboardingCompleted: onboardingCompleted,
               associatedLaundryId: associatedLaundryId,
             });
             setIsRoleLoading(false);
