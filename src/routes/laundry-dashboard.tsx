@@ -845,36 +845,34 @@ function LaundryDashboard() {
                 </div>
                 
                 <div className="space-y-3">
-                  <div className={`p-4 rounded-xl border flex items-center justify-between transition-all ${fastDeliveryEnabled ? "bg-slate-50 border-primary/30" : "bg-white border-slate-100 opacity-70"}`}>
+                  <div 
+                    onClick={() => toggleDeliveryAvailability("fast", !fastDeliveryEnabled)}
+                    className={`p-4 rounded-xl border flex items-center justify-between transition-all cursor-pointer select-none ${fastDeliveryEnabled ? "bg-slate-50 border-primary/30" : "bg-white border-slate-100 opacity-70"}`}
+                  >
                     <div>
                       <h3 className="font-bold text-slate-800 text-sm">משלוח מהיר (תוך 24 שעות)</h3>
                       <p className="text-xs text-slate-500 mt-0.5">זמינות לקבלת הזמנות מהירות רגילות</p>
                     </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input 
-                        type="checkbox" 
-                        className="sr-only peer"
-                        checked={fastDeliveryEnabled}
-                        onChange={(e) => toggleDeliveryAvailability("fast", e.target.checked)}
-                      />
-                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-[-100%] peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                    </label>
+                    <div className="relative inline-flex items-center">
+                      <div className={`w-11 h-6 rounded-full transition-colors duration-200 ${fastDeliveryEnabled ? "bg-primary" : "bg-slate-200"}`}>
+                        <div className={`absolute top-[2px] w-5 h-5 bg-white border border-slate-300 rounded-full transition-transform duration-200 ${fastDeliveryEnabled ? "translate-x-0 left-[2px]" : "translate-x-[20px] left-[2px]"}`} />
+                      </div>
+                    </div>
                   </div>
 
-                  <div className={`p-4 rounded-xl border flex items-center justify-between transition-all ${expressDeliveryEnabled ? "bg-slate-50 border-primary/30" : "bg-white border-slate-100 opacity-70"}`}>
+                  <div 
+                    onClick={() => toggleDeliveryAvailability("express", !expressDeliveryEnabled)}
+                    className={`p-4 rounded-xl border flex items-center justify-between transition-all cursor-pointer select-none ${expressDeliveryEnabled ? "bg-slate-50 border-primary/30" : "bg-white border-slate-100 opacity-70"}`}
+                  >
                     <div>
                       <h3 className="font-bold text-slate-800 text-sm">משלוח אקספרס (מהיום להיום)</h3>
                       <p className="text-xs text-slate-500 mt-0.5">זמינות לקבלת הזמנות סופר-דחופות</p>
                     </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input 
-                        type="checkbox" 
-                        className="sr-only peer"
-                        checked={expressDeliveryEnabled}
-                        onChange={(e) => toggleDeliveryAvailability("express", e.target.checked)}
-                      />
-                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-[-100%] peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                    </label>
+                    <div className="relative inline-flex items-center">
+                      <div className={`w-11 h-6 rounded-full transition-colors duration-200 ${expressDeliveryEnabled ? "bg-primary" : "bg-slate-200"}`}>
+                        <div className={`absolute top-[2px] w-5 h-5 bg-white border border-slate-300 rounded-full transition-transform duration-200 ${expressDeliveryEnabled ? "translate-x-0 left-[2px]" : "translate-x-[20px] left-[2px]"}`} />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
