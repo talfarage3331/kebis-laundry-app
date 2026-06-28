@@ -1,23 +1,26 @@
 /**
- * AdminPricingPanel — full CRUD pricing management for admins.
+ * AdminPricingPanel — full CRUD pricing management (per-laundry).
  *
- * In "Global Default" mode: reads/writes to the /pricing collection.
- * In "Vendor Override" mode (a specific laundry is selected):
- *   - Reads merged items (global + vendor overrides) via usePricing(laundryId)
- *   - Writes price/availability overrides to /vendor-pricing with doc ID laundryId_itemId
- *   - "Restore Default" deletes the override document, reverting to global price
- *   - Add Item is disabled (vendors share the global catalog)
+ * Every pricing item lives exclusively in `/laundries/{laundryId}/pricing/{itemId}`.
+ * - Admin: sees a laundry selector; all mutations apply to the selected laundry only.
+ * - Laundry vendor: auto-scoped to their own uid; can add, edit, delete items freely.
+ * - No global price list. No cross-vendor side effects.
+ *
+ * Migration helper: "Seed Default Catalog" button seeds the BASELINE_PRICING_ITEMS
+ * into the selected laundry's subcollection (only when it is empty), giving each
+ * laundry a starting catalog when they first open the panel.
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   collection,
   doc,
   addDoc,
   updateDoc,
   deleteDoc,
-  setDoc,
   serverTimestamp,
+  getDocs,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import {
@@ -29,8 +32,8 @@ import {
   ChevronDown,
   ChevronUp,
   Loader2,
-  RotateCcw,
   Store,
+  Database,
 } from "lucide-react";
 import {
   Dialog,
@@ -41,7 +44,12 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { usePricing, resolveCategoryMeta, type PricingItem } from "@/hooks/use-pricing";
+import {
+  usePricing,
+  resolveCategoryMeta,
+  BASELINE_PRICING_ITEMS,
+  type PricingItem,
+} from "@/hooks/use-pricing";
 import { useCategories } from "@/hooks/use-categories";
 import { useLaundry } from "@/lib/laundry-store";
 
@@ -99,10 +107,11 @@ interface ItemFormProps {
   open: boolean;
   initial: Omit<PricingItem, "id"> | null;
   editingId: string | null;
+  laundryId: string;
   onClose: () => void;
 }
 
-function ItemFormModal({ open, initial, editingId, onClose }: ItemFormProps) {
+function ItemFormModal({ open, initial, editingId, laundryId, onClose }: ItemFormProps) {
   const [form, setForm] = useState<Omit<PricingItem, "id">>(initial ?? EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const { categories } = useCategories();
@@ -124,15 +133,16 @@ function ItemFormModal({ open, initial, editingId, onClose }: ItemFormProps) {
 
     setSaving(true);
     try {
+      const pricingCol = collection(db, "laundries", laundryId, "pricing");
       if (editingId) {
-        await updateDoc(doc(db, "pricing", editingId), {
+        await updateDoc(doc(pricingCol, editingId), {
           ...form,
           price: Number(form.price),
           updatedAt: serverTimestamp(),
         });
         toast.success("הפריט עודכן בהצלחה");
       } else {
-        await addDoc(collection(db, "pricing"), {
+        await addDoc(pricingCol, {
           ...form,
           price: Number(form.price),
           createdAt: serverTimestamp(),
@@ -276,24 +286,28 @@ export function AdminPricingPanel({ laundries = [] }: AdminPricingPanelProps) {
   const { user, role } = useLaundry();
   const [expanded, setExpanded] = useState(false);
 
-  // Vendor selector — "global" means the base price list, anything else is a vendor ID
-  const [selectedLaundryId, setSelectedLaundryId] = useState<string>("global");
-  const isVendorMode = selectedLaundryId !== "global";
+  // For admins: starts on the first laundry in the list (or null while loading).
+  // For vendors: locked to their own uid.
+  const [selectedLaundryId, setSelectedLaundryId] = useState<string | null>(null);
 
-  // Keep selectedLaundryId in sync with vendor's UID if they are a laundry vendor
   useEffect(() => {
     if (role === "laundry" && user?.uid) {
       setSelectedLaundryId(user.uid);
+    } else if (role === "admin" && laundries.length > 0 && !selectedLaundryId) {
+      setSelectedLaundryId(laundries[0].id);
     }
-  }, [role, user?.uid]);
+  }, [role, user?.uid, laundries]);
 
-  const { items, loading, error } = usePricing(isVendorMode ? selectedLaundryId : null);
+  const { items, loading, error } = usePricing(selectedLaundryId);
 
   // Category management state
   const { categories, addCategory, deleteCategory } = useCategories();
   const [newCatLabel, setNewCatLabel] = useState("");
   const [newCatEmoji, setNewCatEmoji] = useState("👕");
   const [isAddingCat, setIsAddingCat] = useState(false);
+
+  // Seed state
+  const [isSeeding, setIsSeeding] = useState(false);
 
   const handleCreateCategory = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -331,7 +345,7 @@ export function AdminPricingPanel({ laundries = [] }: AdminPricingPanelProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingInitial, setEditingInitial] = useState<Omit<PricingItem, "id"> | null>(null);
 
-  // Inline price edit state: itemId → draft price string
+  // Inline price edit state
   const [draftPrices, setDraftPrices] = useState<Record<string, string>>({});
   const [savingPrice, setSavingPrice] = useState<string | null>(null);
 
@@ -355,9 +369,10 @@ export function AdminPricingPanel({ laundries = [] }: AdminPricingPanelProps) {
   };
 
   const handleDelete = async (item: PricingItem) => {
+    if (!selectedLaundryId) return;
     if (!confirm(`למחוק את "${item.name_he}"? פעולה זו בלתי הפיכה.`)) return;
     try {
-      await deleteDoc(doc(db, "pricing", item.id));
+      await deleteDoc(doc(db, "laundries", selectedLaundryId, "pricing", item.id));
       toast.success("הפריט נמחק");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -366,40 +381,21 @@ export function AdminPricingPanel({ laundries = [] }: AdminPricingPanelProps) {
   };
 
   const handleToggleAvailable = async (item: PricingItem) => {
-    if (isVendorMode) {
-      const overrideDocId = `${selectedLaundryId}_${item.id}`;
-      try {
-        await setDoc(
-          doc(db, "vendor-pricing", overrideDocId),
-          {
-            laundryId: selectedLaundryId,
-            itemId: item.id,
-            price: item.price,
-            isAvailable: !item.isAvailable,
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true },
-        );
-        toast.success(!item.isAvailable ? "הפריט הופעל עבור מכבסה זו" : "הפריט הוסתר עבור מכבסה זו");
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        toast.error("שגיאה בעדכון: " + msg);
-      }
-    } else {
-      try {
-        await updateDoc(doc(db, "pricing", item.id), {
-          isAvailable: !item.isAvailable,
-          updatedAt: serverTimestamp(),
-        });
-        toast.success(item.isAvailable ? "הפריט הוסתר" : "הפריט הופעל");
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        toast.error("שגיאה בעדכון: " + msg);
-      }
+    if (!selectedLaundryId) return;
+    try {
+      await updateDoc(doc(db, "laundries", selectedLaundryId, "pricing", item.id), {
+        isAvailable: !item.isAvailable,
+        updatedAt: serverTimestamp(),
+      });
+      toast.success(item.isAvailable ? "הפריט הוסתר" : "הפריט הופעל");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error("שגיאה בעדכון: " + msg);
     }
   };
 
   const handleSaveInlinePrice = async (item: PricingItem) => {
+    if (!selectedLaundryId) return;
     const raw = draftPrices[item.id];
     if (raw === undefined) return;
     const parsed = parseFloat(raw);
@@ -409,27 +405,11 @@ export function AdminPricingPanel({ laundries = [] }: AdminPricingPanelProps) {
     }
     setSavingPrice(item.id);
     try {
-      if (isVendorMode) {
-        const overrideDocId = `${selectedLaundryId}_${item.id}`;
-        await setDoc(
-          doc(db, "vendor-pricing", overrideDocId),
-          {
-            laundryId: selectedLaundryId,
-            itemId: item.id,
-            price: parsed,
-            isAvailable: item.isAvailable,
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true },
-        );
-        toast.success("מחיר ייחודי לוונדור עודכן");
-      } else {
-        await updateDoc(doc(db, "pricing", item.id), {
-          price: parsed,
-          updatedAt: serverTimestamp(),
-        });
-        toast.success("מחיר עודכן");
-      }
+      await updateDoc(doc(db, "laundries", selectedLaundryId, "pricing", item.id), {
+        price: parsed,
+        updatedAt: serverTimestamp(),
+      });
+      toast.success("מחיר עודכן");
       setDraftPrices((prev) => {
         const next = { ...prev };
         delete next[item.id];
@@ -443,19 +423,36 @@ export function AdminPricingPanel({ laundries = [] }: AdminPricingPanelProps) {
     }
   };
 
-  const handleRestoreDefault = async (item: PricingItem) => {
-    if (!item.overrideId) return;
-    if (!confirm(`האם אתה בטוח שברצונך לאפס את המחיר של "${item.name_he}" לברירת המחדל הגלובלית?`)) return;
+  /** Seeds the baseline catalog into the selected laundry's subcollection (only when empty). */
+  const handleSeedBaseline = useCallback(async () => {
+    if (!selectedLaundryId) return;
+    if (items.length > 0) {
+      toast.error("המחירון כבר מכיל פריטים. הנחת ברירת מחדל מוגבלת למחירונים ריקים בלבד.");
+      return;
+    }
+    setIsSeeding(true);
     try {
-      await deleteDoc(doc(db, "vendor-pricing", item.overrideId));
-      toast.success("המחיר אופס לברירת המחדל הגלובלית");
+      const pricingCol = collection(db, "laundries", selectedLaundryId, "pricing");
+      const batch = writeBatch(db);
+      BASELINE_PRICING_ITEMS.forEach((item) => {
+        const ref = doc(pricingCol);
+        batch.set(ref, { ...item, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+      });
+      await batch.commit();
+      toast.success(`נטענו ${BASELINE_PRICING_ITEMS.length} פריטי ברירת מחדל למחירון`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      toast.error("שגיאה באיפוס: " + msg);
+      toast.error("שגיאה בטעינת ברירות מחדל: " + msg);
+    } finally {
+      setIsSeeding(false);
     }
-  };
+  }, [selectedLaundryId, items.length]);
 
   const availableCount = items.filter((i) => i.isAvailable).length;
+  const selectedLaundryName =
+    role === "laundry"
+      ? (user as any)?.businessName ?? "מכבסה שלי"
+      : laundries.find((l) => l.id === selectedLaundryId)?.name ?? selectedLaundryId ?? "—";
 
   return (
     <>
@@ -469,7 +466,7 @@ export function AdminPricingPanel({ laundries = [] }: AdminPricingPanelProps) {
             <Tag className="size-4 sm:size-5" />
           </div>
           <div className="text-right min-w-0">
-            <span className="block text-sm sm:text-base truncate">ניהול מחירון</span>
+            <span className="block text-sm sm:text-base truncate">ניהול מחירונים</span>
             <span className="text-[10px] sm:text-xs opacity-80 font-semibold block mt-0.5">
               {loading ? "טוען..." : `${items.length} פריטים, ${availableCount} פעילים`}
             </span>
@@ -486,245 +483,229 @@ export function AdminPricingPanel({ laundries = [] }: AdminPricingPanelProps) {
       {expanded && (
         <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
 
-          {/* Vendor selector */}
+          {/* Laundry selector (admin only) */}
           {laundries.length > 0 && role === "admin" && (
             <div className="px-4 py-3 border-b border-border bg-primary/5 flex items-center gap-3" dir="rtl">
               <Store className="size-4 text-primary shrink-0" />
               <label className="text-xs font-bold text-foreground shrink-0">בחר מכבסה:</label>
               <select
-                value={selectedLaundryId}
+                value={selectedLaundryId ?? ""}
                 onChange={(e) => {
-                  setSelectedLaundryId(e.target.value);
+                  setSelectedLaundryId(e.target.value || null);
                   setDraftPrices({});
                 }}
                 className="flex-1 h-9 px-3 rounded-xl border border-muted-foreground/20 bg-background text-foreground text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary text-right appearance-none"
                 dir="rtl"
               >
-                <option value="global">🌐 מחירון גלובלי (ברירת מחדל)</option>
+                <option value="">— בחר מכבסה —</option>
                 {laundries.map((l) => (
                   <option key={l.id} value={l.id}>
                     🏪 {l.name}
                   </option>
                 ))}
               </select>
-              {isVendorMode && (
-                <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200 shrink-0">
-                  מחיר מכבסה ספציפית
-                </span>
-              )}
             </div>
           )}
 
-          {/* Toolbar */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
-            <span className="text-sm font-black text-foreground">
-              {isVendorMode
-                ? `מחירון: ${laundries.find((l) => l.id === selectedLaundryId)?.name ?? selectedLaundryId}`
-                : "פריטי מחירון גלובלי"}
-            </span>
-            {!isVendorMode && role === "admin" && (
-              <button
-                onClick={openAdd}
-                className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition active:scale-95"
-              >
-                <Plus className="size-3.5" />
-                הוסף פריט
-              </button>
-            )}
-          </div>
-
-          {/* Quick Category Manager (global only) */}
-          {!isVendorMode && role === "admin" && (
-            <div className="px-4 py-3 border-b border-border bg-muted/10 flex flex-col gap-3 text-right dir-rtl" dir="rtl">
-              <span className="text-xs font-bold text-muted-foreground block">ניהול קטגוריות מהיר</span>
-              <form onSubmit={handleCreateCategory} className="flex gap-2 items-center">
-                <div className="flex-1 flex gap-2">
-                  <Input
-                    value={newCatLabel}
-                    onChange={(e) => setNewCatLabel(e.target.value)}
-                    placeholder="שם קטגוריה חדשה (לדוגמה: נעליים)"
-                    className="text-right text-xs bg-background"
-                    disabled={isAddingCat}
-                  />
-                  <Input
-                    value={newCatEmoji}
-                    onChange={(e) => setNewCatEmoji(e.target.value)}
-                    placeholder="אימוג׳י (👕)"
-                    className="w-16 text-center text-xs bg-background"
-                    disabled={isAddingCat}
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={isAddingCat}
-                  className="h-10 px-3 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition text-xs font-bold shrink-0 flex items-center gap-1 cursor-pointer"
-                >
-                  {isAddingCat ? (
-                    <Loader2 className="size-3 animate-spin" />
-                  ) : (
-                    <Plus className="size-3" />
-                  )}
-                  <span>+ הוסף קטגוריה חדשה</span>
-                </button>
-              </form>
-
-              {/* List of existing categories */}
-              <div className="flex flex-wrap gap-1.5 items-center mt-1">
-                <span className="text-[11px] font-bold text-muted-foreground ml-1">קטגוריות קיימות:</span>
-                {categories.map((c) => (
-                  <div
-                    key={c.id}
-                    className={`flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full border border-border/40 ${c.colorClass}`}
-                  >
-                    <span>{c.emoji}</span>
-                    <span>{c.label_he}</span>
-                    {["washing", "ironing", "dry_cleaning", "special"].includes(c.id) ? (
-                      <span
-                        className="text-muted-foreground/35 mr-1 p-0.5 flex items-center justify-center cursor-not-allowed"
-                        title="קטגוריית בסיס (לא ניתן למחוק)"
-                      >
-                        <Trash2 className="size-3" />
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteCategory(c.id, c.label_he)}
-                        className="hover:text-destructive transition mr-1 cursor-pointer p-0.5 rounded-full hover:bg-black/5 flex items-center justify-center"
-                        title={`מחק את ${c.label_he}`}
-                      >
-                        <Trash2 className="size-3" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Vendor override banner */}
-          {isVendorMode && (
-            <div className="px-4 py-2.5 border-b border-amber-200 bg-amber-50 text-right" dir="rtl">
-              <p className="text-[11px] text-amber-700 font-semibold">
-                💡 כאן ניתן לקבוע מחירים ייחודיים עבור מכבסה זו. שינויים כאן לא ישפיעו על המחירון הגלובלי או על מכבסות אחרות.
-                פריטים המסומנים ב-<span className="font-black text-amber-800">🔄</span> שונו מהמחיר הגלובלי.
-              </p>
-            </div>
-          )}
-
-          {/* Loading */}
-          {loading && (
-            <div className="py-12 flex justify-center">
-              <Loader2 className="size-7 text-primary animate-spin" />
-            </div>
-          )}
-
-          {/* Error */}
-          {error && !loading && (
-            <p className="text-center py-8 text-sm text-destructive">{error}</p>
-          )}
-
-          {/* Empty */}
-          {!loading && !error && items.length === 0 && (
+          {/* No selection guard */}
+          {!selectedLaundryId && (
             <div className="py-12 text-center text-muted-foreground text-sm">
-              <p className="text-3xl mb-2">🏷️</p>
-              אין פריטים במחירון. לחץ "הוסף פריט" כדי להתחיל.
+              <p className="text-3xl mb-2">🏪</p>
+              בחר מכבסה כדי לנהל את המחירון שלה
             </div>
           )}
 
-          {/* Rows */}
-          {!loading && !error && items.length > 0 && (
-            <div className="divide-y divide-border">
-              {items.map((item) => {
-                const meta = resolveCategoryMeta(item.category, categories);
-                const draftPrice = draftPrices[item.id];
-                const displayPrice =
-                  draftPrice !== undefined ? draftPrice : String(item.price);
-                const isDirty = draftPrice !== undefined && parseFloat(draftPrice) !== item.price;
-
-                return (
-                  <div
-                    key={item.id}
-                    className={`flex items-center gap-2 px-4 py-3 transition ${
-                      item.isAvailable ? "" : "opacity-50"
-                    } ${item.isOverridden ? "bg-amber-50/50" : ""}`}
-                  >
-                    {/* Category dot */}
-                    <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${meta.colorClass}`}
+          {selectedLaundryId && (
+            <>
+              {/* Toolbar */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
+                <span className="text-sm font-black text-foreground">
+                  מחירון: {selectedLaundryName}
+                </span>
+                <div className="flex items-center gap-2">
+                  {/* Seed baseline (only when empty) */}
+                  {items.length === 0 && !loading && (
+                    <button
+                      onClick={handleSeedBaseline}
+                      disabled={isSeeding}
+                      className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-amber-100 text-amber-700 hover:bg-amber-200 transition active:scale-95 disabled:opacity-50"
                     >
-                      {meta.emoji}
-                    </span>
-
-                    {/* Name + description */}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-foreground truncate flex items-center gap-1.5">
-                        {item.name_he}
-                        {item.isOverridden && (
-                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200 shrink-0">
-                            🔄 מחיר מותאם
-                          </span>
-                        )}
-                      </p>
-                      {item.description_he && (
-                        <p className="text-[11px] text-muted-foreground truncate">
-                          {item.description_he}
-                        </p>
+                      {isSeeding ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <Database className="size-3.5" />
                       )}
-                      {item.isOverridden && item.originalPrice !== undefined && (
-                        <p className="text-[10px] text-muted-foreground/60">
-                          מחיר גלובלי: ₪{item.originalPrice}
-                        </p>
-                      )}
-                    </div>
+                      טען קטלוג ברירת מחדל
+                    </button>
+                  )}
+                  <button
+                    onClick={openAdd}
+                    className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition active:scale-95"
+                  >
+                    <Plus className="size-3.5" />
+                    הוסף פריט
+                  </button>
+                </div>
+              </div>
 
-                    {/* Inline price input */}
-                    <div className="flex items-center gap-1 shrink-0">
-                      <span className="text-xs text-muted-foreground">₪</span>
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.5}
-                        value={displayPrice}
-                        onChange={(e) =>
-                          setDraftPrices((prev) => ({ ...prev, [item.id]: e.target.value }))
-                        }
-                        onBlur={() => isDirty && handleSaveInlinePrice(item)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.currentTarget.blur();
-                          }
-                        }}
-                        className="w-16 text-right text-sm font-black border border-muted-foreground/20 rounded-lg px-2 py-1 bg-background focus:outline-none focus:ring-2 focus:ring-primary"
-                        style={{ fontSize: 14 }}
+              {/* Quick Category Manager (admin only) */}
+              {role === "admin" && (
+                <div className="px-4 py-3 border-b border-border bg-muted/10 flex flex-col gap-3 text-right dir-rtl" dir="rtl">
+                  <span className="text-xs font-bold text-muted-foreground block">ניהול קטגוריות מהיר</span>
+                  <form onSubmit={handleCreateCategory} className="flex gap-2 items-center">
+                    <div className="flex-1 flex gap-2">
+                      <Input
+                        value={newCatLabel}
+                        onChange={(e) => setNewCatLabel(e.target.value)}
+                        placeholder="שם קטגוריה חדשה (לדוגמה: נעליים)"
+                        className="text-right text-xs bg-background"
+                        disabled={isAddingCat}
                       />
-                      <span className="text-[10px] text-muted-foreground">{item.unit}</span>
-                      {savingPrice === item.id && (
-                        <Loader2 className="size-3.5 text-primary animate-spin" />
-                      )}
+                      <Input
+                        value={newCatEmoji}
+                        onChange={(e) => setNewCatEmoji(e.target.value)}
+                        placeholder="אימוג׳י (👕)"
+                        className="w-16 text-center text-xs bg-background"
+                        disabled={isAddingCat}
+                      />
                     </div>
-
-                    {/* Availability toggle */}
-                    <AvailabilityToggle
-                      value={item.isAvailable}
-                      onChange={() => handleToggleAvailable(item)}
-                    />
-
-                    {/* Actions */}
-                    <div className="flex gap-1 shrink-0">
-                      {/* Restore Default (vendor mode only, overridden items) */}
-                      {isVendorMode && item.isOverridden && (
-                        <button
-                          onClick={() => handleRestoreDefault(item)}
-                          className="size-8 rounded-xl bg-amber-100 text-amber-700 hover:bg-amber-200 flex items-center justify-center transition active:scale-90"
-                          title="אפס למחיר הגלובלי"
-                        >
-                          <RotateCcw className="size-3.5" />
-                        </button>
+                    <button
+                      type="submit"
+                      disabled={isAddingCat}
+                      className="h-10 px-3 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition text-xs font-bold shrink-0 flex items-center gap-1 cursor-pointer"
+                    >
+                      {isAddingCat ? (
+                        <Loader2 className="size-3 animate-spin" />
+                      ) : (
+                        <Plus className="size-3" />
                       )}
+                      <span>+ הוסף קטגוריה חדשה</span>
+                    </button>
+                  </form>
 
-                      {/* Edit / Delete (global mode only) */}
-                      {!isVendorMode && role === "admin" && (
-                        <>
+                  {/* List of existing categories */}
+                  <div className="flex flex-wrap gap-1.5 items-center mt-1">
+                    <span className="text-[11px] font-bold text-muted-foreground ml-1">קטגוריות קיימות:</span>
+                    {categories.map((c) => (
+                      <div
+                        key={c.id}
+                        className={`flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full border border-border/40 ${c.colorClass}`}
+                      >
+                        <span>{c.emoji}</span>
+                        <span>{c.label_he}</span>
+                        {["washing", "ironing", "dry_cleaning", "special"].includes(c.id) ? (
+                          <span
+                            className="text-muted-foreground/35 mr-1 p-0.5 flex items-center justify-center cursor-not-allowed"
+                            title="קטגוריית בסיס (לא ניתן למחוק)"
+                          >
+                            <Trash2 className="size-3" />
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCategory(c.id, c.label_he)}
+                            className="hover:text-destructive transition mr-1 cursor-pointer p-0.5 rounded-full hover:bg-black/5 flex items-center justify-center"
+                            title={`מחק את ${c.label_he}`}
+                          >
+                            <Trash2 className="size-3" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Loading */}
+              {loading && (
+                <div className="py-12 flex justify-center">
+                  <Loader2 className="size-7 text-primary animate-spin" />
+                </div>
+              )}
+
+              {/* Error */}
+              {error && !loading && (
+                <p className="text-center py-8 text-sm text-destructive">{error}</p>
+              )}
+
+              {/* Empty */}
+              {!loading && !error && items.length === 0 && (
+                <div className="py-12 text-center text-muted-foreground text-sm">
+                  <p className="text-3xl mb-2">🏷️</p>
+                  <p className="font-semibold mb-1">המחירון ריק</p>
+                  <p className="text-xs">לחץ "טען קטלוג ברירת מחדל" כדי להתחיל, או הוסף פריטים ידנית.</p>
+                </div>
+              )}
+
+              {/* Rows */}
+              {!loading && !error && items.length > 0 && (
+                <div className="divide-y divide-border">
+                  {items.map((item) => {
+                    const meta = resolveCategoryMeta(item.category, categories);
+                    const draftPrice = draftPrices[item.id];
+                    const displayPrice =
+                      draftPrice !== undefined ? draftPrice : String(item.price);
+                    const isDirty =
+                      draftPrice !== undefined && parseFloat(draftPrice) !== item.price;
+
+                    return (
+                      <div
+                        key={item.id}
+                        className={`flex items-center gap-2 px-4 py-3 transition ${
+                          item.isAvailable ? "" : "opacity-50"
+                        }`}
+                      >
+                        {/* Category dot */}
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${meta.colorClass}`}
+                        >
+                          {meta.emoji}
+                        </span>
+
+                        {/* Name + description */}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-foreground truncate">
+                            {item.name_he}
+                          </p>
+                          {item.description_he && (
+                            <p className="text-[11px] text-muted-foreground truncate">
+                              {item.description_he}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Inline price input */}
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="text-xs text-muted-foreground">₪</span>
+                          <input
+                            type="number"
+                            min={0}
+                            step={0.5}
+                            value={displayPrice}
+                            onChange={(e) =>
+                              setDraftPrices((prev) => ({ ...prev, [item.id]: e.target.value }))
+                            }
+                            onBlur={() => isDirty && handleSaveInlinePrice(item)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") e.currentTarget.blur();
+                            }}
+                            className="w-16 text-right text-sm font-black border border-muted-foreground/20 rounded-lg px-2 py-1 bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                            style={{ fontSize: 14 }}
+                          />
+                          <span className="text-[10px] text-muted-foreground">{item.unit}</span>
+                          {savingPrice === item.id && (
+                            <Loader2 className="size-3.5 text-primary animate-spin" />
+                          )}
+                        </div>
+
+                        {/* Availability toggle */}
+                        <AvailabilityToggle
+                          value={item.isAvailable}
+                          onChange={() => handleToggleAvailable(item)}
+                        />
+
+                        {/* Actions */}
+                        <div className="flex gap-1 shrink-0">
                           <button
                             onClick={() => openEdit(item)}
                             className="size-8 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 flex items-center justify-center transition active:scale-90"
@@ -739,27 +720,27 @@ export function AdminPricingPanel({ laundries = [] }: AdminPricingPanelProps) {
                           >
                             <Trash2 className="size-3.5" />
                           </button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
 
       {/* ── Form modal ──────────────────────────────────────────── */}
-      {modalOpen && editingInitial !== null && (
+      {modalOpen && editingInitial !== null && selectedLaundryId && (
         <ItemFormModal
           open={modalOpen}
           initial={editingInitial}
           editingId={editingId}
+          laundryId={selectedLaundryId}
           onClose={closeModal}
         />
       )}
     </>
   );
 }
-

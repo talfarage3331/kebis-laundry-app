@@ -56,11 +56,22 @@ service cloud.firestore {
 
 
     // ──────────────────────────────────────────────────────────────────────
-    // PRICING  (public read, admin write)
+    // PER-LAUNDRY PRICING SUBCOLLECTION
+    // /laundries/{laundryId}/pricing/{itemId}
+    //
+    // Every laundry owns an independent price list.  There is no global
+    // default catalog — each laundry manages its own items in isolation.
+    //   read  : public (customers can view any laundry's price list)
+    //   write : admin OR the authenticated laundry that owns the path
     // ──────────────────────────────────────────────────────────────────────
-    match /pricing/{document=**} {
-      allow read:  if true;
-      allow write: if isAdmin();
+    match /laundries/{laundryId}/pricing/{itemId} {
+      allow read:   if true;
+      allow write:  if isAdmin() || (isSignedIn() && request.auth.uid == laundryId);
+    }
+
+    // CollectionGroup query for `pricing` — used by admin to scan across laundries.
+    match /{path=**}/pricing/{itemId} {
+      allow read: if isAdmin();
     }
 
 
@@ -251,15 +262,7 @@ service cloud.firestore {
     }
 
 
-    // ──────────────────────────────────────────────────────────────────────
-    // VENDOR PRICING OVERRIDES  /vendor-pricing/{overrideId}
-    // overrideId format: laundryId_itemId
-    // ──────────────────────────────────────────────────────────────────────
-    match /vendor-pricing/{overrideId} {
-      allow read:  if true;
-      allow create, update: if isAdmin() || (isLaundry() && request.resource.data.laundryId == request.auth.uid);
-      allow delete: if isAdmin() || (isLaundry() && resource.data.laundryId == request.auth.uid);
-    }
+    // /vendor-pricing collection removed — pricing is now per-laundry subcollection.
 
 
     // ──────────────────────────────────────────────────────────────────────

@@ -1011,7 +1011,7 @@ function AdminDashboard() {
               { key: "users", label: "משתמשים", icon: Users },
               { key: "laundries", label: "מכבסות", icon: Building2 },
               { key: "orders", label: "הזמנות גלובליות", icon: ClipboardList },
-              { key: "pricing", label: "מחירון גלובלי", icon: Tag },
+              { key: "pricing", label: "ניהול מחירונים", icon: Tag },
             ].map((tab) => {
               const Icon = tab.icon;
               return (
@@ -1036,7 +1036,11 @@ function AdminDashboard() {
 
           {/* TAB CONTENT: Pricing */}
           {activeTab === "pricing" && (
-            <AdminPricingPanel />
+            <AdminPricingPanel
+              laundries={profiles
+                .filter((p) => p.role === "laundry")
+                .map((p) => ({ id: p.id, name: p.businessName || p.fullName || p.email }))}
+            />
           )}
 
           {/* TAB CONTENT: Users */}

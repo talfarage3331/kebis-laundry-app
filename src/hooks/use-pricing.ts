@@ -1,9 +1,9 @@
 /**
- * usePricing — real-time subscription to the Firestore `pricing` collection.
+ * usePricing — real-time subscription to a laundry's independent pricing subcollection.
  *
- * Subscribes via `onSnapshot` and properly unsubscribes on cleanup to
- * prevent memory leaks. Safe to use in multiple components simultaneously;
- * each mount gets its own independent listener.
+ * Queries `/laundries/{laundryId}/pricing` exclusively.
+ * Returns an empty array immediately when no laundryId is provided.
+ * No global defaults, no fallback merging, no cross-vendor logic.
  */
 
 import { useEffect, useState } from "react";
@@ -40,10 +40,10 @@ export interface CategoryMeta {
 }
 
 export const STATIC_CATEGORY_META: Record<string, CategoryMeta> = {
-  washing: { label_he: "כביסה", colorClass: "bg-blue-100 text-blue-700", emoji: "👕" },
-  ironing: { label_he: "גיהוץ", colorClass: "bg-amber-100 text-amber-700", emoji: "♨️" },
-  dry_cleaning: { label_he: "ניקוי יבש", colorClass: "bg-purple-100 text-purple-700", emoji: "✨" },
-  special: { label_he: "שירותים מיוחדים", colorClass: "bg-rose-100 text-rose-700", emoji: "⭐" },
+  washing:     { label_he: "כביסה",           colorClass: "bg-blue-100 text-blue-700",    emoji: "👕" },
+  ironing:     { label_he: "גיהוץ",           colorClass: "bg-amber-100 text-amber-700",  emoji: "♨️" },
+  dry_cleaning:{ label_he: "ניקוי יבש",       colorClass: "bg-purple-100 text-purple-700",emoji: "✨" },
+  special:     { label_he: "שירותים מיוחדים", colorClass: "bg-rose-100 text-rose-700",    emoji: "⭐" },
 };
 
 export const CATEGORY_META = STATIC_CATEGORY_META;
@@ -79,11 +79,10 @@ export function getCategoryMeta(category: string): CategoryMeta {
   );
 }
 
-// ─── Default Fallback Pricing Data ────────────────────────────────────────────
+// ─── Baseline catalog seeded into each laundry ───────────────────────────────
 
-const DEFAULT_PRICING_ITEMS: PricingItem[] = [
+export const BASELINE_PRICING_ITEMS: Omit<PricingItem, "id">[] = [
   {
-    id: "default-wash-regular",
     name_he: "כביסה רגילה (עד 7 ק\"ג)",
     category: "washing",
     price: 60,
@@ -92,7 +91,6 @@ const DEFAULT_PRICING_ITEMS: PricingItem[] = [
     isAvailable: true,
   },
   {
-    id: "default-wash-delicate",
     name_he: "כביסה עדינה / ידנית",
     category: "washing",
     price: 15,
@@ -101,7 +99,6 @@ const DEFAULT_PRICING_ITEMS: PricingItem[] = [
     isAvailable: true,
   },
   {
-    id: "default-iron-shirt",
     name_he: "גיהוץ חולצה מכופתרת",
     category: "ironing",
     price: 12,
@@ -110,7 +107,6 @@ const DEFAULT_PRICING_ITEMS: PricingItem[] = [
     isAvailable: true,
   },
   {
-    id: "default-iron-pants",
     name_he: "גיהוץ מכנסיים / ג'ינס",
     category: "ironing",
     price: 15,
@@ -119,7 +115,6 @@ const DEFAULT_PRICING_ITEMS: PricingItem[] = [
     isAvailable: true,
   },
   {
-    id: "default-dry-suit",
     name_he: "ניקוי יבש חליפה (2 חלקים)",
     category: "dry_cleaning",
     price: 85,
@@ -128,7 +123,6 @@ const DEFAULT_PRICING_ITEMS: PricingItem[] = [
     isAvailable: true,
   },
   {
-    id: "default-dry-coat",
     name_he: "ניקוי יבש מעיל / ג'קט חורף",
     category: "dry_cleaning",
     price: 60,
@@ -137,7 +131,6 @@ const DEFAULT_PRICING_ITEMS: PricingItem[] = [
     isAvailable: true,
   },
   {
-    id: "default-bed-double",
     name_he: "סט מצעים זוגי מלא",
     category: "washing",
     price: 45,
@@ -146,7 +139,6 @@ const DEFAULT_PRICING_ITEMS: PricingItem[] = [
     isAvailable: true,
   },
   {
-    id: "default-bed-duvet",
     name_he: "שמיכת פוך זוגית",
     category: "washing",
     price: 80,
@@ -155,7 +147,6 @@ const DEFAULT_PRICING_ITEMS: PricingItem[] = [
     isAvailable: true,
   },
   {
-    id: "default-bed-towel",
     name_he: "מגבת רחצה ענקית",
     category: "washing",
     price: 8,
@@ -164,7 +155,6 @@ const DEFAULT_PRICING_ITEMS: PricingItem[] = [
     isAvailable: true,
   },
   {
-    id: "default-special-carpet",
     name_he: "ניקוי שטיח (למ\"ר)",
     category: "special",
     price: 55,
@@ -182,65 +172,69 @@ export interface UsePricingResult {
   error: string | null;
 }
 
-export function usePricing(): UsePricingResult {
+/**
+ * Subscribes in real-time to `/laundries/{laundryId}/pricing`.
+ * Returns empty immediately when laundryId is null/undefined.
+ */
+export function usePricing(laundryId?: string | null): UsePricingResult {
   const [items, setItems] = useState<PricingItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!laundryId) {
+      setItems([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     if (typeof window === "undefined") {
       setLoading(false);
       return;
     }
 
-    // Retrieve pricing items directly without Firestore-side ordering
-    // (This avoids requiring composite indexes, ensuring the query never fails)
-    const pricingCollection = collection(db, "pricing");
+    setLoading(true);
+    setError(null);
 
-    const unsubscribe = onSnapshot(
-      pricingCollection,
+    const pricingCol = collection(db, "laundries", laundryId, "pricing");
+
+    const unsub = onSnapshot(
+      pricingCol,
       (snapshot) => {
-        let data: PricingItem[] = snapshot.docs.map((docSnap) => {
+        const data: PricingItem[] = snapshot.docs.map((docSnap) => {
           const d = docSnap.data();
           return {
             id: docSnap.id,
-            name_he: d.name_he ?? "",
-            category: d.category ?? "special",
-            price: typeof d.price === "number" ? d.price : Number(d.price) || 0,
+            name_he:        d.name_he        ?? "",
+            category:       d.category       ?? "special",
+            price:          typeof d.price === "number" ? d.price : Number(d.price) || 0,
             description_he: d.description_he ?? "",
-            unit: d.unit ?? "לפריט",
-            isAvailable: d.isAvailable !== false, // default true
+            unit:           d.unit           ?? "לפריט",
+            isAvailable:    d.isAvailable !== false,
           };
         });
 
-        // Perform in-memory sorting by category, then by name_he alphabetically
         data.sort((a, b) => {
           const catCompare = (a.category ?? "").localeCompare(b.category ?? "");
           if (catCompare !== 0) return catCompare;
           return (a.name_he ?? "").localeCompare(b.name_he ?? "");
         });
 
-        // If the database is empty, seed it on the client with our default items
-        if (data.length === 0) {
-          data = DEFAULT_PRICING_ITEMS;
-        }
-
         setItems(data);
         setLoading(false);
         setError(null);
       },
       (err) => {
-        console.warn("[usePricing] Firestore snapshot failed, falling back to local pricing defaults:", err);
-        // Fallback to default items on error (such as rules propagation or network issue)
-        setItems(DEFAULT_PRICING_ITEMS);
+        console.error("[usePricing] snapshot error:", err);
+        setItems([]);
         setLoading(false);
-        setError(null); // Clear error block to keep the UI healthy
+        setError("שגיאה בטעינת המחירון");
       },
     );
 
-    // Cleanup — unsubscribe when component unmounts
-    return () => unsubscribe();
-  }, []);
+    return () => unsub();
+  }, [laundryId]);
 
   return { items, loading, error };
 }
