@@ -68,7 +68,7 @@ interface Profile {
   fullName: string;
   email: string;
   role: "admin" | "laundry" | "customer";
-  status?: "pending_approval" | "approved" | "suspended";
+  status?: "pending_setup" | "pending_approval" | "approved" | "suspended";
   businessName?: string;
   shopSlug?: string;
 }
@@ -152,7 +152,7 @@ function AdminDashboard() {
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
   const [editRole, setEditRole] = useState<"admin" | "laundry" | "customer">("customer");
-  const [editStatus, setEditStatus] = useState<"pending_approval" | "approved" | "suspended">("approved");
+  const [editStatus, setEditStatus] = useState<"pending_setup" | "pending_approval" | "approved" | "suspended">("approved");
   const [isUpdating, setIsUpdating] = useState(false);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
 
@@ -1451,6 +1451,7 @@ function AdminDashboard() {
                   className="w-full h-11 px-3 rounded-xl border border-muted-foreground/20 bg-background text-foreground text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary text-right appearance-none"
                   dir="rtl"
                 >
+                  <option value="pending_setup">🛠️ בהקמה (Pending Setup)</option>
                   <option value="pending_approval">⏳ ממתין לאישור (Pending)</option>
                   <option value="approved">✅ מאושר (Approved)</option>
                   <option value="suspended">❌ מושעה (Suspended)</option>
@@ -1552,6 +1553,7 @@ function AdminDashboard() {
                     className="w-full h-11 px-3 rounded-xl border border-muted-foreground/20 bg-background text-foreground text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary text-right"
                     dir="rtl"
                   >
+                    <option value="pending_setup">🛠️ בהקמה</option>
                     <option value="pending_approval">⏳ ממתין לאישור</option>
                     <option value="approved">✅ מאושר ופעיל</option>
                     <option value="suspended">❌ מושעה</option>

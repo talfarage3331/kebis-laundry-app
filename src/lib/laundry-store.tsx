@@ -40,7 +40,8 @@ export interface User {
   name: string;
   email: string;
   role?: "admin" | "laundry" | "customer";
-  status?: "pending_approval" | "approved" | "suspended";
+  status?: "pending_setup" | "pending_approval" | "approved" | "suspended";
+  onboardingCompleted?: boolean;
   associatedLaundryId?: string;
 }
 
@@ -273,7 +274,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
             }
 
             let associatedLaundryId: string | undefined = undefined;
-            let userStatus: "pending_approval" | "approved" | "suspended" | undefined = undefined;
+            let userStatus: "pending_setup" | "pending_approval" | "approved" | "suspended" | undefined = undefined;
 
             if (userDocSnap.exists()) {
               const data = userDocSnap.data();
