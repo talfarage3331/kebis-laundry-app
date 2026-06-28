@@ -138,6 +138,17 @@ function LaundryDashboard() {
   const [lastHistoricalDoc, setLastHistoricalDoc]     = useState<DocumentSnapshot | null>(null);
   const [hasMoreHistorical, setHasMoreHistorical]     = useState(false);
   const [loadingMoreHistorical, setLoadingMoreHistorical] = useState(false);
+
+  // Delivery availability toggles (Optimistic & synchronized)
+  const [fastDeliveryEnabled, setFastDeliveryEnabled] = useState(user?.fastDeliveryEnabled ?? true);
+  const [expressDeliveryEnabled, setExpressDeliveryEnabled] = useState(user?.expressDeliveryEnabled ?? true);
+
+  useEffect(() => {
+    if (user) {
+      setFastDeliveryEnabled(user.fastDeliveryEnabled ?? true);
+      setExpressDeliveryEnabled(user.expressDeliveryEnabled ?? true);
+    }
+  }, [user?.fastDeliveryEnabled, user?.expressDeliveryEnabled]);
   const HISTORY_PAGE_SIZE = 30;
   const ACTIVE_STATUSES   = ["pending", "accepted", "collected", "ready", "cancelled"];
 
@@ -324,13 +335,23 @@ function LaundryDashboard() {
 
   const toggleDeliveryAvailability = async (type: "fast" | "express") => {
     if (!user?.uid) return;
-    const field = type === "fast" ? "fastDeliveryEnabled" : "expressDeliveryEnabled";
-    const currentVal = user[field] ?? true;
+    const isFast = type === "fast";
+    const field = isFast ? "fastDeliveryEnabled" : "expressDeliveryEnabled";
+    
+    // Optimistic toggle
+    const prevVal = isFast ? fastDeliveryEnabled : expressDeliveryEnabled;
+    const newVal = !prevVal;
+    
+    if (isFast) setFastDeliveryEnabled(newVal);
+    else setExpressDeliveryEnabled(newVal);
     
     try {
-      await updateDoc(doc(db, "users", user.uid), { [field]: !currentVal });
+      await updateDoc(doc(db, "users", user.uid), { [field]: newVal });
       toast.success("זמינות המשלוח עודכנה בהצלחה");
     } catch (e: any) {
+      // Revert on error
+      if (isFast) setFastDeliveryEnabled(prevVal);
+      else setExpressDeliveryEnabled(prevVal);
       toast.error("שגיאה בעדכון זמינות: " + e.message);
     }
   };
@@ -833,7 +854,7 @@ function LaundryDashboard() {
                       <input 
                         type="checkbox" 
                         className="sr-only peer"
-                        checked={user?.fastDeliveryEnabled ?? true}
+                        checked={fastDeliveryEnabled}
                         onChange={() => toggleDeliveryAvailability("fast")}
                       />
                       <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-[-100%] peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
@@ -849,7 +870,7 @@ function LaundryDashboard() {
                       <input 
                         type="checkbox" 
                         className="sr-only peer"
-                        checked={user?.expressDeliveryEnabled ?? true}
+                        checked={expressDeliveryEnabled}
                         onChange={() => toggleDeliveryAvailability("express")}
                       />
                       <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-[-100%] peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
