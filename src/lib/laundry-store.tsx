@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from "react";
 import { auth, db } from "./firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
+import { toast } from "sonner";
 import {
   collection,
   doc,
@@ -94,6 +95,8 @@ interface Store {
     totalPrice?: number,
     requiresWashing?: boolean,
     laundryId?: string,
+    customerLat?: number,
+    customerLng?: number,
   ) => Promise<string | null>;
   advanceOrder: () => void;
   setDelivery: (m: DeliveryMethod) => void;
@@ -516,6 +519,8 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       totalPrice?: number,
       washing: boolean = false,
       laundryId?: string,
+      customerLat?: number,
+      customerLng?: number,
     ): Promise<string | null> => {
       // Auto-resolve tenant from context if caller didn't supply one
       const resolvedLaundryId = laundryId || activeTenantId || "";
@@ -567,40 +572,45 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         const deletePromises = placeholderSnaps.docs.map((d) => deleteDoc(d.ref));
         await Promise.all(deletePromises);
 
-        // Create new order doc in Firestore
-        const docRef = await addDoc(collection(db, "orders"), {
-          user_id: auth.currentUser?.uid || "",
-          userId: auth.currentUser?.uid || "",
-          status: newState,
-          delivery_method: delivery,
-          deliveryMethod: delivery,
-          payment_state: "unpaid",
-          paymentState: "unpaid",
-          amount_due: totalPrice || amount,
-          total_price: totalPrice || amount,
-          user_email: user.email,
-          userEmail: user.email,
-          requires_ironing: ironing,
-          requiresIroning: ironing,
-          requires_dry_cleaning: dryCleaning,
-          requiresDryCleaning: dryCleaning,
-          requires_washing: washing,
-          requiresWashing: washing,
-          notes: notes || "",
-          images: images || [],
-          invoiceUrl: "",
-          invoiceName: "",
-          created_at: new Date().toISOString(),
-          createdAt: new Date().toISOString(),
-          addons: addons || [],
-          deliveryTier: deliveryTier || "standard",
-          basePrice: basePrice || 0,
-          laundryId: resolvedLaundryId,
+        // Securely call server route to validate and create order
+        const response = await fetch("/api/orders/create", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            notes: notes || "",
+            images: images || [],
+            requiresIroning: ironing,
+            requiresDryCleaning: dryCleaning,
+            requiresWashing: washing,
+            deliveryMethod: delivery,
+            addons: addons || [],
+            deliveryTier: deliveryTier || "standard",
+            basePrice: basePrice || 0,
+            totalPrice: totalPrice || amount,
+            laundryId: resolvedLaundryId,
+            userId: auth.currentUser?.uid || "",
+            userEmail: user.email,
+            customerLat,
+            customerLng,
+          }),
         });
+
+        const resData = await response.json();
+        if (!response.ok) {
+          throw new Error(resData.error || "הזמנה נכשלה");
+        }
+
+        if (resData.warning) {
+          toast.warning(resData.warning);
+        }
+
+        const newOrderId = resData.orderId;
 
         // Synchronize laundry notifications list locally (Mock triggers)
         const newNotification = {
-          id: docRef.id,
+          id: newOrderId,
           user_email: user.email || "לקוח",
           notes: notes || "כביסה רגילה",
           images: images || [],
@@ -616,9 +626,10 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         );
 
         window.dispatchEvent(new CustomEvent("laundry-order-updated"));
-        return docRef.id;
-      } catch (err) {
-        console.error("Order creation failed in Firestore:", err);
+        return newOrderId;
+      } catch (err: any) {
+        console.error("Order creation failed:", err);
+        toast.error(err.message || "שגיאה ביצירת ההזמנה");
         return null;
       }
     },

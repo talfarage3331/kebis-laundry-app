@@ -28,6 +28,7 @@ import {
   Copy,
   Palette,
   ImagePlus,
+  MapPin,
 } from "lucide-react";
 import {
   Dialog,
@@ -87,6 +88,146 @@ export function LaundrySettingsCRUDPanel() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load shopSlug + brand fields from the logged-in user's Firestore doc
+  const [deliveryAddress, setDeliveryAddress] = useState<string>("");
+  const [deliveryCoordinates, setDeliveryCoordinates] = useState<{ lat: number; lng: number } | null>(null);
+  const [maxDeliveryRadiusKm, setMaxDeliveryRadiusKm] = useState<number>(5);
+
+  const [deliveryAddressQuery, setDeliveryAddressQuery] = useState<string>("");
+  const [deliverySuggestions, setDeliverySuggestions] = useState<any[]>([]);
+  const [isDeliverySearching, setIsDeliverySearching] = useState<boolean>(false);
+  const [isDeliverySaving, setIsDeliverySaving] = useState<boolean>(false);
+  const [leafletLoaded, setLeafletLoaded] = useState<boolean>(false);
+
+  const mapRef = useRef<any>(null);
+  const markerRef = useRef<any>(null);
+  const circleRef = useRef<any>(null);
+
+  // Geocoding query suggestion search
+  useEffect(() => {
+    if (
+      !deliveryAddressQuery ||
+      deliveryAddressQuery.length < 3 ||
+      (deliveryAddress && deliveryAddress === deliveryAddressQuery)
+    ) {
+      setDeliverySuggestions([]);
+      return;
+    }
+
+    const delayDebounce = setTimeout(async () => {
+      setIsDeliverySearching(true);
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(deliveryAddressQuery)}&format=json&accept-language=he&countrycodes=il&addressdetails=1&limit=5`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          setDeliverySuggestions(data || []);
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setIsDeliverySearching(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(delayDebounce);
+  }, [deliveryAddressQuery, deliveryAddress]);
+
+  // Dynamic Leaflet Injections
+  useEffect(() => {
+    // 1. Inject Leaflet CSS
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+    link.id = "leaflet-css";
+    document.head.appendChild(link);
+
+    // 2. Inject Leaflet JS
+    const script = document.createElement("script");
+    script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+    script.id = "leaflet-js";
+    script.onload = () => {
+      setLeafletLoaded(true);
+    };
+    document.head.appendChild(script);
+
+    return () => {
+      // Cleanup injected tags
+      document.getElementById("leaflet-css")?.remove();
+      document.getElementById("leaflet-js")?.remove();
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
+      markerRef.current = null;
+      circleRef.current = null;
+    };
+  }, []);
+
+  // Update Leaflet Map state reactively
+  useEffect(() => {
+    if (!leafletLoaded) return;
+    const L = (window as any).L;
+    if (!L) return;
+
+    const centerLat = deliveryCoordinates?.lat ?? 32.0853;
+    const centerLng = deliveryCoordinates?.lng ?? 34.7818;
+
+    if (!mapRef.current) {
+      const mapContainer = document.getElementById("laundry-delivery-map");
+      if (!mapContainer) return;
+
+      mapRef.current = L.map("laundry-delivery-map", {
+        center: [centerLat, centerLng],
+        zoom: 13,
+      });
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      }).addTo(mapRef.current);
+    } else {
+      mapRef.current.setView([centerLat, centerLng]);
+    }
+
+    const map = mapRef.current;
+
+    if (deliveryCoordinates) {
+      if (markerRef.current) {
+        markerRef.current.setLatLng([centerLat, centerLng]);
+      } else {
+        markerRef.current = L.marker([centerLat, centerLng]).addTo(map);
+      }
+
+      if (circleRef.current) {
+        circleRef.current.setLatLng([centerLat, centerLng]);
+        circleRef.current.setRadius(maxDeliveryRadiusKm * 1000);
+      } else {
+        circleRef.current = L.circle([centerLat, centerLng], {
+          color: brandColor || "#6B1D5C",
+          fillColor: brandColor || "#6B1D5C",
+          fillOpacity: 0.15,
+          radius: maxDeliveryRadiusKm * 1000,
+        }).addTo(map);
+      }
+
+      try {
+        map.fitBounds(circleRef.current.getBounds());
+      } catch (err) {
+        console.warn("fitBounds failed:", err);
+      }
+    } else {
+      if (markerRef.current) {
+        markerRef.current.remove();
+        markerRef.current = null;
+      }
+      if (circleRef.current) {
+        circleRef.current.remove();
+        circleRef.current = null;
+      }
+    }
+  }, [leafletLoaded, deliveryCoordinates, maxDeliveryRadiusKm, brandColor]);
+
+  // Load shopSlug + brand fields + delivery zone settings from the logged-in user's Firestore doc
   useEffect(() => {
     if (!laundryId) return;
     const fetchProfile = async () => {
@@ -97,6 +238,12 @@ export function LaundrySettingsCRUDPanel() {
           setShopSlug(data.shopSlug || null);
           setLogoUrl(data.logoUrl || null);
           if (data.brandColor) setBrandColor(data.brandColor);
+          if (data.deliveryAddress) {
+            setDeliveryAddress(data.deliveryAddress);
+            setDeliveryAddressQuery(data.deliveryAddress);
+          }
+          if (data.deliveryCoordinates) setDeliveryCoordinates(data.deliveryCoordinates);
+          if (data.maxDeliveryRadiusKm) setMaxDeliveryRadiusKm(Number(data.maxDeliveryRadiusKm));
         }
       } catch (err) {
         console.warn("[LaundrySettingsCRUDPanel] could not load profile:", err);
@@ -104,6 +251,51 @@ export function LaundrySettingsCRUDPanel() {
     };
     fetchProfile();
   }, [laundryId]);
+
+
+
+  const handleSelectDeliverySuggestion = (item: any) => {
+    const addr = item.address || {};
+    const street = addr.road || addr.pedestrian || addr.suburb || "";
+    const city = addr.city || addr.town || addr.village || "";
+
+    let finalAddr = "";
+    if (street) {
+      finalAddr = `${street}${city ? ", " + city : ""}`;
+    } else {
+      finalAddr = item.display_name.split(",").slice(0, 3).join(",");
+    }
+
+    setDeliveryAddress(finalAddr);
+    setDeliveryAddressQuery(finalAddr);
+    setDeliveryCoordinates({
+      lat: parseFloat(item.lat),
+      lng: parseFloat(item.lon),
+    });
+    setDeliverySuggestions([]);
+  };
+
+  const handleSaveDeliverySettings = async () => {
+    if (!laundryId) return;
+    if (!deliveryAddress.trim() || !deliveryCoordinates) {
+      toast.error("נא להזין ולבחור כתובת תקינה מתוך רשימת ההצעות");
+      return;
+    }
+
+    setIsDeliverySaving(true);
+    try {
+      await updateDoc(doc(db, "users", laundryId), {
+        deliveryAddress,
+        deliveryCoordinates,
+        maxDeliveryRadiusKm: Number(maxDeliveryRadiusKm),
+      });
+      toast.success("הגדרות אזור המשלוח נשמרו בהצלחה!");
+    } catch (err: any) {
+      toast.error("שגיאה בשמירת ההגדרות: " + err.message);
+    } finally {
+      setIsDeliverySaving(false);
+    }
+  };
 
   /** Generate a unique slug from the user's name and persist it */
   const handleGenerateSlug = async () => {
@@ -426,6 +618,108 @@ export function LaundrySettingsCRUDPanel() {
 
   return (
     <div className="bg-card border border-muted-foreground/10 rounded-2xl p-4 sm:p-5 shadow-sm space-y-4 text-right" dir="rtl">
+
+
+      {/* ──── Delivery Zone Settings Card ──────────────────────────────────── */}
+      <div className="bg-gradient-to-br from-blue-50/80 to-indigo-50/60 border border-blue-200/60 rounded-2xl p-4 space-y-4 text-right" dir="rtl">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="size-8 rounded-full bg-blue-100 grid place-items-center shrink-0">
+              <MapPin className="size-4 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-sm font-extrabold text-foreground">אזור פעילות וטווח משלוח</p>
+              <p className="text-[10px] text-muted-foreground">הגדר את מיקום הסניף וטווח המשלוח המקסימלי ללקוחות</p>
+            </div>
+          </div>
+          {deliveryCoordinates ? (
+            <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full whitespace-nowrap">✓ מוגדר</span>
+          ) : (
+            <span className="text-[10px] font-black text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full whitespace-nowrap">⚠️ לא מוגדר</span>
+          )}
+        </div>
+
+        {/* Address Input */}
+        <div className="space-y-2 relative">
+          <label className="text-[11px] font-bold text-slate-700 block">כתובת המכבסה</label>
+          <div className="relative">
+            <input
+              type="text"
+              value={deliveryAddressQuery}
+              onChange={(e) => {
+                setDeliveryAddressQuery(e.target.value);
+                if (deliveryAddress) {
+                  setDeliveryAddress("");
+                  setDeliveryCoordinates(null);
+                }
+              }}
+              placeholder="הקלד כתובת לאימות..."
+              className="w-full rounded-xl border border-muted-foreground/20 text-xs px-3 py-2.5 text-right focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+              dir="rtl"
+            />
+            {isDeliverySearching && deliverySuggestions.length === 0 && deliveryAddressQuery.length >= 3 && (
+              <div className="absolute left-3 top-2.5">
+                <Loader2 className="size-4 animate-spin text-muted-foreground" />
+              </div>
+            )}
+          </div>
+
+          {/* Autocomplete Dropdown suggestions list */}
+          {deliverySuggestions.length > 0 && (
+            <div className="absolute z-50 w-full mt-1 bg-white border border-muted-foreground/20 rounded-xl shadow-lg max-h-40 overflow-y-auto divide-y divide-muted-foreground/10">
+              {deliverySuggestions.map((item, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => handleSelectDeliverySuggestion(item)}
+                  className="w-full text-right px-3 py-2 hover:bg-muted text-[11px] font-semibold text-foreground transition flex items-center gap-1.5"
+                >
+                  <MapPin className="size-3 text-blue-600 flex-shrink-0" />
+                  <span className="truncate">{item.display_name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Radius Slider Component */}
+        <div className="space-y-2">
+          <div className="flex justify-between items-center text-[11px] font-bold text-slate-700">
+            <span>מרחק משלוח מקסימלי: {maxDeliveryRadiusKm} ק"מ</span>
+            <span className="text-[10px] text-muted-foreground">טווח: 1 - 30 ק"מ</span>
+          </div>
+          <input
+            type="range"
+            min="1"
+            max="30"
+            step="1"
+            value={maxDeliveryRadiusKm}
+            onChange={(e) => setMaxDeliveryRadiusKm(Number(e.target.value))}
+            className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-primary focus:outline-none"
+          />
+        </div>
+
+        {/* Map Preview Container */}
+        <div className="space-y-1">
+          <p className="text-[10px] font-bold text-slate-500">תצוגה מקדימה של אזור המשלוח:</p>
+          <div id="laundry-delivery-map" className="h-44 w-full rounded-xl overflow-hidden border bg-white" />
+        </div>
+
+        {/* Save action button */}
+        <button
+          type="button"
+          onClick={handleSaveDeliverySettings}
+          disabled={isDeliverySaving || !deliveryAddress || !deliveryCoordinates}
+          className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50"
+        >
+          {isDeliverySaving ? (
+            <><Loader2 className="size-3.5 animate-spin" /> שומר הגדרות...</>
+          ) : (
+            <><Check className="size-3.5" /> שמור הגדרות אזור משלוח</>
+          )}
+        </button>
+      </div>
 
       {/* ──── Brand Identity Card ──────────────────────────────────────────── */}
       <div className="bg-gradient-to-br from-purple-50/80 to-fuchsia-50/60 border border-purple-200/60 rounded-2xl p-4 space-y-4">

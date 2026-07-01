@@ -258,3 +258,71 @@ export async function logNotification(data: {
     ],
   });
 }
+
+export function getDoubleValue(field: any): number | null {
+  if (!field) return null;
+  if (field.doubleValue !== undefined) {
+    return Number(field.doubleValue);
+  }
+  if (field.integerValue !== undefined) {
+    return Number(field.integerValue);
+  }
+  return null;
+}
+
+export function getCoordinates(field: any): { lat: number; lng: number } | null {
+  const mapFields = field?.mapValue?.fields;
+  if (!mapFields) return null;
+  const lat = getDoubleValue(mapFields.lat);
+  const lng = getDoubleValue(mapFields.lng);
+  if (lat !== null && lng !== null) {
+    return { lat, lng };
+  }
+  return null;
+}
+
+export async function createOrderAdmin(orderData: any): Promise<string> {
+  const fields: any = {};
+  for (const [key, val] of Object.entries(orderData)) {
+    if (val === undefined || val === null) {
+      fields[key] = { nullValue: null };
+    } else if (typeof val === "string") {
+      fields[key] = { stringValue: val };
+    } else if (typeof val === "number") {
+      fields[key] = Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
+    } else if (typeof val === "boolean") {
+      fields[key] = { booleanValue: val };
+    } else if (Array.isArray(val)) {
+      fields[key] = {
+        arrayValue: {
+          values: val.map((v) => {
+            if (typeof v === "string") return { stringValue: v };
+            return { stringValue: String(v) };
+          }),
+        },
+      };
+    } else if (typeof val === "object") {
+      const mapFields: any = {};
+      for (const [mk, mv] of Object.entries(val)) {
+        if (mv === undefined || mv === null) {
+          mapFields[mk] = { nullValue: null };
+        } else if (typeof mv === "number") {
+          mapFields[mk] = Number.isInteger(mv) ? { integerValue: String(mv) } : { doubleValue: mv };
+        } else if (typeof mv === "string") {
+          mapFields[mk] = { stringValue: mv };
+        } else if (typeof mv === "boolean") {
+          mapFields[mk] = { booleanValue: mv };
+        }
+      }
+      fields[key] = { mapValue: { fields: mapFields } };
+    }
+  }
+
+  const res = await fsRequest("/orders", { fields });
+  if (res && res.name) {
+    const parts = res.name.split("/");
+    return parts[parts.length - 1];
+  }
+  throw new Error("Failed to create order document via REST");
+}
+

@@ -24,6 +24,8 @@ import { Route as ShopSlugRouteImport } from './routes/shop.$slug'
 import { Route as ApiPushUnsubscribeRouteImport } from './routes/api/push/unsubscribe'
 import { Route as ApiPushSubscribeRouteImport } from './routes/api/push/subscribe'
 import { Route as ApiPushNotifyRouteImport } from './routes/api/push/notify'
+import { Route as ApiOrdersCreateRouteImport } from './routes/api/orders/create'
+import { Route as ApiOrdersValidateDeliveryRouteImport } from './routes/api/orders/validate-delivery'
 
 const TrackingRoute = TrackingRouteImport.update({
   id: '/tracking',
@@ -100,6 +102,16 @@ const ApiPushNotifyRoute = ApiPushNotifyRouteImport.update({
   path: '/api/push/notify',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiOrdersCreateRoute = ApiOrdersCreateRouteImport.update({
+  id: '/api/orders/create',
+  path: '/api/orders/create',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiOrdersValidateDeliveryRoute = ApiOrdersValidateDeliveryRouteImport.update({
+  id: '/api/orders/validate-delivery',
+  path: '/api/orders/validate-delivery',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -117,6 +129,8 @@ export interface FileRoutesByFullPath {
   '/api/push/notify': typeof ApiPushNotifyRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/push/unsubscribe': typeof ApiPushUnsubscribeRoute
+  '/api/orders/create': typeof ApiOrdersCreateRoute
+  '/api/orders/validate-delivery': typeof ApiOrdersValidateDeliveryRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -134,6 +148,8 @@ export interface FileRoutesByTo {
   '/api/push/notify': typeof ApiPushNotifyRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/push/unsubscribe': typeof ApiPushUnsubscribeRoute
+  '/api/orders/create': typeof ApiOrdersCreateRoute
+  '/api/orders/validate-delivery': typeof ApiOrdersValidateDeliveryRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -152,6 +168,8 @@ export interface FileRoutesById {
   '/api/push/notify': typeof ApiPushNotifyRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/push/unsubscribe': typeof ApiPushUnsubscribeRoute
+  '/api/orders/create': typeof ApiOrdersCreateRoute
+  '/api/orders/validate-delivery': typeof ApiOrdersValidateDeliveryRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -171,6 +189,8 @@ export interface FileRouteTypes {
     | '/api/push/notify'
     | '/api/push/subscribe'
     | '/api/push/unsubscribe'
+    | '/api/orders/create'
+    | '/api/orders/validate-delivery'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -188,6 +208,8 @@ export interface FileRouteTypes {
     | '/api/push/notify'
     | '/api/push/subscribe'
     | '/api/push/unsubscribe'
+    | '/api/orders/create'
+    | '/api/orders/validate-delivery'
   id:
     | '__root__'
     | '/'
@@ -205,6 +227,8 @@ export interface FileRouteTypes {
     | '/api/push/notify'
     | '/api/push/subscribe'
     | '/api/push/unsubscribe'
+    | '/api/orders/create'
+    | '/api/orders/validate-delivery'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -223,6 +247,8 @@ export interface RootRouteChildren {
   ApiPushNotifyRoute: typeof ApiPushNotifyRoute
   ApiPushSubscribeRoute: typeof ApiPushSubscribeRoute
   ApiPushUnsubscribeRoute: typeof ApiPushUnsubscribeRoute
+  ApiOrdersCreateRoute: typeof ApiOrdersCreateRoute
+  ApiOrdersValidateDeliveryRoute: typeof ApiOrdersValidateDeliveryRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -332,6 +358,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPushNotifyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/orders/create': {
+      id: '/api/orders/create'
+      path: '/api/orders/create'
+      fullPath: '/api/orders/create'
+      preLoaderRoute: typeof ApiOrdersCreateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/orders/validate-delivery': {
+      id: '/api/orders/validate-delivery'
+      path: '/api/orders/validate-delivery'
+      fullPath: '/api/orders/validate-delivery'
+      preLoaderRoute: typeof ApiOrdersValidateDeliveryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -351,6 +391,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPushNotifyRoute: ApiPushNotifyRoute,
   ApiPushSubscribeRoute: ApiPushSubscribeRoute,
   ApiPushUnsubscribeRoute: ApiPushUnsubscribeRoute,
+  ApiOrdersCreateRoute: ApiOrdersCreateRoute,
+  ApiOrdersValidateDeliveryRoute: ApiOrdersValidateDeliveryRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

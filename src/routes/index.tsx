@@ -5,8 +5,9 @@ import { AppHeader } from "@/components/AppHeader";
 import { useLaundry, ORDER_STEPS, stateLabel, ADDONS_META, DELIVERY_TIERS_META } from "@/lib/laundry-store";
 import { useLaundryOptions, seedDefaultsIfEmpty } from "@/hooks/use-laundry-options";
 import { db } from "@/lib/firebase";
-import { collection, query, where, onSnapshot, doc, setDoc } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, setDoc, getDoc } from "firebase/firestore";
 import { getCustomerProfile } from "@/lib/tenant-profiles";
+import { haversineDistanceKm } from "@/lib/haversine";
 import {
   ShoppingBasket,
   ChevronLeft,
@@ -38,9 +39,30 @@ export const Route = createFileRoute("/")({
 });
 
 function Dashboard() {
-  const { user, isProfileReady, role, isRoleLoading, orderState, createOrder } = useLaundry();
+  const { user, isProfileReady, role, isRoleLoading, orderState, createOrder, activeTenantId } = useLaundry();
+  const [vendorConfigured, setVendorConfigured] = useState<boolean>(true);
+  const effectiveLaundryId = activeTenantId ?? "";
 
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (effectiveLaundryId) {
+      getDoc(doc(db, "users", effectiveLaundryId))
+        .then((snap) => {
+          if (snap.exists()) {
+            const data = snap.data();
+            const hasConfig = !!(data.deliveryAddress && data.deliveryCoordinates);
+            setVendorConfigured(hasConfig);
+          } else {
+            setVendorConfigured(false);
+          }
+        })
+        .catch((err) => {
+          console.error(err);
+          setVendorConfigured(true); // default safe
+        });
+    }
+  }, [effectiveLaundryId]);
 
   // Block all customer-specific rendering until the role is fully resolved from Firestore
   if (!isProfileReady || isRoleLoading) {
@@ -134,10 +156,10 @@ function Dashboard() {
               <span className="text-sm font-bold text-muted-foreground">
                 רוצה לבצע הזמנה נוספת?
               </span>
-              <EmptyState onOpenModal={() => setIsModalOpen(true)} onOpenPricing={() => setIsPricingOpen(true)} />
+              <EmptyState onOpenModal={() => setIsModalOpen(true)} onOpenPricing={() => setIsPricingOpen(true)} vendorConfigured={vendorConfigured} />
             </div>
           ) : (
-            <EmptyState onOpenModal={() => setIsModalOpen(true)} onOpenPricing={() => setIsPricingOpen(true)} />
+            <EmptyState onOpenModal={() => setIsModalOpen(true)} onOpenPricing={() => setIsPricingOpen(true)} vendorConfigured={vendorConfigured} />
           )}
         </div>
       </main>
@@ -158,6 +180,8 @@ function Dashboard() {
           totalPrice,
           requiresWashing,
           laundryId,
+          customerLat,
+          customerLng,
         ) => {
           // Combine address + optional user notes into a single notes string stored in the DB
           const combinedNotes = [address, notes].filter(Boolean).join("\n\n");
@@ -173,6 +197,8 @@ function Dashboard() {
             totalPrice,
             requiresWashing,
             laundryId,
+            customerLat,
+            customerLng,
           );
           setIsModalOpen(false);
           if (orderId) {
@@ -227,18 +253,27 @@ function Dashboard() {
   );
 }
 
-function EmptyState({ onOpenModal, onOpenPricing }: { onOpenModal: () => void; onOpenPricing: () => void }) {
+function EmptyState({ onOpenModal, onOpenPricing, vendorConfigured }: { onOpenModal: () => void; onOpenPricing: () => void; vendorConfigured: boolean }) {
   return (
     <div className="flex flex-col items-center gap-4 pt-4">
-      <button
-        onClick={onOpenModal}
-        className="relative group size-48 sm:size-64 rounded-full bg-lime text-lime-foreground shadow-[0_20px_50px_-12px_oklch(0.92_0.18_125/0.6)] active:scale-95 transition-all duration-300 flex flex-col items-center justify-center gap-2 sm:gap-3"
-      >
-        <ShoppingBasket className="size-12 sm:size-16" strokeWidth={1.5} />
-        <span className="text-base sm:text-xl font-extrabold leading-tight px-4 sm:px-6 text-center">
-          הזמן איסוף כביסה
-        </span>
-      </button>
+      {!vendorConfigured ? (
+        <div className="bg-destructive/10 border border-destructive/20 rounded-3xl p-6 text-center space-y-2.5 max-w-sm mx-auto animate-in fade-in duration-200">
+          <p className="text-sm font-extrabold text-destructive">הזמנות חסומות זמנית ⚠️</p>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            המכבסה הזו טרם הגדירה את אזור הפעילות וטווח המשלוחים שלה, ולכן לא ניתן לבצע הזמנות בשלב זה.
+          </p>
+        </div>
+      ) : (
+        <button
+          onClick={onOpenModal}
+          className="relative group size-48 sm:size-64 rounded-full bg-lime text-lime-foreground shadow-[0_20px_50px_-12px_oklch(0.92_0.18_125/0.6)] active:scale-95 transition-all duration-300 flex flex-col items-center justify-center gap-2 sm:gap-3"
+        >
+          <ShoppingBasket className="size-12 sm:size-16" strokeWidth={1.5} />
+          <span className="text-base sm:text-xl font-extrabold leading-tight px-4 sm:px-6 text-center">
+            הזמן איסוף כביסה
+          </span>
+        </button>
+      )}
       <p className="text-sm text-muted-foreground mt-1">לחיצה אחת ואנחנו בדרך אליך</p>
 
       <button
@@ -268,6 +303,8 @@ interface PickupModalProps {
     totalPrice: number,
     requiresWashing: boolean,
     laundryId: string,
+    customerLat?: number,
+    customerLng?: number,
   ) => Promise<void>;
 }
 
@@ -387,9 +424,48 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
   const [savedOrder, setSavedOrder] = useState<any | null>(null);
   const [saveAsTemplate, setSaveAsTemplate] = useState(false);
 
-  // Determine the effective laundry ID to use:
+  // Determine the effective laundry ID to use (hoisted before any useEffect that references it):
   const effectiveLaundryId = activeTenantId ?? "";
   const effectiveLaundryName = activeTenantName ?? "מכבסה";
+
+  const [vendorDeliveryZone, setVendorDeliveryZone] = useState<{
+    deliveryCoordinates?: { lat: number; lng: number };
+    maxDeliveryRadiusKm?: number;
+    deliveryAddress?: string;
+  } | null>(null);
+  const [loadingVendorZone, setLoadingVendorZone] = useState(false);
+
+  // Load vendor delivery zone info
+  useEffect(() => {
+    if (isOpen && effectiveLaundryId) {
+      setLoadingVendorZone(true);
+      getDoc(doc(db, "users", effectiveLaundryId))
+        .then((snap) => {
+          if (snap.exists()) {
+            const data = snap.data();
+            setVendorDeliveryZone({
+              deliveryCoordinates: data.deliveryCoordinates,
+              maxDeliveryRadiusKm: data.maxDeliveryRadiusKm,
+              deliveryAddress: data.deliveryAddress,
+            });
+          } else {
+            setVendorDeliveryZone(null);
+          }
+        })
+        .catch((err) => {
+          console.error("Failed to load vendor zone info:", err);
+          setVendorDeliveryZone(null);
+        })
+        .finally(() => {
+          setLoadingVendorZone(false);
+        });
+    } else if (!isOpen) {
+      setVendorDeliveryZone(null);
+    }
+  }, [isOpen, effectiveLaundryId]);
+
+
+
 
   // Laundry options hook — scoped to the active vendor tenant
   const {
@@ -492,6 +568,24 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
     }
   });
 
+  const customerCoords = selectedAddress ? { lat: selectedAddress.lat, lng: selectedAddress.lng } : null;
+  const vendorCoords = vendorDeliveryZone?.deliveryCoordinates;
+  const maxRadius = vendorDeliveryZone?.maxDeliveryRadiusKm;
+
+  let distanceKm: number | null = null;
+  let isDistanceOk = true;
+
+  if (deliveryMethod === "home_delivery" && customerCoords && vendorCoords && maxRadius !== undefined) {
+    distanceKm = haversineDistanceKm(
+      customerCoords.lat,
+      customerCoords.lng,
+      vendorCoords.lat,
+      vendorCoords.lng
+    );
+    isDistanceOk = distanceKm <= maxRadius;
+  }
+
+
   const toggleAddon = (key: string) => {
     setSelectedAddons((prev) =>
       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
@@ -591,6 +685,8 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
 
     setSelectedAddress({
       display_name: finalAddr,
+      lat: parseFloat(item.lat),
+      lng: parseFloat(item.lon),
       raw: item,
     });
     setAddressSearchQuery(finalAddr);
@@ -635,6 +731,8 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
 
               setSelectedAddress({
                 display_name: finalAddr,
+                lat: latitude,
+                lng: longitude,
                 raw: data,
               });
               setAddressSearchQuery(finalAddr);
@@ -652,6 +750,8 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
         const fallbackAddr = `מיקום נוכחי (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`;
         setSelectedAddress({
           display_name: fallbackAddr,
+          lat: latitude,
+          lng: longitude,
           raw: { display_name: fallbackAddr },
         });
         setAddressSearchQuery(fallbackAddr);
@@ -685,6 +785,8 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
     } else {
       setSelectedAddress({
         display_name: recent.display_name,
+        lat: recent.lat,
+        lng: recent.lng,
         raw: {},
       });
       setAddressSearchQuery(recent.display_name);
@@ -745,6 +847,10 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
       toast.error("אנא הזן מספר טלפון לתיאום");
       return;
     }
+    if (deliveryMethod === "home_delivery" && !isDistanceOk) {
+      toast.error("מיקום המשלוח רחוק מידי עבור המכבסה");
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -758,6 +864,8 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
         floor: floor.trim(),
         apartment: apartment.trim(),
         entrance: entrance.trim(),
+        lat: selectedAddress.lat,
+        lng: selectedAddress.lng,
       };
 
       const updatedRecents = [
@@ -790,7 +898,9 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
         0,
         estimatedTotalPrice,
         requiresWashing,
-        effectiveLaundryId || "default_laundry"
+        effectiveLaundryId || "default_laundry",
+        selectedAddress.lat,
+        selectedAddress.lng
       );
 
       // ── 1-Click Saved Template Order storage ───────────────────────────────
@@ -1217,6 +1327,40 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
             </div>
           </div>
 
+          {/* Delivery zone validation status indicators */}
+          {deliveryMethod === "home_delivery" && (
+            <div className="mt-2 space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-200" dir="rtl">
+              {loadingVendorZone ? (
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground justify-start">
+                  <Loader2 className="size-4 animate-spin text-primary" />
+                  <span>בודק טווח משלוח של המכבסה...</span>
+                </div>
+              ) : vendorDeliveryZone && !vendorDeliveryZone.deliveryCoordinates ? (
+                <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-2xl p-3.5 text-right font-bold flex items-center gap-2 justify-start">
+                  <span className="size-2 rounded-full bg-amber-500 animate-ping shrink-0" />
+                  <span>⚠️ המכבסה לא הגדירה את אזור המשלוח שלה. ההזמנה תאושר באופן חריג בתיאום טלפוני.</span>
+                </div>
+              ) : selectedAddress && distanceKm !== null && maxRadius !== undefined ? (
+                !isDistanceOk ? (
+                  <div className="bg-red-50 border border-red-200 text-red-800 text-xs rounded-2xl p-3.5 text-right font-bold flex flex-col gap-1 justify-start">
+                    <span className="flex items-center gap-1.5">🔴 מיקום המשלוח רחוק מידי עבור המכבסה</span>
+                    <span className="text-[10px] opacity-90 font-mono">מרחק נוכחי: {distanceKm.toFixed(1)} ק"מ | מקסימום מותר: {maxRadius} ק"מ</span>
+                  </div>
+                ) : (
+                  <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-2xl p-3.5 text-right font-bold flex flex-col gap-1 justify-start">
+                    <span className="flex items-center gap-1.5">🟢 כתובת המשלוח בטווח המותר של המכבסה</span>
+                    <span className="text-[10px] opacity-90 font-mono">מרחק נוכחי: {distanceKm.toFixed(1)} ק"מ מתוך {maxRadius} ק"מ</span>
+                  </div>
+                )
+              ) : !selectedAddress ? (
+                <div className="bg-muted/40 border border-muted-foreground/10 text-muted-foreground text-xs rounded-2xl p-3.5 text-right font-medium flex items-center gap-1.5 justify-start">
+                  <span>ℹ️ אנא הזן כתובת איסוף שלמה ומאומתת לבדיקת טווח המשלוח.</span>
+                </div>
+              ) : null}
+            </div>
+          )}
+
+
           {/* Group A: שדרוגי פרימיום */}
           <div className="space-y-3 pt-1">
             <div className="text-right">
@@ -1470,7 +1614,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
         <div className="mt-4 flex flex-col-reverse sm:flex-row gap-2 sm:gap-3">
           <button
             onClick={handleSubmit}
-            disabled={isSubmitting || !effectiveLaundryId || !(requiresWashing || requiresIroning || requiresDryCleaning)}
+            disabled={isSubmitting || !effectiveLaundryId || !(requiresWashing || requiresIroning || requiresDryCleaning) || (deliveryMethod === "home_delivery" && !isDistanceOk)}
             className="flex-1 rounded-3xl bg-lime text-lime-foreground py-3.5 sm:py-4 min-h-[48px] font-bold active:scale-[0.98] transition hover:shadow-lg hover:shadow-lime/20 flex items-center justify-center gap-2 disabled:opacity-50"
           >
             {isSubmitting ? (
