@@ -29,20 +29,7 @@ function SkeletonCard() {
 function PriceCard({ item, categories }: { item: PricingItem; categories: Category[] }) {
   const meta = resolveCategoryMeta(item.category, categories);
   return (
-    <div
-      className={`relative flex flex-col rounded-2xl border p-4 shadow-sm transition-all ${
-        item.isAvailable
-          ? "bg-card border-border hover:shadow-md hover:-translate-y-0.5"
-          : "bg-muted/30 border-muted opacity-55"
-      }`}
-    >
-      {/* Availability badge */}
-      {!item.isAvailable && (
-        <span className="absolute top-2 left-2 text-[10px] font-bold bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
-          לא זמין
-        </span>
-      )}
-
+    <div className="relative flex flex-col rounded-2xl border p-4 shadow-sm transition-all bg-card border-border hover:shadow-md hover:-translate-y-0.5">
       {/* Category chip */}
       <span
         className={`self-start text-[10px] font-bold px-2 py-0.5 rounded-full mb-2 ${meta.colorClass}`}
@@ -119,17 +106,20 @@ export function PricingView({ onClose }: PricingViewProps) {
 
   const loading = pricingLoading || categoriesLoading;
 
-  // Group available + unavailable items by category, preserving sort
+  // Group ONLY available items by category, preserving sort
   const grouped = useMemo(() => {
     const map = new Map<string, PricingItem[]>();
     for (const item of items) {
+      // Hide items the vendor has toggled OFF
+      if (item.isAvailable === false) continue;
       if (!map.has(item.category)) map.set(item.category, []);
       map.get(item.category)!.push(item);
     }
     return map;
   }, [items]);
 
-  const isEmpty = !loading && items.length === 0 && !error;
+  // isEmpty when there are no visible (active) items
+  const isEmpty = !loading && grouped.size === 0 && !error;
 
   return (
     <div className="flex flex-col h-full" dir="rtl">
@@ -206,7 +196,7 @@ export function PricingView({ onClose }: PricingViewProps) {
           ))}
 
         {/* Footer note */}
-        {!loading && !error && items.length > 0 && (
+        {!loading && !error && grouped.size > 0 && (
           <p className="text-center text-[11px] text-muted-foreground pb-2">
             * המחירים כוללים מע״מ ועשויים להשתנות. צור קשר לפרטים נוספים.
           </p>

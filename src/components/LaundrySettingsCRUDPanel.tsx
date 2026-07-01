@@ -303,6 +303,7 @@ export function LaundrySettingsCRUDPanel() {
           price: Number(addonForm.price),
           desc: addonForm.desc,
           group: addonForm.group,
+          isActive: true,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -323,6 +324,20 @@ export function LaundrySettingsCRUDPanel() {
       toast.success("התוספת נמחקה בהצלחה");
     } catch (err: any) {
       toast.error("שגיאה במחיקת התוספת: " + err.message);
+    }
+  };
+
+  const handleToggleAddon = async (id: string, currentIsActive: boolean) => {
+    const newVal = !currentIsActive;
+    // Optimistic update via onSnapshot will reflect shortly; write to Firestore
+    try {
+      await updateDoc(doc(db, "laundry_addons", id), {
+        isActive: newVal,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err: any) {
+      console.error("[LaundrySettingsCRUDPanel] toggleAddon failed:", err);
+      toast.error("שגיאה בעדכון זמינות התוספת: " + err.message);
     }
   };
 
@@ -372,6 +387,7 @@ export function LaundrySettingsCRUDPanel() {
           label: tierForm.label,
           price: Number(tierForm.price),
           desc: tierForm.desc,
+          isActive: true,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -392,6 +408,19 @@ export function LaundrySettingsCRUDPanel() {
       toast.success("אפשרות המשלוח נמחקה בהצלחה");
     } catch (err: any) {
       toast.error("שגיאה במחיקת אפשרות המשלוח: " + err.message);
+    }
+  };
+
+  const handleToggleTier = async (id: string, currentIsActive: boolean) => {
+    const newVal = !currentIsActive;
+    try {
+      await updateDoc(doc(db, "laundry_delivery_tiers", id), {
+        isActive: newVal,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err: any) {
+      console.error("[LaundrySettingsCRUDPanel] toggleTier failed:", err);
+      toast.error("שגיאה בעדכון זמינות אפשרות המשלוח: " + err.message);
     }
   };
 
@@ -606,7 +635,11 @@ export function LaundrySettingsCRUDPanel() {
               {addons.map((addon) => (
                 <div
                   key={addon.id}
-                  className="bg-background border border-muted-foreground/10 hover:border-muted-foreground/20 rounded-xl p-3 flex justify-between items-center gap-3 transition-colors"
+                  className={`bg-background border rounded-xl p-3 flex justify-between items-center gap-3 transition-colors ${
+                    addon.isActive !== false
+                      ? "border-muted-foreground/10 hover:border-muted-foreground/20"
+                      : "border-muted-foreground/5 opacity-50"
+                  }`}
                 >
                   <div className="space-y-0.5 text-right min-w-0 flex-1">
                     <div className="flex items-center gap-2">
@@ -621,7 +654,20 @@ export function LaundrySettingsCRUDPanel() {
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {/* Toggle switch */}
+                    <button
+                      onClick={() => handleToggleAddon(addon.id, addon.isActive !== false)}
+                      title={addon.isActive !== false ? "כבה תוספת" : "הפעל תוספת"}
+                      aria-label={addon.isActive !== false ? "כבה תוספת" : "הפעל תוספת"}
+                      className="relative w-8 h-[18px] rounded-full flex-shrink-0 transition-colors duration-200 focus:outline-none"
+                      style={{ background: addon.isActive !== false ? "var(--primary)" : "#cbd5e1" }}
+                    >
+                      <span
+                        className="absolute top-[2px] left-[2px] w-[14px] h-[14px] bg-white rounded-full shadow transition-transform duration-200"
+                        style={{ transform: addon.isActive !== false ? "translateX(0px)" : "translateX(14px)" }}
+                      />
+                    </button>
                     <button
                       onClick={() => openEditAddon(addon)}
                       className="size-7 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center transition"
@@ -664,7 +710,11 @@ export function LaundrySettingsCRUDPanel() {
               {tiers.map((tier) => (
                 <div
                   key={tier.id}
-                  className="bg-background border border-muted-foreground/10 hover:border-muted-foreground/20 rounded-xl p-3 flex justify-between items-center gap-3 transition-colors"
+                  className={`bg-background border rounded-xl p-3 flex justify-between items-center gap-3 transition-colors ${
+                    tier.isActive !== false
+                      ? "border-muted-foreground/10 hover:border-muted-foreground/20"
+                      : "border-muted-foreground/5 opacity-50"
+                  }`}
                 >
                   <div className="space-y-0.5 text-right min-w-0 flex-1">
                     <div className="flex items-center gap-2">
@@ -676,7 +726,20 @@ export function LaundrySettingsCRUDPanel() {
                     <p className="text-[10px] text-muted-foreground truncate">{tier.desc || "אין תיאור"}</p>
                   </div>
 
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {/* Toggle switch */}
+                    <button
+                      onClick={() => handleToggleTier(tier.id, tier.isActive !== false)}
+                      title={tier.isActive !== false ? "כבה אפשרות משלוח" : "הפעל אפשרות משלוח"}
+                      aria-label={tier.isActive !== false ? "כבה אפשרות משלוח" : "הפעל אפשרות משלוח"}
+                      className="relative w-8 h-[18px] rounded-full flex-shrink-0 transition-colors duration-200 focus:outline-none"
+                      style={{ background: tier.isActive !== false ? "var(--primary)" : "#cbd5e1" }}
+                    >
+                      <span
+                        className="absolute top-[2px] left-[2px] w-[14px] h-[14px] bg-white rounded-full shadow transition-transform duration-200"
+                        style={{ transform: tier.isActive !== false ? "translateX(0px)" : "translateX(14px)" }}
+                      />
+                    </button>
                     <button
                       onClick={() => openEditTier(tier)}
                       className="size-7 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center transition"

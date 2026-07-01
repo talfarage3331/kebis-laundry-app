@@ -329,55 +329,55 @@ function LaundryDashboard() {
       setIsLoading(false);
     });
 
-    const exportToExcel = () => {
-    // ... logic unchanged ...
-  };
-
-  const toggleDeliveryAvailability = async (type: "fast" | "express", checked: boolean) => {
-    if (!user?.uid) return;
-    const isFast = type === "fast";
-    const field = isFast ? "fastDeliveryEnabled" : "expressDeliveryEnabled";
-    
-    // Optimistic toggle
-    const prevVal = isFast ? fastDeliveryEnabled : expressDeliveryEnabled;
-    
-    if (isFast) setFastDeliveryEnabled(checked);
-    else setExpressDeliveryEnabled(checked);
-    
+  const onStorage = () => {
     try {
-      await updateDoc(doc(db, "users", user.uid), { [field]: checked });
-      toast.success("זמינות המשלוח עודכנה בהצלחה");
-    } catch (e: any) {
-      // Revert on error
-      if (isFast) setFastDeliveryEnabled(prevVal);
-      else setExpressDeliveryEnabled(prevVal);
-      toast.error("שגיאה בעדכון זמינות: " + e.message);
-      console.error("Toggle update failed:", e);
+      const raw = localStorage.getItem("laundry_notifications") || "[]";
+      const notifications = JSON.parse(raw);
+      if (Array.isArray(notifications) && notifications.length > 0) {
+        const latest = notifications[0];
+        const seenId = sessionStorage.getItem("last_notified_id");
+        if (latest?.id && seenId !== latest.id) {
+          sessionStorage.setItem("last_notified_id", latest.id);
+          toast.info(`🔔 הזמנה חדשה התקבלה מ-${latest?.user_email ?? ""}!`, { description: latest?.notes ?? "" });
+        }
+      }
+    } catch (storageErr) {
+      console.warn("[laundry-dashboard] onStorage parse error:", storageErr);
     }
   };
+  window.addEventListener("storage", onStorage);
+  return () => {
+    unsubStrict();
+    window.removeEventListener("storage", onStorage);
+  };
+}, [user?.uid]);
 
-    const onStorage = () => {
-      try {
-        const raw = localStorage.getItem("laundry_notifications") || "[]";
-        const notifications = JSON.parse(raw);
-        if (Array.isArray(notifications) && notifications.length > 0) {
-          const latest = notifications[0];
-          const seenId = sessionStorage.getItem("last_notified_id");
-          if (latest?.id && seenId !== latest.id) {
-            sessionStorage.setItem("last_notified_id", latest.id);
-            toast.info(`🔔 הזמנה חדשה התקבלה מ-${latest?.user_email ?? ""}!`, { description: latest?.notes ?? "" });
-          }
-        }
-      } catch (storageErr) {
-        console.warn("[laundry-dashboard] onStorage parse error:", storageErr);
-      }
-    };
-    window.addEventListener("storage", onStorage);
-    return () => {
-      unsubStrict();
-      window.removeEventListener("storage", onStorage);
-    };
-  }, [user?.uid]);
+const exportToExcel = () => {
+  // ... logic unchanged ...
+};
+
+const toggleDeliveryAvailability = async (type: "fast" | "express", checked: boolean) => {
+  if (!user?.uid) return;
+  const isFast = type === "fast";
+  const field = isFast ? "fastDeliveryEnabled" : "expressDeliveryEnabled";
+  
+  // Optimistic toggle
+  const prevVal = isFast ? fastDeliveryEnabled : expressDeliveryEnabled;
+  
+  if (isFast) setFastDeliveryEnabled(checked);
+  else setExpressDeliveryEnabled(checked);
+  
+  try {
+    await updateDoc(doc(db, "users", user.uid), { [field]: checked });
+    toast.success("זמינות המשלוח עודכנה בהצלחה");
+  } catch (e: any) {
+    // Revert on error
+    if (isFast) setFastDeliveryEnabled(prevVal);
+    else setExpressDeliveryEnabled(prevVal);
+    toast.error("שגיאה בעדכון זמינות: " + e.message);
+    console.error("Toggle update failed:", e);
+  }
+};
 
   /* fetchHistoricalOrders — paginated one-time fetch for delivered orders */
   const fetchHistoricalOrders = async (reset = true) => {
@@ -851,7 +851,8 @@ function LaundryDashboard() {
                 </div>
                 
                 <div className="space-y-3">
-                  <div 
+                  {/* Fast Delivery Toggle */}
+                  <div
                     onClick={() => toggleDeliveryAvailability("fast", !fastDeliveryEnabled)}
                     className={`p-4 rounded-xl border flex items-center justify-between transition-all cursor-pointer select-none ${fastDeliveryEnabled ? "bg-slate-50 border-primary/30" : "bg-white border-slate-100 opacity-70"}`}
                   >
@@ -859,14 +860,21 @@ function LaundryDashboard() {
                       <h3 className="font-bold text-slate-800 text-sm">משלוח מהיר (תוך 24 שעות)</h3>
                       <p className="text-xs text-slate-500 mt-0.5">זמינות לקבלת הזמנות מהירות רגילות</p>
                     </div>
-                    <div className="relative inline-flex items-center">
-                      <div className={`w-11 h-6 rounded-full transition-colors duration-200 ${fastDeliveryEnabled ? "bg-primary" : "bg-slate-200"}`}>
-                        <div className={`absolute top-[2px] w-5 h-5 bg-white border border-slate-300 rounded-full transition-transform duration-200 ${fastDeliveryEnabled ? "translate-x-0 left-[2px]" : "translate-x-[20px] left-[2px]"}`} />
-                      </div>
+                    {/* Toggle switch — uses inline-block knob with marginLeft to avoid absolute/translate conflicts */}
+                    <div
+                      role="switch"
+                      aria-checked={fastDeliveryEnabled}
+                      className={`relative w-11 h-6 rounded-full flex-shrink-0 transition-colors duration-200 ${fastDeliveryEnabled ? "bg-primary" : "bg-slate-200"}`}
+                    >
+                      <span
+                        className="absolute top-[2px] left-[2px] w-5 h-5 bg-white border border-slate-200 rounded-full shadow transition-transform duration-200"
+                        style={{ transform: fastDeliveryEnabled ? "translateX(0px)" : "translateX(20px)" }}
+                      />
                     </div>
                   </div>
 
-                  <div 
+                  {/* Express Delivery Toggle */}
+                  <div
                     onClick={() => toggleDeliveryAvailability("express", !expressDeliveryEnabled)}
                     className={`p-4 rounded-xl border flex items-center justify-between transition-all cursor-pointer select-none ${expressDeliveryEnabled ? "bg-slate-50 border-primary/30" : "bg-white border-slate-100 opacity-70"}`}
                   >
@@ -874,10 +882,15 @@ function LaundryDashboard() {
                       <h3 className="font-bold text-slate-800 text-sm">משלוח אקספרס (מהיום להיום)</h3>
                       <p className="text-xs text-slate-500 mt-0.5">זמינות לקבלת הזמנות סופר-דחופות</p>
                     </div>
-                    <div className="relative inline-flex items-center">
-                      <div className={`w-11 h-6 rounded-full transition-colors duration-200 ${expressDeliveryEnabled ? "bg-primary" : "bg-slate-200"}`}>
-                        <div className={`absolute top-[2px] w-5 h-5 bg-white border border-slate-300 rounded-full transition-transform duration-200 ${expressDeliveryEnabled ? "translate-x-0 left-[2px]" : "translate-x-[20px] left-[2px]"}`} />
-                      </div>
+                    <div
+                      role="switch"
+                      aria-checked={expressDeliveryEnabled}
+                      className={`relative w-11 h-6 rounded-full flex-shrink-0 transition-colors duration-200 ${expressDeliveryEnabled ? "bg-primary" : "bg-slate-200"}`}
+                    >
+                      <span
+                        className="absolute top-[2px] left-[2px] w-5 h-5 bg-white border border-slate-200 rounded-full shadow transition-transform duration-200"
+                        style={{ transform: expressDeliveryEnabled ? "translateX(0px)" : "translateX(20px)" }}
+                      />
                     </div>
                   </div>
                 </div>

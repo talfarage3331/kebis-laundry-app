@@ -11,6 +11,8 @@ export interface CustomAddon {
   price: number;
   group: string;
   desc: string;
+  /** Whether this addon is shown to customers during ordering */
+  isActive: boolean;
 }
 
 export interface CustomDeliveryTier {
@@ -20,6 +22,8 @@ export interface CustomDeliveryTier {
   label: string;
   price: number;
   desc: string;
+  /** Whether this delivery option is shown to customers during ordering */
+  isActive: boolean;
 }
 
 export function useLaundryOptions(laundryId?: string | null) {
@@ -65,6 +69,7 @@ export function useLaundryOptions(laundryId?: string | null) {
             price: Number(data.price) || 0,
             group: data.group || "",
             desc: data.desc || "",
+            isActive: data.isActive !== false,
           } as CustomAddon;
         });
         setCustomAddons(list);
@@ -91,6 +96,7 @@ export function useLaundryOptions(laundryId?: string | null) {
             label: data.label || "",
             price: Number(data.price) || 0,
             desc: data.desc || "",
+            isActive: data.isActive !== false,
           } as CustomDeliveryTier;
         });
         setCustomDeliveryTiers(list);
@@ -169,6 +175,7 @@ export async function seedDefaultsIfEmpty(laundryId: string) {
         price: Number(addon.price),
         group: addon.group,
         desc: addon.desc,
+        isActive: true,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });
@@ -189,6 +196,7 @@ export async function seedDefaultsIfEmpty(laundryId: string) {
         label: tier.label,
         price: Number(tier.price),
         desc: tier.desc,
+        isActive: true,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });

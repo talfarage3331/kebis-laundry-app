@@ -6,7 +6,7 @@ import { Check, Loader2, ArrowLeft, ArrowRight, Plus, Trash2, Tag, Shirt, Sparkl
 
 interface OnboardingWizardProps {
   laundryId: string;
-  onComplete: () => void;
+  onComplete: (nextStatus: string) => void;
 }
 
 interface PriceItemInput {
@@ -237,7 +237,7 @@ export function OnboardingWizard({ laundryId, onComplete }: OnboardingWizardProp
 
       await batch.commit();
       toast.success("הגדרות המכבסה נשמרו בהצלחה!");
-      onComplete();
+      onComplete(nextStatus);
     } catch (error: any) {
       console.error("Onboarding setup failed: ", error);
       toast.error("שגיאה בשמירת הנתונים: " + error.message);

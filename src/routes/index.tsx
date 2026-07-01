@@ -444,9 +444,9 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
     toast.success("פרטי ההזמנה הקבועה הוחלו בהצלחה!");
   };
 
-  // Filter addons & delivery tiers for the active shop
-  const shopAddonsList = customAddons.filter(a => a.laundryId === effectiveLaundryId);
-  const shopTiersList = customTiers.filter(t => t.laundryId === effectiveLaundryId);
+  // Filter addons & delivery tiers for the active shop, excluding disabled items
+  const shopAddonsList = customAddons.filter(a => a.laundryId === effectiveLaundryId && a.isActive !== false);
+  const shopTiersList = customTiers.filter(t => t.laundryId === effectiveLaundryId && t.isActive !== false);
 
   // Build options maps
   const shopAddons: Record<string, { label: string; price: number; group: string; desc: string }> = {};
