@@ -45,6 +45,8 @@ export interface User {
   associatedLaundryId?: string;
   fastDeliveryEnabled?: boolean;
   expressDeliveryEnabled?: boolean;
+  /** URL slug for the laundry's public shop page (e.g. used in /shop/:slug) */
+  shopSlug?: string;
 }
 
 interface Store {
@@ -280,6 +282,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
             let onboardingCompleted: boolean | undefined = undefined;
             let fastDeliveryEnabled: boolean = true;
             let expressDeliveryEnabled: boolean = true;
+            let shopSlug: string | undefined = undefined;
 
             if (userDocSnap.exists()) {
               const data = userDocSnap.data();
@@ -290,6 +293,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
               onboardingCompleted = data.onboardingCompleted;
               fastDeliveryEnabled = data.fastDeliveryEnabled ?? true;
               expressDeliveryEnabled = data.expressDeliveryEnabled ?? true;
+              shopSlug = data.shopSlug || undefined;
             } else {
               // Create user profile document in background
               setDoc(
@@ -340,6 +344,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
               associatedLaundryId: associatedLaundryId,
               fastDeliveryEnabled,
               expressDeliveryEnabled,
+              shopSlug,
             });
             setIsRoleLoading(false);
             setIsProfileReady(true);

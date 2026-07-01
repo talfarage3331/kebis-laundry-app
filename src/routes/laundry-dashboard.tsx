@@ -649,7 +649,12 @@ function LaundryDashboard() {
       </div>
       <button
         onClick={() => {
-          const link = `${window.location.origin}/login?laundryId=${user?.uid || ""}`;
+          const slug = user?.shopSlug;
+          if (!slug) {
+            toast.error("הגדר קישור חנות בהגדרות לפני שתעתיק את הלינק.");
+            return;
+          }
+          const link = `${window.location.origin}/shop/${slug}`;
           navigator.clipboard.writeText(link);
           toast.success("הלינק הועתק בהצלחה!");
         }}
@@ -660,6 +665,7 @@ function LaundryDashboard() {
       </button>
     </div>
   );
+
 
   /* ── render ─────────────────────────────────────────────────────── */
   const effectiveStatus = wizardCompleteState.completed && wizardCompleteState.status ? wizardCompleteState.status : user?.status;
