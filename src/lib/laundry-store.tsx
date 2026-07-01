@@ -310,13 +310,13 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
               });
             }
 
-            // Apply overrides
-            const storedOverride = localStorage.getItem(`role_override_${email}`);
-            if (storedOverride) {
-              userRole = storedOverride as any;
-            }
-            const storedName = localStorage.getItem(`name_override_${email}`);
-            const resolvedDisplayName = storedName || dbName;
+            // ── Removed: localStorage role_override silently overwrote ──────────
+            // the freshly-read Firestore role, causing admin role-change edits
+            // to never persist for the affected user's session. Role is now
+            // always sourced exclusively from Firestore.
+            // ─────────────────────────────────────────────────────────────────────
+
+            const resolvedDisplayName = dbName;
 
             // Check if role changed in real-time
             if (lastRoleRef.current !== null && lastRoleRef.current !== userRole) {
@@ -352,25 +352,18 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
           },
           (error) => {
             console.error("Firestore onSnapshot error for user profile:", error);
-            // Defensive defaulting: fallback to customer on error
+            // Defensive defaulting: fallback to customer on error.
+            // Role overrides are intentionally NOT applied here — they caused
+            // admin-assigned role changes to be silently reverted.
             let fallbackRole: "admin" | "laundry" | "customer" = "customer";
             if (email === "talfarage3331@gmail.com") {
               fallbackRole = "admin";
             }
 
-            const storedOverride = localStorage.getItem(`role_override_${email}`);
-            if (storedOverride) {
-              fallbackRole = storedOverride as any;
-            }
-
-            const dbName = defaultName;
-            const storedName = localStorage.getItem(`name_override_${email}`);
-            const resolvedDisplayName = storedName || dbName;
-
             setRole(fallbackRole);
             setUser({
               uid: uid,
-              name: resolvedDisplayName,
+              name: defaultName,
               email: email,
               role: fallbackRole,
             });

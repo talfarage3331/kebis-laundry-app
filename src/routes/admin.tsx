@@ -426,17 +426,43 @@ function AdminDashboard() {
     setIsUpdating(true);
     try {
       const userDocRef = doc(db, "users", editingProfile.id);
+
+      // Always write role explicitly. For laundry, persist the chosen status;
+      // for any other role, clear the status field so stale laundry-status
+      // data never shadows the new role on subsequent reads.
       const updateData: Record<string, any> = {
         fullName: editName,
+        email: editEmail,
         role: editRole,
+        // Explicitly set or null-out status so there is never a mismatch
+        // between the stored role and a leftover status from a previous role.
+        status: editRole === "laundry" ? editStatus : null,
       };
-      if (editRole === "laundry") {
-        updateData.status = editStatus;
-      }
+
       await updateDoc(userDocRef, updateData);
+
+      // ── Optimistic local update ──────────────────────────────────────────
+      // Update the local profiles array immediately so the UI reflects the
+      // change right away, independent of whether fetchProfiles() returns
+      // fresh or stale data from the Firestore local cache.
+      setProfiles((prev) =>
+        prev.map((p) =>
+          p.id === editingProfile.id
+            ? {
+                ...p,
+                fullName: editName,
+                email: editEmail,
+                role: editRole,
+                status: editRole === "laundry" ? editStatus : undefined,
+              }
+            : p,
+        ),
+      );
 
       toast.success("פרופיל המשתמש עודכן בהצלחה!");
       setEditingProfile(null);
+      // Also trigger a background refresh to catch any other fields that may
+      // have changed server-side (e.g., via Cloud Functions).
       fetchProfiles();
     } catch (err: any) {
       toast.error("שגיאה בעדכון הפרופיל: " + err.message);
