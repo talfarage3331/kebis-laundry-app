@@ -77,8 +77,10 @@ export const Route = createFileRoute("/api/orders/create")({
             const maxRadius = getDoubleValue(vendorDoc.fields.maxDeliveryRadiusKm);
 
             if (!vendorCoords || maxRadius === null) {
-              // Vendor has no zone — allow with warning (graceful degradation)
-              warning = "המכבסה לא הגדירה את אזור המשלוח שלה, ההזמנה אושרה באופן חריג";
+              return new Response(
+                JSON.stringify({ error: "המכבסה טרם הגדירה אזור משלוח, לא ניתן לבצע הזמנות משלוח כרגע" }),
+                { status: 400, headers: { "Content-Type": "application/json" } },
+              );
             } else {
               if (customerLat === undefined || customerLng === undefined) {
                 return new Response(

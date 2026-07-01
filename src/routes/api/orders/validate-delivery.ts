@@ -52,8 +52,8 @@ export const Route = createFileRoute("/api/orders/validate-delivery")({
 
           if (!vendorCoords || maxRadius === null) {
             return new Response(
-              JSON.stringify({ allowed: true, warning: "מיקום המכבסה אינו מוגדר, מאשר משלוח באופן חריג" }),
-              { status: 200, headers: { "Content-Type": "application/json" } },
+              JSON.stringify({ error: "המכבסה טרם הגדירה אזור משלוח, לא ניתן לבצע הזמנות משלוח כרגע" }),
+              { status: 400, headers: { "Content-Type": "application/json" } },
             );
           }
 

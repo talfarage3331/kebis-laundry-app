@@ -575,14 +575,20 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
   let distanceKm: number | null = null;
   let isDistanceOk = true;
 
-  if (deliveryMethod === "home_delivery" && customerCoords && vendorCoords && maxRadius !== undefined) {
-    distanceKm = haversineDistanceKm(
-      customerCoords.lat,
-      customerCoords.lng,
-      vendorCoords.lat,
-      vendorCoords.lng
-    );
-    isDistanceOk = distanceKm <= maxRadius;
+  if (deliveryMethod === "home_delivery") {
+    if (!vendorCoords || maxRadius === undefined) {
+      isDistanceOk = false;
+    } else if (customerCoords) {
+      distanceKm = haversineDistanceKm(
+        customerCoords.lat,
+        customerCoords.lng,
+        vendorCoords.lat,
+        vendorCoords.lng
+      );
+      isDistanceOk = distanceKm <= maxRadius;
+    } else {
+      isDistanceOk = false;
+    }
   }
 
 
@@ -1335,10 +1341,10 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
                   <Loader2 className="size-4 animate-spin text-primary" />
                   <span>בודק טווח משלוח של המכבסה...</span>
                 </div>
-              ) : vendorDeliveryZone && !vendorDeliveryZone.deliveryCoordinates ? (
-                <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-2xl p-3.5 text-right font-bold flex items-center gap-2 justify-start">
-                  <span className="size-2 rounded-full bg-amber-500 animate-ping shrink-0" />
-                  <span>⚠️ המכבסה לא הגדירה את אזור המשלוח שלה. ההזמנה תאושר באופן חריג בתיאום טלפוני.</span>
+              ) : vendorDeliveryZone && (!vendorDeliveryZone.deliveryCoordinates || vendorDeliveryZone.maxDeliveryRadiusKm === undefined) ? (
+                <div className="bg-red-50 border border-red-200 text-red-800 text-xs rounded-2xl p-3.5 text-right font-bold flex items-center gap-2 justify-start">
+                  <span className="size-2 rounded-full bg-red-500 animate-ping shrink-0" />
+                  <span>🔴 המכבסה טרם הגדירה אזור משלוח, לא ניתן לבצע הזמנות משלוח כרגע</span>
                 </div>
               ) : selectedAddress && distanceKm !== null && maxRadius !== undefined ? (
                 !isDistanceOk ? (
