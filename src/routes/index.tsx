@@ -448,26 +448,29 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
   const shopAddonsList = customAddons.filter(a => a.laundryId === effectiveLaundryId && a.isActive !== false);
   const shopTiersList = customTiers.filter(t => t.laundryId === effectiveLaundryId && t.isActive !== false);
 
+  const hasCustomAddons = !optionsLoading && customAddons.some(a => a.laundryId === effectiveLaundryId);
+  const hasCustomTiers = !optionsLoading && customTiers.some(t => t.laundryId === effectiveLaundryId);
+
   // Build options maps
-  const shopAddons: Record<string, { label: string; price: number; group: string; desc: string }> = {};
-  if (shopAddonsList.length > 0) {
+  const shopAddons: Record<string, { label: string; price: number; group: string; desc: string; isActive?: boolean }> = {};
+  if (hasCustomAddons) {
     shopAddonsList.forEach(a => {
-      shopAddons[a.key] = { label: a.label, price: a.price, group: a.group, desc: a.desc };
+      shopAddons[a.key] = { label: a.label, price: a.price, group: a.group, desc: a.desc, isActive: a.isActive };
     });
   } else {
     Object.entries(ADDONS_META).forEach(([k, v]) => {
-      shopAddons[k] = v;
+      shopAddons[k] = { ...v, isActive: true };
     });
   }
 
-  const shopTiers: Record<string, { label: string; price: number; desc: string }> = {};
-  if (shopTiersList.length > 0) {
+  const shopTiers: Record<string, { label: string; price: number; desc: string; isActive?: boolean }> = {};
+  if (hasCustomTiers) {
     shopTiersList.forEach(t => {
-      shopTiers[t.key] = { label: t.label, price: t.price, desc: t.desc };
+      shopTiers[t.key] = { label: t.label, price: t.price, desc: t.desc, isActive: t.isActive };
     });
   } else {
     Object.entries(DELIVERY_TIERS_META).forEach(([k, v]) => {
-      shopTiers[k] = v;
+      shopTiers[k] = { ...v, isActive: true };
     });
   }
 
@@ -1218,7 +1221,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
             </div>
             <div className="space-y-2">
               {Object.entries(shopAddons)
-                .filter(([, meta]) => meta.group === "שדרוגי פרימיום")
+                .filter(([, meta]) => meta.group === "שדרוגי פרימיום" && meta.isActive !== false)
                 .map(([key, meta]) => (
                   <AddonRow
                     key={key}
@@ -1241,7 +1244,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
             </div>
             <div className="space-y-2">
               {Object.entries(shopAddons)
-                .filter(([, meta]) => meta.group === "סוגי טיפול מיוחדים")
+                .filter(([, meta]) => meta.group === "סוגי טיפול מיוחדים" && meta.isActive !== false)
                 .map(([key, meta]) => (
                   <AddonRow
                     key={key}
@@ -1264,17 +1267,19 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
                 <p className="text-[11px] sm:text-xs text-slate-500">בחר את מהירות המשלוח המועדפת עליך</p>
               </div>
               <div className="space-y-2">
-                {Object.entries(shopTiers).map(([key, meta]) => (
-                  <RadioRow
-                    key={key}
-                    id={key}
-                    label={meta.label}
-                    price={meta.price}
-                    desc={meta.desc}
-                    selected={deliveryTier === key}
-                    onSelect={() => setDeliveryTier(key)}
-                  />
-                ))}
+                {Object.entries(shopTiers)
+                  .filter(([, meta]) => meta.isActive !== false)
+                  .map(([key, meta]) => (
+                    <RadioRow
+                      key={key}
+                      id={key}
+                      label={meta.label}
+                      price={meta.price}
+                      desc={meta.desc}
+                      selected={deliveryTier === key}
+                      onSelect={() => setDeliveryTier(key)}
+                    />
+                  ))}
               </div>
             </div>
           )}
@@ -1288,7 +1293,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
               </div>
               <div className="space-y-2">
                 {Object.entries(shopAddons)
-                  .filter(([key]) => key === "quick_pickup" || key === "express_wash")
+                  .filter(([key, meta]) => (key === "quick_pickup" || key === "express_wash") && meta.isActive !== false)
                   .map(([key, meta]) => (
                     <AddonRow
                       key={key}
@@ -1313,7 +1318,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
               </div>
               <div className="space-y-2">
                 {Object.entries(shopAddons)
-                  .filter(([, meta]) => meta.group === "חוויית לוגיסטיקה")
+                  .filter(([, meta]) => meta.group === "חוויית לוגיסטיקה" && meta.isActive !== false)
                   .map(([key, meta]) => (
                     <div key={key} className="w-full">
                       <AddonRow
