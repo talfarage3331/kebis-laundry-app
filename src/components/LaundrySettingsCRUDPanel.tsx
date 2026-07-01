@@ -703,7 +703,7 @@ export function LaundrySettingsCRUDPanel() {
         {/* Map Preview Container */}
         <div className="space-y-1">
           <p className="text-[10px] font-bold text-slate-500">תצוגה מקדימה של אזור המשלוח:</p>
-          <div id="laundry-delivery-map" className="h-44 w-full rounded-xl overflow-hidden border bg-white" />
+          <div id="laundry-delivery-map" className="h-64 sm:h-72 w-full rounded-xl overflow-hidden border bg-white" />
         </div>
 
         {/* Save action button */}

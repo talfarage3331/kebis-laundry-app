@@ -848,7 +848,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
       return;
     }
     if (deliveryMethod === "home_delivery" && !isDistanceOk) {
-      toast.error("מיקום המשלוח רחוק מידי עבור המכבסה");
+      toast.error("מיקום המשלוח רחוק מדי עבור המכבסה – לא ניתן לבצע הזמנה לכתובת זו");
       return;
     }
 
@@ -1343,7 +1343,7 @@ function PickupModal({ isOpen, onClose, onSubmit }: PickupModalProps) {
               ) : selectedAddress && distanceKm !== null && maxRadius !== undefined ? (
                 !isDistanceOk ? (
                   <div className="bg-red-50 border border-red-200 text-red-800 text-xs rounded-2xl p-3.5 text-right font-bold flex flex-col gap-1 justify-start">
-                    <span className="flex items-center gap-1.5">🔴 מיקום המשלוח רחוק מידי עבור המכבסה</span>
+                    <span className="flex items-center gap-1.5">🔴 מיקום המשלוח רחוק מדי עבור המכבסה – לא ניתן לבצע הזמנה לכתובת זו</span>
                     <span className="text-[10px] opacity-90 font-mono">מרחק נוכחי: {distanceKm.toFixed(1)} ק"מ | מקסימום מותר: {maxRadius} ק"מ</span>
                   </div>
                 ) : (
