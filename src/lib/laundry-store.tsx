@@ -437,9 +437,14 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       // Client-side sort desc to ensure index is not required
       allOrders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-      // Filter out placeholders
+      // Filter out placeholders AND terminal-status orders (delivered / cancelled).
+      // Only a genuinely in-progress order should drive the tracking banner.
       const activeOrder = allOrders.find(
-        (o) => o.delivery_method !== "placeholder" && !o.id.startsWith("placeholder"),
+        (o) =>
+          o.delivery_method !== "placeholder" &&
+          !o.id.startsWith("placeholder") &&
+          o.status !== "delivered" &&
+          o.status !== "cancelled",
       );
 
       // Invoices - derived from order's invoiceUrl field

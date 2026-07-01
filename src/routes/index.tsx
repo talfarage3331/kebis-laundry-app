@@ -105,10 +105,9 @@ function Dashboard() {
     <AppLayout>
       <AppHeader subtitle={user ? `שלום, ${user.name}` : undefined} />
       <main className="px-4 sm:px-5 mt-4 sm:mt-6 pb-8">
-        {orderState === "none" || orderState === "delivered" || orderState === "cancelled" ? (
-          <EmptyState onOpenModal={() => setIsModalOpen(true)} onOpenPricing={() => setIsPricingOpen(true)} />
-        ) : (
-          <div className="space-y-6">
+        <div className="space-y-6">
+          {/* Tracking banner — only shown when a genuine in-progress order exists */}
+          {orderState !== "none" && orderState !== "delivered" && orderState !== "cancelled" && (
             <div className="bg-lavender/40 border border-lavender-foreground/10 rounded-3xl p-4 sm:p-6 text-center space-y-3 sm:space-y-4">
               <div className="size-16 bg-lime rounded-full grid place-items-center mx-auto shadow-sm">
                 <ShoppingBasket className="size-8 text-lime-foreground animate-pulse" />
@@ -127,15 +126,20 @@ function Dashboard() {
                 עבור למסך מעקב הזמנה
               </button>
             </div>
+          )}
 
-            <div className="pt-6 border-t border-border/60 flex flex-col items-center gap-2">
+          {/* New-order section — always visible */}
+          {orderState !== "none" && orderState !== "delivered" && orderState !== "cancelled" ? (
+            <div className="pt-2 border-t border-border/60 flex flex-col items-center gap-2">
               <span className="text-sm font-bold text-muted-foreground">
                 רוצה לבצע הזמנה נוספת?
               </span>
               <EmptyState onOpenModal={() => setIsModalOpen(true)} onOpenPricing={() => setIsPricingOpen(true)} />
             </div>
-          </div>
-        )}
+          ) : (
+            <EmptyState onOpenModal={() => setIsModalOpen(true)} onOpenPricing={() => setIsPricingOpen(true)} />
+          )}
+        </div>
       </main>
 
       <PickupModal
