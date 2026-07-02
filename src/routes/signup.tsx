@@ -441,13 +441,29 @@ function Signup() {
       const assignedRole = email === "talfarage3331@gmail.com" ? "admin" : "customer";
 
       const db = getDb();
-      await setDoc(doc(db, "users", fbUser.uid), {
-        fullName:             name,
-        email:                email,
-        role:                 assignedRole,
-        associatedLaundryId:  vendor.vendorId,
-        createdAt:            serverTimestamp(),
-      } as Record<string, unknown>);
+      const newUserRef = doc(db, "users", fbUser.uid);
+      const existingSnap = await getDoc(newUserRef);
+
+      if (existingSnap.exists()) {
+        // ── Existing account: NEVER overwrite an admin-assigned role ─────
+        // Only update non-role fields so re-registration or a race
+        // condition cannot downgrade a 'laundry' user back to 'customer'.
+        await setDoc(newUserRef, {
+          fullName: name,
+          email: email,
+          associatedLaundryId: vendor.vendorId,
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+      } else {
+        // Brand-new account: safe to write the full initial profile including role
+        await setDoc(newUserRef, {
+          fullName:             name,
+          email:                email,
+          role:                 assignedRole,
+          associatedLaundryId:  vendor.vendorId,
+          createdAt:            serverTimestamp(),
+        } as Record<string, unknown>);
+      }
 
       // Step 3: Create multi-tenant scoped profile
       if (assignedRole === "customer") {

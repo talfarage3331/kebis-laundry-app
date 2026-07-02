@@ -298,13 +298,19 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
               expressDeliveryEnabled = data.expressDeliveryEnabled ?? true;
               shopSlug = data.shopSlug || undefined;
             } else {
-              // Create user profile document in background
+              // ── IMPORTANT: Do NOT write 'role' here ────────────────────────
+              // This setDoc only runs when a Firestore document is missing on
+              // session start. Writing role: userRole here would reset
+              // admin-assigned roles to 'customer' if the document is
+              // transiently missing (network hiccup, cold read, etc.).
+              // Role is ONLY written by signup/login registration flows or
+              // by the admin panel explicitly.
+              // ──────────────────────────────────────────────────────────────
               setDoc(
                 userDocRef,
                 {
                   fullName: dbName,
                   email: email,
-                  role: userRole,
                   createdAt: serverTimestamp(),
                 },
                 { merge: true }
@@ -485,8 +491,11 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   const login = useCallback((u: User) => {
+    // NOTE: role is intentionally NOT set here.
+    // Role is always sourced exclusively from the Firestore onSnapshot listener
+    // (see the Auth listener above). Allowing a caller-supplied role here
+    // would risk overriding an admin-assigned role with a stale cached value.
     setUser(u);
-    if (u.role) setRole(u.role);
     setIsRoleLoading(false);
   }, []);
   const logout = useCallback(async () => {
