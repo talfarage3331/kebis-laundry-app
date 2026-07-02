@@ -133,29 +133,21 @@ export async function verifyIdToken(request: Request): Promise<VerifiedClaims> {
   }
 
   const jwks = await getJwks();
-  const key = jwks[head.kid];
-  if (!key) {
+  const sig = b64urlToBytes(parts[2]);
+  const signedBytes = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
+  const signed = new ArrayBuffer(signedBytes.byteLength);
+  new Uint8Array(signed).set(signedBytes);
+
+  let verifyKey = jwks[head.kid];
+  if (!verifyKey) {
     // Force refresh once — key rotation edge case
     jwksCache = null;
     const refreshed = await getJwks();
-    const k2 = refreshed[head.kid];
-    if (!k2) unauthorized("unknown key id");
-    const ok = await crypto.subtle.verify(
-      "RSASSA-PKCS1-v1_5",
-      k2,
-      b64urlToBytes(parts[2]),
-      new TextEncoder().encode(`${parts[0]}.${parts[1]}`),
-    );
-    if (!ok) unauthorized("bad signature");
-  } else {
-    const ok = await crypto.subtle.verify(
-      "RSASSA-PKCS1-v1_5",
-      key,
-      b64urlToBytes(parts[2]),
-      new TextEncoder().encode(`${parts[0]}.${parts[1]}`),
-    );
-    if (!ok) unauthorized("bad signature");
+    verifyKey = refreshed[head.kid];
+    if (!verifyKey) unauthorized("unknown key id");
   }
+  const ok = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", verifyKey, sig, signed);
+  if (!ok) unauthorized("bad signature");
 
   return {
     uid: payload.sub as string,
