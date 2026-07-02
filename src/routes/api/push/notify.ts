@@ -1,18 +1,17 @@
 /**
  * POST /api/push/notify
  * ─────────────────────────────────────────────────────────────────
- * Internal server route — called from client code and dashboards
- * to dispatch push notifications using FCM HTTP v1 REST API.
+ * Dispatch a push notification via FCM HTTP v1.
  *
- * Expected JSON body:
- * {
- *   "userEmail": "customer@example.com", // OR direct token
- *   "token": "d_token_...",             // Optional, for direct testing
- *   "event": "laundry-ready",
- *   "customTitle": "Optional title override",
- *   "customBody": "Optional body override",
- *   "url": "/payments"
- * }
+ * Security model (post-hardening):
+ *   • Requires a valid Firebase Auth ID token (Authorization: Bearer).
+ *   • RBAC:
+ *       - admin / laundry: may notify any user for any supported event.
+ *       - customer: may only send `chat-to-staff` to the laundry-staff
+ *         group. Everything else is rejected.
+ *   • Direct-token diagnostic mode is admin-only.
+ *   • The `userEmail` / `userId` in the body identifies the RECIPIENT.
+ *     The caller identity comes exclusively from the verified JWT.
  */
 import { createFileRoute } from "@tanstack/react-router";
 import { sendFcmMessage } from "@/lib/fcm-admin.server";
@@ -34,6 +33,19 @@ export const Route = createFileRoute("/api/push/notify")({
     handlers: {
       POST: async ({ request }) => {
         try {
+          // ── AuthN ──────────────────────────────────────────────────
+          const { verifyIdToken, getCallerRole } = await import(
+            "@/lib/verify-id-token.server"
+          );
+          let claims;
+          try {
+            claims = await verifyIdToken(request);
+          } catch (resp) {
+            if (resp instanceof Response) return resp;
+            throw resp;
+          }
+          const role = await getCallerRole(claims.uid);
+
           const body = (await request.json()) as {
             userEmail?: string;
             userId?: string;
@@ -48,9 +60,14 @@ export const Route = createFileRoute("/api/push/notify")({
           const bodyText = body.customBody || "יש עדכון חדש בהזמנה שלך";
           const targetUrl = body.url || "/";
 
-          // ─── Direct Token Diagnostic Testing Mode ──────────────────
+          // ── Direct token diagnostic — admin only ───────────────────
           if (body.token) {
-            console.log("[push/notify] Sending test push direct to token...");
+            if (role !== "admin") {
+              return new Response(
+                JSON.stringify({ error: "forbidden: direct-token mode is admin-only" }),
+                { status: 403, headers: { "Content-Type": "application/json" } },
+              );
+            }
             const res = await sendFcmMessage({
               token: body.token,
               title,
@@ -58,8 +75,6 @@ export const Route = createFileRoute("/api/push/notify")({
               url: targetUrl,
               badgeCount: 1,
             });
-
-            // Log direct-token pushes to Firestore notification_logs too!
             try {
               const { logNotification } = await import("@/lib/firestore-admin.server");
               await logNotification({
@@ -74,21 +89,21 @@ export const Route = createFileRoute("/api/push/notify")({
             } catch (logErr) {
               console.error("[push/notify] Failed to log direct-token notification:", logErr);
             }
-
             return new Response(JSON.stringify({ success: res.ok, result: res }), {
               status: 200,
               headers: { "Content-Type": "application/json" },
             });
           }
 
-          // ─── Standard User Routing Mode ──────────────────────
+          // ── Standard payload validation ────────────────────────────
           if ((!body?.userEmail && !body?.userId) || !body?.event) {
             return new Response(
-              JSON.stringify({ error: "Missing required fields: userEmail/userId and event (or token)" }),
+              JSON.stringify({
+                error: "Missing required fields: userEmail/userId and event (or token)",
+              }),
               { status: 400, headers: { "Content-Type": "application/json" } },
             );
           }
-
           if (
             (body.userEmail && (typeof body.userEmail !== "string" || body.userEmail.length > 255)) ||
             (body.userId && (typeof body.userId !== "string" || body.userId.length > 255)) ||
@@ -100,6 +115,18 @@ export const Route = createFileRoute("/api/push/notify")({
               }),
               { status: 400, headers: { "Content-Type": "application/json" } },
             );
+          }
+
+          // ── RBAC: customers are limited to chat-to-staff ───────────
+          if (role === "customer") {
+            if (body.event !== "chat-to-staff") {
+              return new Response(
+                JSON.stringify({
+                  error: "forbidden: customers may only send chat-to-staff notifications",
+                }),
+                { status: 403, headers: { "Content-Type": "application/json" } },
+              );
+            }
           }
 
           const env = getServerEnv();
@@ -127,7 +154,15 @@ export const Route = createFileRoute("/api/push/notify")({
             },
           );
 
-          console.log("[push/notify]", body.event, "→", body.userId || body.userEmail, JSON.stringify(result));
+          console.log(
+            "[push/notify]",
+            body.event,
+            "→",
+            body.userId || body.userEmail,
+            "by",
+            `${claims.uid}(${role})`,
+            JSON.stringify(result),
+          );
           const success = result.sent > 0 && result.failed === 0;
           return new Response(JSON.stringify({ success, ...result }), {
             status: 200,
@@ -136,20 +171,13 @@ export const Route = createFileRoute("/api/push/notify")({
         } catch (err: any) {
           const message = err instanceof Error ? err.message : String(err);
           console.error("[push/notify] Unhandled error:", err);
-          
-          const isExpectedError = 
-            message.includes("no tokens") || 
-            message.includes("no user") || 
-            message.includes("FCM tokens") || 
+          const isExpectedError =
+            message.includes("no tokens") ||
+            message.includes("no user") ||
+            message.includes("FCM tokens") ||
             message.includes("not found");
-
           return new Response(
-            JSON.stringify({
-              success: false,
-              sent: 0,
-              failed: 0,
-              error: message,
-            }),
+            JSON.stringify({ success: false, sent: 0, failed: 0, error: message }),
             {
               status: isExpectedError ? 200 : 500,
               headers: { "Content-Type": "application/json" },

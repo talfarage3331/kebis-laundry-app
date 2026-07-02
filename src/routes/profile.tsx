@@ -6,6 +6,7 @@ import { useLaundry, stateLabel, normalizeStatus } from "@/lib/laundry-store";
 import { LogOut, User as UserIcon, Mail, Loader2, ShoppingBasket, ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
+import { authFetch } from "@/lib/auth-fetch";
 import { collection, query, where, getDocs, orderBy, limit, startAfter, type DocumentSnapshot } from "firebase/firestore";
 import {
   Dialog,
@@ -73,7 +74,7 @@ function FCMDiagnostics() {
 
     setTestingPush(true);
     try {
-      const res = await fetch("/api/push/notify", {
+      const res = await authFetch("/api/push/notify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
