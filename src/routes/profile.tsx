@@ -74,7 +74,7 @@ function FCMDiagnostics() {
 
     setTestingPush(true);
     try {
-      const res = await fetch("/api/push/notify", {
+      const res = await authFetch("/api/push/notify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -514,7 +514,7 @@ const toggleDeliveryAvailability = async (type: "fast" | "express", checked: boo
 
   const sendPushEvent = async (customerEmail: string, customerUserId: string, event: string, options?: { customBody?: string; customTitle?: string }) => {
     try {
-      const res = await fetch("/api/push/notify", {
+      const res = await authFetch("/api/push/notify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userEmail: customerEmail, userId: customerUserId, event, ...options }),

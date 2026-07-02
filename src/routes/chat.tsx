@@ -196,7 +196,7 @@ function Chat() {
       });
 
       // Trigger push notification to laundry staff group
-      fetch("/api/push/notify", {
+      authFetch("/api/push/notify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

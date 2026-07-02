@@ -395,7 +395,7 @@ function AdminChat() {
       });
 
       // Trigger push notification to customer
-      fetch("/api/push/notify", {
+      authFetch("/api/push/notify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
