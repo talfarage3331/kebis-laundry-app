@@ -60,13 +60,14 @@ async function getJwks(): Promise<Record<string, CryptoKey>> {
 }
 
 // ─── Base64url ────────────────────────────────────────────────────────────
-function b64urlToBytes(input: string): Uint8Array {
+function b64urlToBytes(input: string): ArrayBuffer {
   const pad = input.length % 4 === 0 ? "" : "=".repeat(4 - (input.length % 4));
   const b64 = (input + pad).replace(/-/g, "+").replace(/_/g, "/");
   const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
+  const buf = new ArrayBuffer(bin.length);
+  const view = new Uint8Array(buf);
+  for (let i = 0; i < bin.length; i++) view[i] = bin.charCodeAt(i);
+  return buf;
 }
 function b64urlToString(input: string): string {
   return new TextDecoder().decode(b64urlToBytes(input));

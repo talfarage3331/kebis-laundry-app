@@ -24,8 +24,8 @@ import { Route as ShopSlugRouteImport } from './routes/shop.$slug'
 import { Route as ApiPushUnsubscribeRouteImport } from './routes/api/push/unsubscribe'
 import { Route as ApiPushSubscribeRouteImport } from './routes/api/push/subscribe'
 import { Route as ApiPushNotifyRouteImport } from './routes/api/push/notify'
-import { Route as ApiOrdersCreateRouteImport } from './routes/api/orders/create'
 import { Route as ApiOrdersValidateDeliveryRouteImport } from './routes/api/orders/validate-delivery'
+import { Route as ApiOrdersCreateRouteImport } from './routes/api/orders/create'
 
 const TrackingRoute = TrackingRouteImport.update({
   id: '/tracking',
@@ -102,14 +102,15 @@ const ApiPushNotifyRoute = ApiPushNotifyRouteImport.update({
   path: '/api/push/notify',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiOrdersValidateDeliveryRoute =
+  ApiOrdersValidateDeliveryRouteImport.update({
+    id: '/api/orders/validate-delivery',
+    path: '/api/orders/validate-delivery',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiOrdersCreateRoute = ApiOrdersCreateRouteImport.update({
   id: '/api/orders/create',
   path: '/api/orders/create',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiOrdersValidateDeliveryRoute = ApiOrdersValidateDeliveryRouteImport.update({
-  id: '/api/orders/validate-delivery',
-  path: '/api/orders/validate-delivery',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -126,11 +127,11 @@ export interface FileRoutesByFullPath {
   '/signup': typeof SignupRoute
   '/tracking': typeof TrackingRoute
   '/shop/$slug': typeof ShopSlugRoute
+  '/api/orders/create': typeof ApiOrdersCreateRoute
+  '/api/orders/validate-delivery': typeof ApiOrdersValidateDeliveryRoute
   '/api/push/notify': typeof ApiPushNotifyRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/push/unsubscribe': typeof ApiPushUnsubscribeRoute
-  '/api/orders/create': typeof ApiOrdersCreateRoute
-  '/api/orders/validate-delivery': typeof ApiOrdersValidateDeliveryRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -145,11 +146,11 @@ export interface FileRoutesByTo {
   '/signup': typeof SignupRoute
   '/tracking': typeof TrackingRoute
   '/shop/$slug': typeof ShopSlugRoute
+  '/api/orders/create': typeof ApiOrdersCreateRoute
+  '/api/orders/validate-delivery': typeof ApiOrdersValidateDeliveryRoute
   '/api/push/notify': typeof ApiPushNotifyRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/push/unsubscribe': typeof ApiPushUnsubscribeRoute
-  '/api/orders/create': typeof ApiOrdersCreateRoute
-  '/api/orders/validate-delivery': typeof ApiOrdersValidateDeliveryRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -165,11 +166,11 @@ export interface FileRoutesById {
   '/signup': typeof SignupRoute
   '/tracking': typeof TrackingRoute
   '/shop/$slug': typeof ShopSlugRoute
+  '/api/orders/create': typeof ApiOrdersCreateRoute
+  '/api/orders/validate-delivery': typeof ApiOrdersValidateDeliveryRoute
   '/api/push/notify': typeof ApiPushNotifyRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/push/unsubscribe': typeof ApiPushUnsubscribeRoute
-  '/api/orders/create': typeof ApiOrdersCreateRoute
-  '/api/orders/validate-delivery': typeof ApiOrdersValidateDeliveryRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -186,11 +187,11 @@ export interface FileRouteTypes {
     | '/signup'
     | '/tracking'
     | '/shop/$slug'
+    | '/api/orders/create'
+    | '/api/orders/validate-delivery'
     | '/api/push/notify'
     | '/api/push/subscribe'
     | '/api/push/unsubscribe'
-    | '/api/orders/create'
-    | '/api/orders/validate-delivery'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -205,11 +206,11 @@ export interface FileRouteTypes {
     | '/signup'
     | '/tracking'
     | '/shop/$slug'
+    | '/api/orders/create'
+    | '/api/orders/validate-delivery'
     | '/api/push/notify'
     | '/api/push/subscribe'
     | '/api/push/unsubscribe'
-    | '/api/orders/create'
-    | '/api/orders/validate-delivery'
   id:
     | '__root__'
     | '/'
@@ -224,11 +225,11 @@ export interface FileRouteTypes {
     | '/signup'
     | '/tracking'
     | '/shop/$slug'
+    | '/api/orders/create'
+    | '/api/orders/validate-delivery'
     | '/api/push/notify'
     | '/api/push/subscribe'
     | '/api/push/unsubscribe'
-    | '/api/orders/create'
-    | '/api/orders/validate-delivery'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -244,11 +245,11 @@ export interface RootRouteChildren {
   SignupRoute: typeof SignupRoute
   TrackingRoute: typeof TrackingRoute
   ShopSlugRoute: typeof ShopSlugRoute
+  ApiOrdersCreateRoute: typeof ApiOrdersCreateRoute
+  ApiOrdersValidateDeliveryRoute: typeof ApiOrdersValidateDeliveryRoute
   ApiPushNotifyRoute: typeof ApiPushNotifyRoute
   ApiPushSubscribeRoute: typeof ApiPushSubscribeRoute
   ApiPushUnsubscribeRoute: typeof ApiPushUnsubscribeRoute
-  ApiOrdersCreateRoute: typeof ApiOrdersCreateRoute
-  ApiOrdersValidateDeliveryRoute: typeof ApiOrdersValidateDeliveryRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -358,18 +359,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPushNotifyRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/orders/create': {
-      id: '/api/orders/create'
-      path: '/api/orders/create'
-      fullPath: '/api/orders/create'
-      preLoaderRoute: typeof ApiOrdersCreateRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/orders/validate-delivery': {
       id: '/api/orders/validate-delivery'
       path: '/api/orders/validate-delivery'
       fullPath: '/api/orders/validate-delivery'
       preLoaderRoute: typeof ApiOrdersValidateDeliveryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/orders/create': {
+      id: '/api/orders/create'
+      path: '/api/orders/create'
+      fullPath: '/api/orders/create'
+      preLoaderRoute: typeof ApiOrdersCreateRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -388,22 +389,12 @@ const rootRouteChildren: RootRouteChildren = {
   SignupRoute: SignupRoute,
   TrackingRoute: TrackingRoute,
   ShopSlugRoute: ShopSlugRoute,
+  ApiOrdersCreateRoute: ApiOrdersCreateRoute,
+  ApiOrdersValidateDeliveryRoute: ApiOrdersValidateDeliveryRoute,
   ApiPushNotifyRoute: ApiPushNotifyRoute,
   ApiPushSubscribeRoute: ApiPushSubscribeRoute,
   ApiPushUnsubscribeRoute: ApiPushUnsubscribeRoute,
-  ApiOrdersCreateRoute: ApiOrdersCreateRoute,
-  ApiOrdersValidateDeliveryRoute: ApiOrdersValidateDeliveryRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
