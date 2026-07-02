@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { useLaundry } from "@/lib/laundry-store";
 import { db } from "@/lib/firebase";
+import { authFetch } from "@/lib/auth-fetch";
 import {
   collection,
   doc,

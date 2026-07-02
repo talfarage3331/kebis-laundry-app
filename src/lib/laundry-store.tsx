@@ -573,7 +573,8 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         await Promise.all(deletePromises);
 
         // Securely call server route to validate and create order
-        const response = await fetch("/api/orders/create", {
+        const { authFetch } = await import("@/lib/auth-fetch");
+        const response = await authFetch("/api/orders/create", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

@@ -6,6 +6,7 @@ import { LaundrySettingsCRUDPanel } from "@/components/LaundrySettingsCRUDPanel"
 import { useLaundryOptions } from "@/hooks/use-laundry-options";
 import { useLaundry, normalizeStatus, type OrderState, ADDONS_META, DELIVERY_TIERS_META } from "@/lib/laundry-store";
 import { db } from "@/lib/firebase";
+import { authFetch } from "@/lib/auth-fetch";
 import { OnboardingWizard } from "@/components/OnboardingWizard";
 import { collection, query, where, onSnapshot, doc, updateDoc, getDocs, limit, startAfter, type DocumentSnapshot } from "firebase/firestore";
 import {
