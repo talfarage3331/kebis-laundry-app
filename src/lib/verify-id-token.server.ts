@@ -70,7 +70,7 @@ function b64urlToBytes(input: string): ArrayBuffer {
   return buf;
 }
 function b64urlToString(input: string): string {
-  return new TextDecoder().decode(b64urlToBytes(input));
+  return new TextDecoder().decode(new Uint8Array(b64urlToBytes(input)));
 }
 
 // ─── Verified claims ──────────────────────────────────────────────────────
