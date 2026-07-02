@@ -1,11 +1,15 @@
 /**
  * POST /api/orders/create
  *
- * Server-side order creation that enforces Haversine delivery radius
- * validation before writing the order to Firestore.
+ * Server-side order creation with:
+ *   • Firebase ID-token authentication (Authorization: Bearer …)
+ *   • IDOR hardening — userId/userEmail come from the verified token,
+ *     never the request body
+ *   • Server-side Haversine delivery-radius validation
  *
- * Body: OrderCreatePayload (see type below)
- * Response: { success: true, orderId: string, warning?: string } | { error: string }
+ * Body: OrderCreatePayload (see type below). Fields `userId`/`userEmail`
+ * in the body are IGNORED.
+ * Response: { success: true, orderId: string, warning?: string } | { error }
  */
 import { createFileRoute } from "@tanstack/react-router";
 
@@ -14,6 +18,16 @@ export const Route = createFileRoute("/api/orders/create")({
     handlers: {
       POST: async ({ request }) => {
         try {
+          // ── 1. AuthN: verify Firebase ID token ─────────────────────
+          const { verifyIdToken } = await import("@/lib/verify-id-token.server");
+          let claims;
+          try {
+            claims = await verifyIdToken(request);
+          } catch (resp) {
+            if (resp instanceof Response) return resp;
+            throw resp;
+          }
+
           const body = (await request.json()) as {
             notes?: string;
             images?: string[];
@@ -26,8 +40,6 @@ export const Route = createFileRoute("/api/orders/create")({
             basePrice?: number;
             totalPrice?: number;
             laundryId: string;
-            userId: string;
-            userEmail: string;
             customerLat?: number;
             customerLng?: number;
           };
@@ -44,18 +56,37 @@ export const Route = createFileRoute("/api/orders/create")({
             basePrice,
             totalPrice,
             laundryId,
-            userId,
-            userEmail,
             customerLat,
             customerLng,
           } = body;
 
-          if (!laundryId) {
+          // ── 2. AuthZ + payload validation ──────────────────────────
+          if (!laundryId || typeof laundryId !== "string" || laundryId.length > 128) {
             return new Response(
               JSON.stringify({ error: "חובה לציין מזהה מכבסה" }),
               { status: 400, headers: { "Content-Type": "application/json" } },
             );
           }
+          if (!["none", "self_pickup", "home_delivery"].includes(deliveryMethod)) {
+            return new Response(
+              JSON.stringify({ error: "שיטת משלוח לא חוקית" }),
+              { status: 400, headers: { "Content-Type": "application/json" } },
+            );
+          }
+          // Reasonable price ceiling so a compromised client can't submit
+          // absurd amounts. Definitive pricing is still recomputed by the
+          // laundry when they accept the order.
+          const safeTotal =
+            typeof totalPrice === "number" && totalPrice >= 0 && totalPrice <= 100000
+              ? totalPrice
+              : 0;
+          const safeBase =
+            typeof basePrice === "number" && basePrice >= 0 && basePrice <= 100000
+              ? basePrice
+              : 0;
+
+          const userId = claims.uid;
+          const userEmail = (claims.email || "").toLowerCase();
 
           const { findUserById, getCoordinates, getDoubleValue, createOrderAdmin } =
             await import("@/lib/firestore-admin.server");
@@ -63,7 +94,7 @@ export const Route = createFileRoute("/api/orders/create")({
 
           let warning: string | null = null;
 
-          // ── Server-side Haversine validation for Home Delivery ────────────────
+          // ── 3. Haversine validation for home delivery ──────────────
           if (deliveryMethod === "home_delivery") {
             const vendorDoc = await findUserById(laundryId);
             if (!vendorDoc) {
@@ -81,31 +112,28 @@ export const Route = createFileRoute("/api/orders/create")({
                 JSON.stringify({ error: "המכבסה טרם הגדירה אזור משלוח, לא ניתן לבצע הזמנות משלוח כרגע" }),
                 { status: 400, headers: { "Content-Type": "application/json" } },
               );
-            } else {
-              if (customerLat === undefined || customerLng === undefined) {
-                return new Response(
-                  JSON.stringify({ error: "מיקום הלקוח לא זוהה לצורך חישוב מרחק משלוח" }),
-                  { status: 400, headers: { "Content-Type": "application/json" } },
-                );
-              }
-
-              const distance = haversineDistanceKm(
-                customerLat,
-                customerLng,
-                vendorCoords.lat,
-                vendorCoords.lng,
+            }
+            if (customerLat === undefined || customerLng === undefined) {
+              return new Response(
+                JSON.stringify({ error: "מיקום הלקוח לא זוהה לצורך חישוב מרחק משלוח" }),
+                { status: 400, headers: { "Content-Type": "application/json" } },
               );
-
-              if (distance > maxRadius) {
-                return new Response(
-                  JSON.stringify({ error: "מיקום המשלוח רחוק מידי עבור המכבסה" }),
-                  { status: 400, headers: { "Content-Type": "application/json" } },
-                );
-              }
+            }
+            const distance = haversineDistanceKm(
+              customerLat,
+              customerLng,
+              vendorCoords.lat,
+              vendorCoords.lng,
+            );
+            if (distance > maxRadius) {
+              return new Response(
+                JSON.stringify({ error: "מיקום המשלוח רחוק מידי עבור המכבסה" }),
+                { status: 400, headers: { "Content-Type": "application/json" } },
+              );
             }
           }
 
-          // ── Create Firestore order document via Admin REST API ────────────────
+          // ── 4. Persist order via admin REST client ─────────────────
           const orderData: Record<string, any> = {
             user_id: userId,
             userId: userId,
@@ -114,8 +142,8 @@ export const Route = createFileRoute("/api/orders/create")({
             deliveryMethod: deliveryMethod,
             payment_state: "unpaid",
             paymentState: "unpaid",
-            amount_due: totalPrice || 0,
-            total_price: totalPrice || 0,
+            amount_due: safeTotal,
+            total_price: safeTotal,
             user_email: userEmail,
             userEmail: userEmail,
             requires_ironing: !!requiresIroning,
@@ -124,15 +152,15 @@ export const Route = createFileRoute("/api/orders/create")({
             requiresDryCleaning: !!requiresDryCleaning,
             requires_washing: !!requiresWashing,
             requiresWashing: !!requiresWashing,
-            notes: notes || "",
-            images: images || [],
+            notes: (notes || "").slice(0, 2000),
+            images: Array.isArray(images) ? images.slice(0, 20) : [],
             invoiceUrl: "",
             invoiceName: "",
             created_at: new Date().toISOString(),
             createdAt: new Date().toISOString(),
-            addons: addons || [],
+            addons: Array.isArray(addons) ? addons.slice(0, 20) : [],
             deliveryTier: deliveryTier || "standard",
-            basePrice: basePrice || 0,
+            basePrice: safeBase,
             laundryId: laundryId,
           };
 
