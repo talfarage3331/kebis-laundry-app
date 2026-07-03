@@ -43,7 +43,13 @@ function Payments() {
       return;
     }
 
-    const q = query(collection(db, "orders"), where("user_email", "==", user.email));
+    // Pagination cap — only active/unpaid orders drive this screen, but
+    // we still guard against unbounded reads under high concurrency.
+    const q = query(
+      collection(db, "orders"),
+      where("user_email", "==", user.email),
+      limit(50),
+    );
 
     const unsubscribe = onSnapshot(
       q,
