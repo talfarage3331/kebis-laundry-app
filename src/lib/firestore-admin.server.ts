@@ -142,6 +142,36 @@ export async function findUserById(userId: string): Promise<UserDoc | null> {
   }
 }
 
+/**
+ * Returns true when the customer profile exists under
+ * laundries/{laundryId}/customers/{uid}. Used to enforce multi-tenant
+ * isolation on privileged server-side writes (order creation, etc.).
+ */
+export async function tenantMembershipExists(
+  laundryId: string,
+  uid: string,
+): Promise<boolean> {
+  try {
+    const token = await getGoogleAccessToken();
+    const res = await fetch(
+      `${FS_BASE}/${docsRoot()}/laundries/${encodeURIComponent(laundryId)}/customers/${encodeURIComponent(uid)}`,
+      { method: "GET", headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (res.status === 404) return false;
+    if (!res.ok) {
+      console.warn(
+        `[firestore-admin] tenantMembershipExists non-OK status ${res.status} for ${laundryId}/${uid}`,
+      );
+      return false;
+    }
+    const json = await res.json().catch(() => null);
+    return !!(json && json.name);
+  } catch (err) {
+    console.error("[firestore-admin] tenantMembershipExists failed:", err);
+    return false;
+  }
+}
+
 // ─── Writes ─────────────────────────────────────────────────────
 /** Append an FCM token to users/{docName}.fcmTokens (deduplicated). */
 export async function appendFcmToken(docName: string, token: string): Promise<void> {
