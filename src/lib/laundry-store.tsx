@@ -419,7 +419,13 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const q = query(collection(db, "orders"), where("user_email", "==", user.email));
+    // Cap real-time payload to the 50 most-recent-touched orders per user
+    // to protect against long-tenured accounts with hundreds of history rows.
+    const q = query(
+      collection(db, "orders"),
+      where("user_email", "==", user.email),
+      limit(50),
+    );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const allOrders = snapshot.docs.map((doc) => {
