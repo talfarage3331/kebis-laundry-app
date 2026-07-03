@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
-import { collection, query, where, onSnapshot, doc, updateDoc } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, updateDoc, limit } from "firebase/firestore";
 
 export const Route = createFileRoute("/payments")({ component: Payments });
 
@@ -43,7 +43,13 @@ function Payments() {
       return;
     }
 
-    const q = query(collection(db, "orders"), where("user_email", "==", user.email));
+    // Pagination cap — only active/unpaid orders drive this screen, but
+    // we still guard against unbounded reads under high concurrency.
+    const q = query(
+      collection(db, "orders"),
+      where("user_email", "==", user.email),
+      limit(50),
+    );
 
     const unsubscribe = onSnapshot(
       q,

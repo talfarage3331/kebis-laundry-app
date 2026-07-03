@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
-import { collection, query, where, onSnapshot, doc, updateDoc } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, updateDoc, limit } from "firebase/firestore";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -60,7 +60,13 @@ function Tracking() {
       return;
     }
 
-    const q = query(collection(db, "orders"), where("user_email", "==", user.email));
+    // Bound history to the 100 most recent order docs per user so a
+    // long-tenured customer never triggers unbounded snapshot payloads.
+    const q = query(
+      collection(db, "orders"),
+      where("user_email", "==", user.email),
+      limit(100),
+    );
 
     const unsubscribe = onSnapshot(
       q,
