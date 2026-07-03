@@ -88,9 +88,26 @@ export const Route = createFileRoute("/api/orders/create")({
           const userId = claims.uid;
           const userEmail = (claims.email || "").toLowerCase();
 
-          const { findUserById, getCoordinates, getDoubleValue, createOrderAdmin } =
-            await import("@/lib/firestore-admin.server");
+          const {
+            findUserById,
+            getCoordinates,
+            getDoubleValue,
+            createOrderAdmin,
+            tenantMembershipExists,
+          } = await import("@/lib/firestore-admin.server");
           const { haversineDistanceKm } = await import("@/lib/haversine");
+
+          // ── 2b. Tenant isolation: caller must be a registered
+          //        customer of the target laundry. This closes the
+          //        cross-tenant IDOR where a customer of laundry A
+          //        could submit an order to laundry B.
+          const isMember = await tenantMembershipExists(laundryId, userId);
+          if (!isMember) {
+            return new Response(
+              JSON.stringify({ error: "אינך רשום כלקוח של מכבסה זו" }),
+              { status: 403, headers: { "Content-Type": "application/json" } },
+            );
+          }
 
           let warning: string | null = null;
 
