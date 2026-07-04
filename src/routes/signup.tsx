@@ -438,7 +438,7 @@ function Signup() {
         return;
       }
 
-      const assignedRole = email === "talfarage3331@gmail.com" ? "admin" : "customer";
+      const assignedRole = "customer";
 
       const db = getDb();
       const newUserRef = doc(db, "users", fbUser.uid);

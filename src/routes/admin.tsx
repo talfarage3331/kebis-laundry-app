@@ -452,8 +452,9 @@ function AdminDashboard() {
 
   // Delete Profile
   const handleDeleteProfile = async (id: string, email: string) => {
-    if (email === "talfarage3331@gmail.com") {
-      toast.error("לא ניתן למחוק את מנהל המערכת הראשי!");
+    const profile = profiles.find(p => p.id === id);
+    if (profile?.role === "admin") {
+      toast.error("לא ניתן למחוק מנהל מערכת!");
       return;
     }
 
@@ -1763,14 +1764,14 @@ function AdminDashboard() {
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-foreground block">אימייל</label>
               <Input value={editEmail} onChange={e => setEditEmail(e.target.value)} placeholder="אימייל" className="text-right text-left"
-                disabled={editingProfile?.email === "talfarage3331@gmail.com"} />
+                disabled={editingProfile?.role === "admin"} />
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-foreground block">תפקיד / הרשאה</label>
               <select
                 value={editRole} onChange={e => setEditRole(e.target.value as any)}
                 className="w-full h-11 px-3 rounded-xl border border-muted-foreground/20 bg-background text-foreground text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary text-right appearance-none"
-                disabled={editingProfile?.email === "talfarage3331@gmail.com"} dir="rtl"
+                disabled={editingProfile?.role === "admin"} dir="rtl"
               >
                 <option value="customer">לקוח (Customer)</option>
                 <option value="laundry">צוות מכבסה (Laundry)</option>

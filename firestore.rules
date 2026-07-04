@@ -32,7 +32,7 @@ service cloud.firestore {
     }
 
     function isAdmin()   {
-      return hasRole('admin') || (isSignedIn() && request.auth.token.get('email', '') == "talfarage3331@gmail.com");
+      return hasRole('admin');
     }
     function isLaundry() { return hasRole('laundry'); }
 

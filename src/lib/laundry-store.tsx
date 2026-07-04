@@ -277,10 +277,6 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
             let userRole: "admin" | "laundry" | "customer" = "customer";
             let dbName = defaultName;
 
-            if (email === "talfarage3331@gmail.com") {
-              userRole = "admin";
-            }
-
             let associatedLaundryId: string | undefined = undefined;
             let userStatus: "pending_setup" | "pending_approval" | "approved" | "suspended" | undefined = undefined;
             let onboardingCompleted: boolean | undefined = undefined;
@@ -366,9 +362,6 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
             // Role overrides are intentionally NOT applied here — they caused
             // admin-assigned role changes to be silently reverted.
             let fallbackRole: "admin" | "laundry" | "customer" = "customer";
-            if (email === "talfarage3331@gmail.com") {
-              fallbackRole = "admin";
-            }
 
             setRole(fallbackRole);
             setUser({

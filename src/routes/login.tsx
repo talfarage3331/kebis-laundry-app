@@ -512,7 +512,7 @@ function Login() {
 
       await updateProfile(fbUser, { displayName: name });
 
-      const assignedRole = email === "talfarage3331@gmail.com" ? "admin" : "laundry";
+      const assignedRole = "laundry";
 
       const baseSlug = generateSlug(businessName.trim() || name);
       const uniqueSlug = await ensureUniqueSlug(baseSlug);
