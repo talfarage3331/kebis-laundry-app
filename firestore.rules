@@ -74,6 +74,20 @@ service cloud.firestore {
       allow read: if isAdmin();
     }
 
+    // ──────────────────────────────────────────────────────────────────────
+    // PRIVATE VENDOR DATA  /laundries/{laundryId}/private/{docId}
+    //
+    // MEDIUM-SEVERITY FIX (PII isolation):
+    // Anything sensitive about a laundry vendor (owner phone, bank/payout
+    // info, internal notes, contracts, tax IDs) MUST live here rather than
+    // on the publicly-readable /users/{uid} vendor doc.
+    //   read/write : owning laundry OR admin (never public, never customer)
+    // ──────────────────────────────────────────────────────────────────────
+    match /laundries/{laundryId}/private/{docId} {
+      allow read, write: if isAdmin()
+        || (isSignedIn() && isLaundry() && request.auth.uid == laundryId);
+    }
+
 
     // ──────────────────────────────────────────────────────────────────────
     // USERS  /users/{uid}
