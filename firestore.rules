@@ -228,6 +228,11 @@ service cloud.firestore {
       }
 
       allow get:    if isChatParticipant(resource.data);
+      // LOW-SEVERITY NOTE (filter binding): as with /orders, this rule only
+      // permits a list() when the client attaches the matching where() clause
+      // (`laundryId` for vendors, `customer_email` for customers). A query
+      // without one of those filters is denied — safe default, but any new
+      // caller must remember to bind the filter or the list will always fail.
       allow list:   if isSignedIn() && paginatedRead() && (
         isAdmin()
         || (isLaundry() && request.query.filters.laundryId == request.auth.uid)
