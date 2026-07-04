@@ -156,6 +156,15 @@ service cloud.firestore {
 
       // List with pagination; customer sees only their own orders,
       // vendor sees only their laundry's orders.
+      //
+      // LOW-SEVERITY NOTE (filter binding): Firestore rules only evaluate
+      // `request.query.filters.*` when the client attaches the matching
+      // `where(...)` clause. A client MUST always call orders.where('laundryId', ...)
+      // (vendor) or .where('user_email' | 'userId', ...) (customer). A query
+      // without one of these filters silently fails with "Missing or
+      // insufficient permissions" rather than leaking data — which is the
+      // safe default, but any new client code must remember to bind the
+      // filter or the list will always deny.
       allow list: if isSignedIn() && paginatedRead() && (
         isAdmin()
         || (isLaundry() && request.query.filters.laundryId == request.auth.uid)
