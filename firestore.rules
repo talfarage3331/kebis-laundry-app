@@ -92,11 +92,35 @@ service cloud.firestore {
 
       // A user can only create their own document, and the payload's uid must
       // match so they can't spoof another user's document.
+      // On self-create we also forbid privilege-elevating fields — a fresh account
+      // must not be able to seed itself with role/roles/associatedLaundryId.
+      // These are managed by admin tooling or trusted server endpoints only.
       allow create: if isSignedIn()
-                    && request.auth.uid == uid;
+                    && request.auth.uid == uid
+                    && (isAdmin() || (
+                         !('role' in request.resource.data)
+                         && !('roles' in request.resource.data)
+                         && !('associatedLaundryId' in request.resource.data)
+                       ));
 
-      // A user can only update their own document; admins can update any.
-      allow update: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      // A user can update their own document, BUT they may not touch the
+      // privileged fields below. Admins bypass this restriction.
+      //
+      // HIGH-SEVERITY FIX: previously a customer could PATCH their own doc
+      // to set `associatedLaundryId` (silently attaching to any tenant) or
+      // escalate to `role: "admin" | "laundry"`. Those fields are now
+      // admin-only / server-managed.
+      allow update: if isSignedIn() && (
+        isAdmin()
+        || (
+          request.auth.uid == uid
+          // Reject any write that changes a privileged field. `diff().affectedKeys()`
+          // returns the set of top-level fields that differ between the current
+          // doc and the incoming payload — if any of them are privileged, deny.
+          && !request.resource.data.diff(resource.data).affectedKeys()
+               .hasAny(['role', 'roles', 'associatedLaundryId'])
+        )
+      );
 
       // Only admins can delete user documents.
       allow delete: if isAdmin();
