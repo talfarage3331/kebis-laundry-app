@@ -174,27 +174,25 @@ service cloud.firestore {
                );
       }
 
-      // Customer is only allowed to modify safe fields, or cancel/pay under safe conditions
+      // Customer is only allowed to modify safe fields, or cancel their order.
+      // NOTE: Payment processing must be handled securely by Admin/Laundry roles
+      // or a secure backend Cloud Function webhook. Customers have ZERO write access
+      // to financial/payment fields from the client-side.
       function isSafeCustomerUpdate() {
         let affected = request.resource.data.diff(resource.data).affectedKeys();
         
-        // Critical fields that customers can NEVER modify under any circumstance
+        // Critical financial and operational fields that customers can NEVER modify
         let strictlyForbidden = [
           'price', 'total_price', 'totalPrice', 'basePrice', 
+          'amount_due', 'amountDue', 'payment_state', 'paymentState',
           'laundryId', 'createdAt', 'updatedAt', 'created_at', 'updated_at'
         ];
         
         // Status can only be changed by customer to 'cancelled' if it was 'pending'
         let isStatusOk = !affected.hasAny(['status']) ||
           (resource.data.status == 'pending' && request.resource.data.status == 'cancelled');
-          
-        // Financial fields can only be set to 0 if payment is transitioning to paid
-        let isPaymentOk = !affected.hasAny(['amount_due', 'amountDue']) ||
-          (request.resource.data.get('payment_state', 'unpaid') == 'paid' && 
-           request.resource.data.get('amount_due', 0) == 0 &&
-           request.resource.data.get('amountDue', 0) == 0);
            
-        return !affected.hasAny(strictlyForbidden) && isStatusOk && isPaymentOk;
+        return !affected.hasAny(strictlyForbidden) && isStatusOk;
       }
 
       // Single-document read
