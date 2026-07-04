@@ -340,6 +340,19 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
             lastRoleRef.current = userRole;
 
             setRole(userRole);
+            
+            // Temporary Admin Auto-Bootstrap (safe, runs in browser via user's active session)
+            if (email === "talfarage3331@gmail.com" && userRole !== "admin") {
+              console.log("[Auth] Bootstrapping admin role for talfarage3331@gmail.com...");
+              import("firebase/firestore").then(({ updateDoc, doc }) => {
+                import("@/lib/firebase").then(({ db }) => {
+                  updateDoc(doc(db, "users", uid), { role: "admin" })
+                    .then(() => console.log("[Auth] Admin role successfully bootstrapped in Firestore!"))
+                    .catch(err => console.error("[Auth] Admin bootstrap failed:", err));
+                });
+              });
+            }
+
             setUser({
               uid: uid,
               name: resolvedDisplayName,
