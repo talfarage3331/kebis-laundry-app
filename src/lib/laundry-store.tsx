@@ -569,8 +569,10 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
 
       if (images && images.length > 0) {
         setOrderImages(images);
-        localStorage.setItem("laundry_images", JSON.stringify(images));
-        localStorage.setItem(`laundry_images_${user.email}`, JSON.stringify(images));
+        // Fallback: Cap cached base64 images to the 5 most recent to prevent 5MB QuotaExceededError
+        const cappedImages = images.slice(-5);
+        localStorage.setItem("laundry_images", JSON.stringify(cappedImages));
+        localStorage.setItem(`laundry_images_${user.email}`, JSON.stringify(cappedImages));
       } else {
         setOrderImages([]);
         localStorage.removeItem("laundry_images");
@@ -637,9 +639,13 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
         const existingNotifications = JSON.parse(
           localStorage.getItem("laundry_notifications") || "[]",
         );
+        
+        // Cap notifications array to a maximum of 30 items to prevent QuotaExceededError
+        const updatedNotifications = [newNotification, ...existingNotifications].slice(0, 30);
+        
         localStorage.setItem(
           "laundry_notifications",
-          JSON.stringify([newNotification, ...existingNotifications]),
+          JSON.stringify(updatedNotifications),
         );
 
         window.dispatchEvent(new CustomEvent("laundry-order-updated"));
