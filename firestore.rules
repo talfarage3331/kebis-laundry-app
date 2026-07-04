@@ -77,11 +77,20 @@ service cloud.firestore {
 
     // ──────────────────────────────────────────────────────────────────────
     // USERS  /users/{uid}
+    //
+    // MEDIUM-SEVERITY NOTE (PII isolation):
+    // Laundry-vendor user docs are publicly readable so the landing page can
+    // render shop cards without auth. That means NO PII (owner phone, bank
+    // details, internal notes, tax IDs, etc.) may live on this document.
+    // Store any sensitive vendor data under the gated subcollection
+    //   /laundries/{laundryId}/private/{docId}
+    // defined below, which is restricted to the owning laundry + admin.
     // ──────────────────────────────────────────────────────────────────────
     match /users/{uid} {
       // A user can only read their own profile.
       // Admin can read any user document.
-      // Laundry profile is public read (so landing page can load shop assets).
+      // Laundry profile is public read (so landing page can load shop assets)
+      // — enforce the "no PII on this doc" rule above at the app layer.
       allow get:    if (isSignedIn() && (request.auth.uid == uid || isAdmin()))
                     || (resource != null && resource.data.get('role', '') == 'laundry');
 
