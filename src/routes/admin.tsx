@@ -701,6 +701,7 @@ function AdminDashboard() {
           content: `📢 **${msgSubject}**\n\n${msgContent}`,
           is_read: false,
           created_at: new Date().toISOString(),
+          participantIds: [user?.uid || "", userId],
         });
 
         // 3. Save notification document to Firestore notifications collection

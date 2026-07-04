@@ -261,15 +261,17 @@ service cloud.firestore {
         || request.query.filters.customer_email == request.auth.token.get('email', '')
       );
 
-      // On create the payload must contain the caller's identity.
+      // On create the payload must contain the caller's identity (unless admin).
       allow create: if isSignedIn() && (
-        isChatParticipant(request.resource.data)
-        && (isLaundry() || request.resource.data.customer_email == request.auth.token.get('email', ''))
+        isAdmin() ||
+        (isChatParticipant(request.resource.data)
+        && (isLaundry() || request.resource.data.customer_email == request.auth.token.get('email', '')))
       );
 
       allow update: if isChatParticipant(resource.data) && (
-        isChatParticipant(request.resource.data)
-        && (resource.data.customer_email == request.resource.data.customer_email)
+        isAdmin() ||
+        (isChatParticipant(request.resource.data)
+        && (resource.data.customer_email == request.resource.data.customer_email))
       );
       allow delete: if isAdmin();
 
@@ -299,12 +301,12 @@ service cloud.firestore {
         }
         function parentAllows() {
           let chat = get(/databases/$(database)/documents/chats/$(chatId));
-          return isSignedIn() && (
+          return isSignedIn() && ( isAdmin() || (
             request.auth.token.get('email', '') == chatId
             || request.auth.token.get('email', '') == chat.data.get('customer_email', '')
             || request.auth.uid == chat.data.get('laundryId', '')
             || request.auth.uid == chat.data.get('userId', '')
-          );
+          ));
         }
         function isMsgParticipant() {
           return isSignedIn() && (isAdmin() || hasParticipantIds() || parentAllows());
