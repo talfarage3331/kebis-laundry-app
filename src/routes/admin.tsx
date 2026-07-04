@@ -743,6 +743,16 @@ function AdminDashboard() {
   };
 
   // Filtered profiles (Tab: Users / Laundries)
+  // Filtered laundries specifically for the Laundries tab (ignoring roleFilter)
+  const filteredLaundries = profiles.filter((p) => {
+    if (p.role !== "laundry") return false;
+    const matchesSearch =
+      (p.fullName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (p.email || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (p.businessName || "").toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesSearch;
+  });
+
   const filteredProfiles = profiles.filter((p) => {
     const matchesSearch =
       (p.fullName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
