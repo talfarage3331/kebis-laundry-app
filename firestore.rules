@@ -224,22 +224,49 @@ service cloud.firestore {
       allow delete: if isAdmin();
 
       // ── Messages sub-collection (and any deeper sub-collections) ──────────
-      // Uses the parent chat document to determine participant membership.
+      //
+      // MEDIUM-SEVERITY FIX (read cost):
+      // Previously EVERY message read/write performed a `get()` on the parent
+      // chat document (1 billed read per rule evaluation). At scale — active
+      // chat threads with dozens of messages loaded — this doubles read cost.
+      //
+      // We now denormalize `participantIds: [customerUid, laundryUid]` onto
+      // each message document at write time (required by the create rule
+      // below). Reads and updates verify membership directly against
+      // `resource.data.participantIds` without touching the parent doc.
+      //
+      // The parent-doc `get()` is retained ONLY as a fallback for legacy
+      // messages that pre-date this migration. Once backfilled it can go.
+      //
+      // Client migration note: every new chat message MUST include
+      //   participantIds: [<customerUid>, <laundryUid>]
+      //   sender_email:   <caller email>
       match /messages/{document=**} {
-        function isMsgParticipant() {
+        function hasParticipantIds() {
+          return resource != null
+              && resource.data.get('participantIds', []) is list
+              && request.auth.uid in resource.data.get('participantIds', []);
+        }
+        function parentAllows() {
           let chat = get(/databases/$(database)/documents/chats/$(chatId));
           return isSignedIn() && (
             request.auth.token.get('email', '') == chatId
             || request.auth.token.get('email', '') == chat.data.get('customer_email', '')
             || request.auth.uid == chat.data.get('laundryId', '')
             || request.auth.uid == chat.data.get('userId', '')
-            || isAdmin()
           );
+        }
+        function isMsgParticipant() {
+          return isSignedIn() && (isAdmin() || hasParticipantIds() || parentAllows());
         }
 
         allow read:   if isMsgParticipant() && (request.query == null || paginatedRead());
-        allow create: if isMsgParticipant()
-                      && request.resource.data.sender_email == request.auth.token.get('email', '');
+        // Creates MUST embed participantIds so subsequent reads are cheap.
+        allow create: if isSignedIn()
+                      && request.resource.data.sender_email == request.auth.token.get('email', '')
+                      && request.resource.data.get('participantIds', []) is list
+                      && request.auth.uid in request.resource.data.participantIds
+                      && parentAllows();
         allow update: if isMsgParticipant();
         allow delete: if isAdmin();
       }
