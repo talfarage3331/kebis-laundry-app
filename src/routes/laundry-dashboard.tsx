@@ -646,28 +646,26 @@ const toggleDeliveryAvailability = async (type: "fast" | "express", checked: boo
         return true;
       });
 
-  /* ── logistics view: sorted delivery orders ─────────────────────── */
-  const getDeliveryPriority = (o: LaundryOrder): number => {
+  /* ── logistics view: pickup routing (awaiting collection from customer) ── */
+  const getPickupPriority = (o: LaundryOrder): number => {
     const tier = (o.deliveryTier || "").toLowerCase();
     const addons = o.addons || [];
     const isExpress =
       tier === "super_express" || tier === "same_day" || tier.includes("super") ||
       tier.includes("same") || tier.includes("מהיום") || tier.includes("מהירה") ||
       addons.includes("express_wash") || tier === "express" || tier.includes("express");
-    if (isExpress) return 1; // Priority 1: express (any tier), any status
-    if (o.status === "ready") return 2; // Priority 2: ready regular
-    return 3; // Priority 3: in-progress regular
+    return isExpress ? 1 : 2; // Priority 1: express pickup, Priority 2: regular pickup
   };
 
   const logisticsOrders = orders
     .filter((o) =>
       o.delivery_method === "home_delivery" &&
-      o.status !== "cancelled" &&
-      o.status !== "delivered"
+      // STRICT: only orders still at the customer's home, awaiting pickup
+      (o.status === "pending" || o.status === "accepted")
     )
     .sort((a, b) => {
-      const pa = getDeliveryPriority(a);
-      const pb = getDeliveryPriority(b);
+      const pa = getPickupPriority(a);
+      const pb = getPickupPriority(b);
       if (pa !== pb) return pa - pb;
       // Within same priority, sort by earliest creation date (most urgent first)
       try { return new Date(a.created_at).getTime() - new Date(b.created_at).getTime(); } catch { return 0; }
@@ -1253,7 +1251,7 @@ const toggleDeliveryAvailability = async (type: "fast" | "express", checked: boo
                         { key: "all",       label: "הכל" },
                         { key: "treatment", label: "בטיפול" },
                         { key: "ready",     label: "מוכן" },
-                        { key: "logistics", label: "📦 רשימת כתובות להפצה" },
+                        { key: "logistics", label: "📍 כתובות לאיסוף כביסה" },
                       ].map((tab) => (
                         <button
                           key={tab.key}
@@ -1276,21 +1274,20 @@ const toggleDeliveryAvailability = async (type: "fast" | "express", checked: boo
                   isLoading ? (
                     <div className="py-16 flex flex-col items-center gap-3">
                       <div className="animate-spin rounded-full size-8 border-4 border-primary border-t-transparent" />
-                      <span className="text-xs text-muted-foreground font-semibold">טוען הזמנות משלוח...</span>
+                      <span className="text-xs text-muted-foreground font-semibold">טוען איסופים ממתינים...</span>
                     </div>
                   ) : logisticsOrders.length === 0 ? (
                     <div className="dash-card p-12 text-center">
-                      <p className="text-3xl mb-3">📦</p>
-                      <p className="text-sm font-bold text-muted-foreground">אין הזמנות משלוח פעילות כרגע.</p>
-                      <p className="text-xs text-muted-foreground mt-1">הזמנות ביטול ואיסוף עצמי לא מופיעות כאן.</p>
+                      <p className="text-3xl mb-3">📍</p>
+                      <p className="text-sm font-bold text-muted-foreground">אין איסופים ממתינים כרגע.</p>
+                      <p className="text-xs text-muted-foreground mt-1">הזמנות שכבר נאספו, מוכנות, בביטול, או איסוף עצמי לא מופיעות כאן.</p>
                     </div>
                   ) : (
                     <div className="space-y-3 pb-6">
                       {/* Legend */}
                       <div className="flex flex-wrap gap-2 text-[10px] font-bold text-muted-foreground">
-                        <span className="flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full bg-red-500 animate-pulse" /> אקספרס מהיום להיום</span>
-                        <span className="flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full bg-lime-500" /> מוכן למשלוח רגיל</span>
-                        <span className="flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full bg-slate-400" /> בטיפול - משלוח רגיל</span>
+                        <span className="flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full bg-red-500 animate-pulse" /> אקספרס לאיסוף — דחוף!</span>
+                        <span className="flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full bg-slate-400" /> ממתין לאיסוף רגיל</span>
                       </div>
                       {logisticsOrders.map((order, idx) => {
                         const tier = (order.deliveryTier || "").toLowerCase();
@@ -1298,22 +1295,16 @@ const toggleDeliveryAvailability = async (type: "fast" | "express", checked: boo
                           tier === "super_express" || tier === "same_day" || tier.includes("super") ||
                           tier.includes("same") || tier.includes("מהיום") || tier.includes("מהירה") ||
                           (order.addons || []).includes("express_wash") || tier === "express" || tier.includes("express");
-                        const priority = getDeliveryPriority(order);
+                        const priority = getPickupPriority(order);
 
                         const badgeStyle = isExpress
                           ? "bg-red-50 text-red-700 border-red-300 animate-pulse"
-                          : priority === 2
-                          ? "bg-lime/20 text-lime-foreground border-lime/40"
                           : "bg-slate-100 text-slate-600 border-slate-200";
                         const badgeLabel = isExpress
-                          ? "⚡ אקספרס מהיום להיום"
-                          : priority === 2
-                          ? "✅ מוכן למשלוח"
-                          : "🔄 בטיפול - משלוח רגיל";
+                          ? "⚡ אקספרס לאיסוף"
+                          : "🔄 ממתין לאיסוף";
                         const cardBorder = isExpress
-                          ? "border-red-200 shadow-red-50"
-                          : priority === 2
-                          ? "border-lime/40"
+                          ? "border-red-200"
                           : "border-purple-100/60";
 
                         // Extract address: first part of notes before ||LAUNDRY_MSG||
@@ -1334,7 +1325,7 @@ const toggleDeliveryAvailability = async (type: "fast" | "express", checked: boo
                           >
                             {/* Priority stripe at top */}
                             <div className={`h-1 w-full ${
-                              isExpress ? "bg-red-500" : priority === 2 ? "bg-lime-500" : "bg-slate-300"
+                              isExpress ? "bg-red-500" : "bg-slate-300"
                             }`} />
 
                             <div className="p-4 space-y-3">
@@ -1355,7 +1346,7 @@ const toggleDeliveryAvailability = async (type: "fast" | "express", checked: boo
 
                               {/* Address — large & prominent */}
                               <div>
-                                <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-0.5">📍 כתובת למסירה</p>
+                                <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-0.5">📍 כתובת לאיסוף</p>
                                 {addressLine ? (
                                   <p className="text-base font-black text-foreground leading-snug">{addressLine}</p>
                                 ) : (
@@ -1414,20 +1405,20 @@ const toggleDeliveryAvailability = async (type: "fast" | "express", checked: boo
                                 >
                                   <span>🗺️</span> Google Maps
                                 </a>
-                                {/* Delivered to courier */}
+                                {/* Collected from customer */}
                                 <button
                                   onClick={async () => {
-                                    await updateOrderStatus(order.id, "delivered");
+                                    await updateOrderStatus(order.id, "collected");
                                     if (order.user_email) {
-                                      await sendPushEvent(order.user_email, order.userId || "", "laundry-delivered", {
-                                        customTitle: "הכביסה נמסרה בהצלחה 🎉",
-                                        customBody: "הכביסה שלך נמסרה בהצלחה",
+                                      await sendPushEvent(order.user_email, order.userId || "", "laundry-picked-up", {
+                                        customTitle: "הכביסה נאספה בהצלחה 🧺",
+                                        customBody: "הכביסה שלך נאספה ותועבר למכבסה לטיפול",
                                       });
                                     }
                                   }}
                                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-black bg-primary text-primary-foreground hover:bg-primary/90 transition active:scale-95 shrink-0 mr-auto"
                                 >
-                                  <span>✅</span> נמסר לשליח
+                                  <span>🧺</span> נאסף מהלקוח
                                 </button>
                               </div>
                             </div>
