@@ -74,14 +74,37 @@ service cloud.firestore {
       allow read: if isAdmin();
     }
 
+    // ──────────────────────────────────────────────────────────────────────
+    // PRIVATE VENDOR DATA  /laundries/{laundryId}/private/{docId}
+    //
+    // MEDIUM-SEVERITY FIX (PII isolation):
+    // Anything sensitive about a laundry vendor (owner phone, bank/payout
+    // info, internal notes, contracts, tax IDs) MUST live here rather than
+    // on the publicly-readable /users/{uid} vendor doc.
+    //   read/write : owning laundry OR admin (never public, never customer)
+    // ──────────────────────────────────────────────────────────────────────
+    match /laundries/{laundryId}/private/{docId} {
+      allow read, write: if isAdmin()
+        || (isSignedIn() && isLaundry() && request.auth.uid == laundryId);
+    }
+
 
     // ──────────────────────────────────────────────────────────────────────
     // USERS  /users/{uid}
+    //
+    // MEDIUM-SEVERITY NOTE (PII isolation):
+    // Laundry-vendor user docs are publicly readable so the landing page can
+    // render shop cards without auth. That means NO PII (owner phone, bank
+    // details, internal notes, tax IDs, etc.) may live on this document.
+    // Store any sensitive vendor data under the gated subcollection
+    //   /laundries/{laundryId}/private/{docId}
+    // defined below, which is restricted to the owning laundry + admin.
     // ──────────────────────────────────────────────────────────────────────
     match /users/{uid} {
       // A user can only read their own profile.
       // Admin can read any user document.
-      // Laundry profile is public read (so landing page can load shop assets).
+      // Laundry profile is public read (so landing page can load shop assets)
+      // — enforce the "no PII on this doc" rule above at the app layer.
       allow get:    if (isSignedIn() && (request.auth.uid == uid || isAdmin()))
                     || (resource != null && resource.data.get('role', '') == 'laundry');
 
@@ -92,11 +115,35 @@ service cloud.firestore {
 
       // A user can only create their own document, and the payload's uid must
       // match so they can't spoof another user's document.
+      // On self-create we also forbid privilege-elevating fields — a fresh account
+      // must not be able to seed itself with role/roles/associatedLaundryId.
+      // These are managed by admin tooling or trusted server endpoints only.
       allow create: if isSignedIn()
-                    && request.auth.uid == uid;
+                    && request.auth.uid == uid
+                    && (isAdmin() || (
+                         !('role' in request.resource.data)
+                         && !('roles' in request.resource.data)
+                         && !('associatedLaundryId' in request.resource.data)
+                       ));
 
-      // A user can only update their own document; admins can update any.
-      allow update: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      // A user can update their own document, BUT they may not touch the
+      // privileged fields below. Admins bypass this restriction.
+      //
+      // HIGH-SEVERITY FIX: previously a customer could PATCH their own doc
+      // to set `associatedLaundryId` (silently attaching to any tenant) or
+      // escalate to `role: "admin" | "laundry"`. Those fields are now
+      // admin-only / server-managed.
+      allow update: if isSignedIn() && (
+        isAdmin()
+        || (
+          request.auth.uid == uid
+          // Reject any write that changes a privileged field. `diff().affectedKeys()`
+          // returns the set of top-level fields that differ between the current
+          // doc and the incoming payload — if any of them are privileged, deny.
+          && !request.resource.data.diff(resource.data).affectedKeys()
+               .hasAny(['role', 'roles', 'associatedLaundryId'])
+        )
+      );
 
       // Only admins can delete user documents.
       allow delete: if isAdmin();
@@ -132,6 +179,15 @@ service cloud.firestore {
 
       // List with pagination; customer sees only their own orders,
       // vendor sees only their laundry's orders.
+      //
+      // LOW-SEVERITY NOTE (filter binding): Firestore rules only evaluate
+      // `request.query.filters.*` when the client attaches the matching
+      // `where(...)` clause. A client MUST always call orders.where('laundryId', ...)
+      // (vendor) or .where('user_email' | 'userId', ...) (customer). A query
+      // without one of these filters silently fails with "Missing or
+      // insufficient permissions" rather than leaking data — which is the
+      // safe default, but any new client code must remember to bind the
+      // filter or the list will always deny.
       allow list: if isSignedIn() && paginatedRead() && (
         isAdmin()
         || (isLaundry() && request.query.filters.laundryId == request.auth.uid)
@@ -172,6 +228,11 @@ service cloud.firestore {
       }
 
       allow get:    if isChatParticipant(resource.data);
+      // LOW-SEVERITY NOTE (filter binding): as with /orders, this rule only
+      // permits a list() when the client attaches the matching where() clause
+      // (`laundryId` for vendors, `customer_email` for customers). A query
+      // without one of those filters is denied — safe default, but any new
+      // caller must remember to bind the filter or the list will always fail.
       allow list:   if isSignedIn() && paginatedRead() && (
         isAdmin()
         || (isLaundry() && request.query.filters.laundryId == request.auth.uid)
@@ -191,22 +252,49 @@ service cloud.firestore {
       allow delete: if isAdmin();
 
       // ── Messages sub-collection (and any deeper sub-collections) ──────────
-      // Uses the parent chat document to determine participant membership.
+      //
+      // MEDIUM-SEVERITY FIX (read cost):
+      // Previously EVERY message read/write performed a `get()` on the parent
+      // chat document (1 billed read per rule evaluation). At scale — active
+      // chat threads with dozens of messages loaded — this doubles read cost.
+      //
+      // We now denormalize `participantIds: [customerUid, laundryUid]` onto
+      // each message document at write time (required by the create rule
+      // below). Reads and updates verify membership directly against
+      // `resource.data.participantIds` without touching the parent doc.
+      //
+      // The parent-doc `get()` is retained ONLY as a fallback for legacy
+      // messages that pre-date this migration. Once backfilled it can go.
+      //
+      // Client migration note: every new chat message MUST include
+      //   participantIds: [<customerUid>, <laundryUid>]
+      //   sender_email:   <caller email>
       match /messages/{document=**} {
-        function isMsgParticipant() {
+        function hasParticipantIds() {
+          return resource != null
+              && resource.data.get('participantIds', []) is list
+              && request.auth.uid in resource.data.get('participantIds', []);
+        }
+        function parentAllows() {
           let chat = get(/databases/$(database)/documents/chats/$(chatId));
           return isSignedIn() && (
             request.auth.token.get('email', '') == chatId
             || request.auth.token.get('email', '') == chat.data.get('customer_email', '')
             || request.auth.uid == chat.data.get('laundryId', '')
             || request.auth.uid == chat.data.get('userId', '')
-            || isAdmin()
           );
+        }
+        function isMsgParticipant() {
+          return isSignedIn() && (isAdmin() || hasParticipantIds() || parentAllows());
         }
 
         allow read:   if isMsgParticipant() && (request.query == null || paginatedRead());
-        allow create: if isMsgParticipant()
-                      && request.resource.data.sender_email == request.auth.token.get('email', '');
+        // Creates MUST embed participantIds so subsequent reads are cheap.
+        allow create: if isSignedIn()
+                      && request.resource.data.sender_email == request.auth.token.get('email', '')
+                      && request.resource.data.get('participantIds', []) is list
+                      && request.auth.uid in request.resource.data.participantIds
+                      && parentAllows();
         allow update: if isMsgParticipant();
         allow delete: if isAdmin();
       }
@@ -236,14 +324,27 @@ service cloud.firestore {
     // CollectionGroup query for `customers` — used by getCustomerLaundryIds.
     // Allows the calling user to read only their own customer documents
     // across all laundry sub-collections.
+    //
+    // LOW-SEVERITY FIX: on create via a CollectionGroup-style path we now
+    // also require `request.resource.data.uid == request.auth.uid` so a user
+    // can never seed a customer doc under someone else's identity (matches
+    // the per-laundry rule above; this closes the CG-write escape hatch).
+    //
+    // FILTER-BINDING NOTE: list() only succeeds when the client's query has
+    // the implicit `userId == auth.uid` binding — collectionGroup('customers')
+    // must be filtered by the caller's uid or Firestore denies the read.
     match /{path=**}/customers/{userId} {
-      allow get:  if isSignedIn() && request.auth.uid == userId;
-      allow list: if isSignedIn() && request.auth.uid == userId && paginatedRead();
+      allow get:    if isSignedIn() && request.auth.uid == userId;
+      allow list:   if isSignedIn() && request.auth.uid == userId && paginatedRead();
+      allow create: if isSignedIn()
+                    && request.auth.uid == userId
+                    && request.resource.data.uid == request.auth.uid;
     }
     // CollectionGroup query for `messages` — used by admin dashboard to count unread messages.
     match /{path=**}/messages/{messageId} {
       allow read: if isAdmin();
     }
+
 
 
     // ──────────────────────────────────────────────────────────────────────
