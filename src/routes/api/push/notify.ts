@@ -26,6 +26,7 @@ const VALID_EVENTS = new Set([
   "invoice-ready",
   "chat-to-customer",
   "chat-to-staff",
+  "admin-broadcast",
 ]);
 
 export const Route = createFileRoute("/api/push/notify")({

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { useLaundry } from "@/lib/laundry-store";
 import { db } from "@/lib/firebase";
+import { authFetch } from "@/lib/auth-fetch";
 import { AdminPricingPanel } from "@/components/AdminPricingPanel";
 import { useLaundryOptions } from "@/hooks/use-laundry-options";
 import {
@@ -638,18 +639,20 @@ function AdminDashboard() {
       let targetUserIds: string[] = [];
 
       if (msgAudience === "all") {
-        targetUserIds = profiles.map(p => p.id);
+        const snapshot = await getDocs(collection(db, "users"));
+        targetUserIds = snapshot.docs.map(doc => doc.id);
       } else if (msgAudience === "laundries") {
-        targetUserIds = profiles.filter(p => p.role === "laundry").map(p => p.id);
+        const q = query(collection(db, "users"), where("role", "==", "laundry"));
+        const snapshot = await getDocs(q);
+        targetUserIds = snapshot.docs.map(doc => doc.id);
       } else if (msgAudience === "specific_laundry") {
         // Send to all customers who have orders with this laundry
+        const q = query(collection(db, "orders"), where("laundryId", "==", msgTargetLaundryId));
+        const snapshot = await getDocs(q);
         const customerIds = new Set(
-          orders
-            .filter(o => o.laundryId === msgTargetLaundryId)
-            .map(o => o.userId)
-            .filter(Boolean)
+          snapshot.docs.map(doc => doc.data().userId).filter(Boolean)
         );
-        targetUserIds = Array.from(customerIds);
+        targetUserIds = Array.from(customerIds) as string[];
       }
 
       if (targetUserIds.length === 0) {
@@ -658,6 +661,7 @@ function AdminDashboard() {
         return;
       }
 
+      // Save notification documents to Firestore
       const batch = targetUserIds.map(userId =>
         addDoc(collection(db, "notifications"), {
           userId,
@@ -669,6 +673,29 @@ function AdminDashboard() {
         })
       );
       await Promise.all(batch);
+
+      // Trigger push notifications in parallel
+      const pushPromises = targetUserIds.map(userId =>
+        authFetch("/api/push/notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId,
+            event: "admin-broadcast",
+            customTitle: msgSubject,
+            customBody: msgContent,
+            url: "/",
+          }),
+        })
+          .then(async (res) => {
+            const data = await res.json().catch(() => null);
+            if (!res.ok) {
+              console.warn(`[push-broadcast] Failed to notify ${userId}: ${data?.error || res.status}`);
+            }
+          })
+          .catch((err) => console.error(`[push-broadcast] Error notifying ${userId}:`, err))
+      );
+      await Promise.all(pushPromises);
 
       toast.success(`ההודעה נשלחה בהצלחה ל-${targetUserIds.length} נמענים!`);
       setMsgSubject("");

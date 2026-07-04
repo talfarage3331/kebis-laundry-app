@@ -27,7 +27,8 @@ export type NotificationEvent =
   | "price-updated"
   | "invoice-ready"
   | "chat-to-customer"
-  | "chat-to-staff";
+  | "chat-to-staff"
+  | "admin-broadcast";
 
 export interface PushPayload {
   title: string;
@@ -84,6 +85,12 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationEvent, PushPayload> = {
     body: "התקבלה הודעה חדשה",
     tag: "chat",
     url: "/admin-chat",
+  },
+  "admin-broadcast": {
+    title: "הודעה מהנהלת המערכת 📢",
+    body: "יש לך הודעה חדשה מההנהלה",
+    tag: "admin-broadcast",
+    url: "/",
   },
 };
 
