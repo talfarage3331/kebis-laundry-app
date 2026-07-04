@@ -668,6 +668,9 @@ const toggleDeliveryAvailability = async (type: "fast" | "express", checked: boo
   );
 
 
+  // ── Sidebar state (mobile hamburger) ────────────────────────────────────
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   /* ── render ─────────────────────────────────────────────────────── */
   const effectiveStatus = wizardCompleteState.completed && wizardCompleteState.status ? wizardCompleteState.status : user?.status;
   const isPendingSetup = effectiveStatus === "pending_setup" && (!user?.onboardingCompleted && !wizardCompleteState.completed);
@@ -704,783 +707,992 @@ const toggleDeliveryAvailability = async (type: "fast" | "express", checked: boo
     );
   }
 
+  // ── Nav items config ──────────────────────────────────────────────────
+  const navItems = [
+    {
+      key: "orders" as const,
+      label: "הזמנות",
+      icon: "🧺",
+      badge: orders.filter((o) => o.status !== "delivered").length || undefined,
+    },
+    {
+      key: "settings" as const,
+      label: "תקשורת ומידע",
+      icon: "💬",
+      badge: unreadChatCount > 0 ? unreadChatCount : undefined,
+    },
+    {
+      key: "analytics" as const,
+      label: "נתונים ואנליטיקה",
+      icon: "📊",
+      badge: undefined,
+    },
+  ];
+
   return (
     <AppLayout>
-      <div className="min-h-screen bg-background pb-16 dir-rtl text-right overflow-x-hidden" dir="rtl">
+      <div className="dashboard-layout" dir="rtl">
 
-        {/* ── Header ───────────────────────────────────────────────── */}
-        <header className="bg-lavender px-4 pb-4 sm:px-6 sm:pb-5 pt-safe-lavender rounded-b-[2rem] shadow-sm flex items-center justify-between gap-3">
-          <div className="flex items-center gap-4">
-            <h1 className="text-lg sm:text-xl font-black text-lavender-foreground whitespace-nowrap">
-              צוות מכבסה
-            </h1>
-            <div className="flex bg-background/50 p-1 rounded-xl border border-muted-foreground/10">
+        {/* ── Mobile hamburger button ─────────────────────────────────── */}
+        <button
+          className="hamburger-btn"
+          onClick={() => setSidebarOpen(true)}
+          aria-label="פתח תפריט"
+        >
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <line x1="3" y1="6" x2="17" y2="6" />
+            <line x1="3" y1="10" x2="17" y2="10" />
+            <line x1="3" y1="14" x2="17" y2="14" />
+          </svg>
+        </button>
+
+        {/* ── Mobile overlay backdrop ────────────────────────────────── */}
+        <div
+          className={`sidebar-backdrop ${sidebarOpen ? "visible" : ""}`}
+          onClick={() => setSidebarOpen(false)}
+        />
+
+        {/* ═══════════════════════════════════════════════════════════════
+            SIDEBAR
+        ════════════════════════════════════════════════════════════════ */}
+        <aside className={`dashboard-sidebar ${sidebarOpen ? "sidebar-open" : ""}`}>
+
+          {/* Brand / Logo */}
+          <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10">
+            <div className="size-10 rounded-xl bg-white/15 flex items-center justify-center text-xl shadow-inner shrink-0">
+              🧺
+            </div>
+            <div className="min-w-0">
+              <p className="text-white font-black text-sm leading-tight truncate">
+                {user?.displayName || user?.email?.split("@")[0] || "מכבסה"}
+              </p>
+              <p className="text-[10px] font-semibold truncate" style={{ color: "var(--sidebar-muted)" }}>
+                {user?.email}
+              </p>
+            </div>
+            {/* Mobile close button */}
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="mr-auto shrink-0 size-7 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/70 transition md:hidden"
+              aria-label="סגור תפריט"
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                <line x1="2" y1="2" x2="12" y2="12" /><line x1="12" y1="2" x2="2" y2="12" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Nav section */}
+          <nav className="flex-1 overflow-y-auto py-3 space-y-0.5">
+            <p className="section-heading">ניהול</p>
+            {navItems.map((item) => (
               <button
-                onClick={() => setViewMode("orders")}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                  viewMode === "orders"
-                    ? "bg-primary text-primary-foreground shadow"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
+                key={item.key}
+                onClick={() => {
+                  setViewMode(item.key);
+                  setSidebarOpen(false);
+                }}
+                className={`sidebar-nav-item w-full text-right${viewMode === item.key ? " active" : ""}`}
               >
-                הזמנות
+                <span className="nav-icon">{item.icon}</span>
+                <span className="flex-1 text-right">{item.label}</span>
+                {item.badge !== undefined && item.badge > 0 && (
+                  <span className="min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-black flex items-center justify-center"
+                    style={{ background: "rgba(239,68,68,0.85)", color: "#fff" }}>
+                    {item.badge > 99 ? "99+" : item.badge}
+                  </span>
+                )}
               </button>
-              <button
-                onClick={() => setViewMode("settings")}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                  viewMode === "settings"
-                    ? "bg-primary text-primary-foreground shadow"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                תקשורת ומידע
-              </button>
-              <button
-                onClick={() => setViewMode("analytics")}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                  viewMode === "analytics"
-                    ? "bg-primary text-primary-foreground shadow"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                נתונים ואנליטיקה
-              </button>
+            ))}
+
+            <div className="my-3 mx-5 border-t border-white/10" />
+            <p className="section-heading">כלים</p>
+
+            {/* Chat shortcut */}
+            <button
+              onClick={() => { navigate({ to: "/admin-chat" }); setSidebarOpen(false); }}
+              className="sidebar-nav-item w-full text-right"
+            >
+              <span className="nav-icon">💬</span>
+              <span className="flex-1 text-right">לוח הודעות</span>
+              {unreadChatCount > 0 && (
+                <span className="min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-black flex items-center justify-center"
+                  style={{ background: "rgba(239,68,68,0.85)", color: "#fff" }}>
+                  {unreadChatCount > 99 ? "99+" : unreadChatCount}
+                </span>
+              )}
+            </button>
+          </nav>
+
+          {/* Sidebar footer — logout */}
+          <div className="p-4 border-t border-white/10">
+            <button
+              onClick={() => { logout(); navigate({ to: "/login" }); }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-right"
+              style={{ color: "var(--sidebar-muted)", background: "transparent" }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(239,68,68,0.15)"; (e.currentTarget as HTMLButtonElement).style.color = "#fca5a5"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.color = "var(--sidebar-muted)"; }}
+            >
+              <span className="size-8 rounded-lg bg-white/8 flex items-center justify-center shrink-0"
+                style={{ background: "rgba(255,255,255,0.08)" }}>
+                <LogOut className="size-4" />
+              </span>
+              <span className="text-sm font-bold">התנתק</span>
+            </button>
+          </div>
+        </aside>
+
+        {/* ═══════════════════════════════════════════════════════════════
+            MAIN CONTENT
+        ════════════════════════════════════════════════════════════════ */}
+        <main className="dashboard-main min-h-screen" style={{ background: "var(--dashboard-bg)" }}>
+
+          {/* ── Top bar ──────────────────────────────────────────────── */}
+          <div className="sticky top-0 z-30 bg-white/80 border-b border-purple-100/60 backdrop-blur-md px-6 py-3.5 flex items-center justify-between gap-4"
+            style={{ boxShadow: "0 1px 8px rgba(107,29,92,0.07)" }}>
+            {/* Mobile: spacer for hamburger */}
+            <div className="w-10 md:hidden" />
+            <div className="flex-1 min-w-0 text-right">
+              <h1 className="text-base font-black text-foreground">
+                {viewMode === "orders" && "הזמנות פעילות"}
+                {viewMode === "settings" && "תקשורת ומידע"}
+                {viewMode === "analytics" && "נתונים ואנליטיקה"}
+              </h1>
+              <p className="text-[11px] text-muted-foreground font-semibold">
+                {viewMode === "orders" && `${orders.filter(o => o.status !== "delivered").length} הזמנות פתוחות`}
+                {viewMode === "settings" && "הגדרות מכבסה ותקשורת"}
+                {viewMode === "analytics" && "סיכום ביצועים חודשי"}
+              </p>
+            </div>
+            {/* Live indicator */}
+            <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1 shrink-0">
+              <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-[10px] font-black text-emerald-700">LIVE</span>
             </div>
           </div>
-          <button
-            onClick={() => { logout(); navigate({ to: "/login" }); }}
-            className="size-10 rounded-2xl bg-background/50 hover:bg-background/80 flex items-center justify-center text-destructive transition-colors active:scale-95 shadow-sm"
-            title="התנתק"
-          >
-            <LogOut className="size-4" />
-          </button>
-        </header>
 
-        <main className="px-3 sm:px-5 mt-4 space-y-3 max-w-full">
+          <div className="p-4 sm:p-6 space-y-5 max-w-full">
 
-          {viewMode === "analytics" && (
-            <div className="space-y-4">
-              {/* Dynamic Month Selector */}
-              <div className="bg-card border border-muted-foreground/10 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
-                <div>
-                  <h2 className="text-sm font-black text-foreground">בחר חודש לצפייה</h2>
-                  <p className="text-[10px] text-muted-foreground">הנתונים מתעדכנים אוטומטית ומסוננים לפי החודש הנבחר</p>
-                </div>
-                <select
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="h-10 w-full sm:w-48 bg-background border border-muted-foreground/20 rounded-lg px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary text-right"
-                >
-                  {getAvailableMonths().map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {/* ════════════════════════════════════════════════════════
+                ANALYTICS VIEW
+            ═══════════════════════════════════════════════════════════ */}
+            {viewMode === "analytics" && (
+              <div className="space-y-5">
 
-              {/* KPI Cards Grid */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                {[
-                  { label: "סך הכנסות חודשי", value: `₪${totalMonthlyRevenue.toLocaleString("he-IL")}`, color: "text-emerald-600 bg-emerald-50 border-emerald-100" },
-                  { label: "סה\"כ הזמנות", value: totalMonthlyOrders, color: "text-blue-600 bg-blue-50 border-blue-100" },
-                  { label: "ממוצע להזמנה", value: `₪${Math.round(avgMonthlyOrderValue).toLocaleString("he-IL")}`, color: "text-purple-600 bg-purple-50 border-purple-100" },
-                  { label: "הזמנות שבוטלו", value: canceledMonthlyOrdersCount, color: "text-destructive bg-destructive/5 border-destructive/10" },
-                ].map((kpi, idx) => (
-                  <div key={idx} className={`border rounded-2xl p-4 flex flex-col justify-between shadow-sm min-h-[90px] ${kpi.color}`}>
-                    <span className="text-[10px] font-black opacity-75">{kpi.label}</span>
-                    <span className="text-lg sm:text-xl font-black mt-2 leading-none">{kpi.value}</span>
+                {/* Month selector card */}
+                <div className="dash-card p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-sm font-black text-foreground">בחר חודש לצפייה</h2>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">הנתונים מתעדכנים אוטומטית ומסוננים לפי החודש הנבחר</p>
                   </div>
-                ))}
-              </div>
-
-              {/* Active Customers Table */}
-              <div className="bg-card border border-muted-foreground/10 rounded-2xl overflow-hidden shadow-sm">
-                <div className="p-4 border-b border-muted-foreground/10">
-                  <h3 className="text-sm font-black text-foreground">לקוחות שהזמינו החודש ({activeCustomers.length})</h3>
-                  <p className="text-[10px] text-muted-foreground">רשימת לקוחות ייחודית עם פירוט פעילות לחודש הנבחר</p>
+                  <select
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                    className="h-10 w-full sm:w-52 bg-background border border-purple-200/60 rounded-xl px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary text-right"
+                    style={{ boxShadow: "0 1px 4px rgba(107,29,92,0.08)" }}
+                  >
+                    {getAvailableMonths().map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
                 </div>
-                
-                {activeCustomers.length === 0 ? (
-                  <div className="p-8 text-center text-xs text-muted-foreground">
-                    אין פעילות לקוחות בחודש זה.
+
+                {/* KPI Grid */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  {[
+                    {
+                      label: "סך הכנסות חודשי",
+                      value: `₪${totalMonthlyRevenue.toLocaleString("he-IL")}`,
+                      icon: "💰",
+                      iconBg: "bg-emerald-50",
+                      iconColor: "text-emerald-600",
+                      valueCls: "text-emerald-700",
+                      border: "border-emerald-100",
+                    },
+                    {
+                      label: 'סה"כ הזמנות',
+                      value: totalMonthlyOrders,
+                      icon: "📦",
+                      iconBg: "bg-blue-50",
+                      iconColor: "text-blue-600",
+                      valueCls: "text-blue-700",
+                      border: "border-blue-100",
+                    },
+                    {
+                      label: "ממוצע להזמנה",
+                      value: `₪${Math.round(avgMonthlyOrderValue).toLocaleString("he-IL")}`,
+                      icon: "📈",
+                      iconBg: "bg-purple-50",
+                      iconColor: "text-purple-600",
+                      valueCls: "text-purple-700",
+                      border: "border-purple-100",
+                    },
+                    {
+                      label: "הזמנות שבוטלו",
+                      value: canceledMonthlyOrdersCount,
+                      icon: "❌",
+                      iconBg: "bg-red-50",
+                      iconColor: "text-red-500",
+                      valueCls: "text-red-600",
+                      border: "border-red-100",
+                    },
+                  ].map((kpi, idx) => (
+                    <div key={idx} className={`kpi-card border ${kpi.border}`}>
+                      <div className="flex items-center justify-between">
+                        <span className={`text-[10px] font-black opacity-70 ${kpi.valueCls}`}>{kpi.label}</span>
+                        <span className={`size-8 rounded-xl ${kpi.iconBg} ${kpi.iconColor} flex items-center justify-center text-base`}>
+                          {kpi.icon}
+                        </span>
+                      </div>
+                      <span className={`text-2xl font-black mt-1 leading-none ${kpi.valueCls}`}>{kpi.value}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Active Customers Table */}
+                <div className="dash-card overflow-hidden">
+                  <div className="px-5 py-4 border-b border-purple-50">
+                    <h3 className="text-sm font-black text-foreground">לקוחות שהזמינו החודש
+                      <span className="mr-2 inline-flex items-center justify-center min-w-[22px] h-[22px] rounded-full bg-primary/10 text-primary text-[10px] font-black px-1.5">
+                        {activeCustomers.length}
+                      </span>
+                    </h3>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">רשימת לקוחות ייחודית עם פירוט פעילות לחודש הנבחר</p>
+                  </div>
+
+                  {activeCustomers.length === 0 ? (
+                    <div className="p-10 text-center text-xs text-muted-foreground">
+                      אין פעילות לקוחות בחודש זה.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-right text-xs">
+                        <thead>
+                          <tr className="border-b border-purple-50/80 text-muted-foreground font-black text-[10px] uppercase tracking-wide">
+                            <th className="py-3 px-5 bg-purple-50/40">שם / אימייל</th>
+                            <th className="py-3 px-5 text-center bg-purple-50/40">הזמנות</th>
+                            <th className="py-3 px-5 text-left bg-purple-50/40">שולם</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {activeCustomers.map((c, idx) => (
+                            <tr key={idx} className={`border-b border-purple-50/40 transition-colors hover:bg-purple-50/30 ${idx % 2 === 0 ? "" : "bg-slate-50/40"}`}>
+                              <td className="py-3 px-5 font-bold text-foreground truncate max-w-[200px]" title={c.email}>
+                                <span className="inline-flex items-center gap-2">
+                                  <span className="size-6 rounded-full bg-primary/10 text-primary text-[10px] font-black flex items-center justify-center shrink-0">
+                                    {c.email.charAt(0).toUpperCase()}
+                                  </span>
+                                  {c.email}
+                                </span>
+                              </td>
+                              <td className="py-3 px-5 text-center">
+                                <span className="inline-flex items-center justify-center min-w-[28px] h-6 rounded-full bg-blue-50 text-blue-700 border border-blue-100 text-[10px] font-black px-2">
+                                  {c.orderCount}
+                                </span>
+                              </td>
+                              <td className="py-3 px-5 text-left font-black text-emerald-600">
+                                ₪{c.totalPaid.toLocaleString("he-IL")}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ════════════════════════════════════════════════════════
+                SETTINGS VIEW  (תקשורת ומידע)
+            ═══════════════════════════════════════════════════════════ */}
+            {viewMode === "settings" && (
+              <div className="space-y-5">
+
+                {/* Onboarding link card */}
+                <div className="dash-card p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="font-black text-foreground flex items-center gap-2 text-sm">
+                      <span className="size-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center text-base">🔗</span>
+                      לינק לצירוף לקוחות
+                    </h3>
+                    <p className="text-[11px] text-muted-foreground mt-1.5 max-w-xs">
+                      שלח את הלינק הבא ללקוחות שלך כדי שיזמינו ישירות מהמכבסה שלך.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const slug = user?.shopSlug;
+                      if (!slug) { toast.error("הגדר קישור חנות בהגדרות לפני שתעתיק את הלינק."); return; }
+                      const link = `${window.location.origin}/shop/${slug}`;
+                      navigator.clipboard.writeText(link);
+                      toast.success("הלינק הועתק בהצלחה!");
+                    }}
+                    className="shrink-0 inline-flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-xl text-xs font-black hover:bg-primary/90 transition active:scale-95 shadow-sm"
+                  >
+                    <Copy className="size-3.5" />
+                    העתק לינק
+                  </button>
+                </div>
+
+                {/* Availability Toggles */}
+                <div className="dash-card p-5">
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="size-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-black text-lg border border-indigo-100">⚡</div>
+                    <div>
+                      <h2 className="text-sm font-black text-foreground">ניהול זמינות מהירה</h2>
+                      <p className="text-[11px] text-muted-foreground">הפעל או כבה זמנית קבלת הזמנות דחופות</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {/* Fast Delivery Toggle */}
+                    <div
+                      onClick={() => toggleDeliveryAvailability("fast", !fastDeliveryEnabled)}
+                      className={`p-4 rounded-xl border flex items-center justify-between transition-all cursor-pointer select-none ${
+                        fastDeliveryEnabled
+                          ? "bg-primary/5 border-primary/25 shadow-sm"
+                          : "bg-slate-50 border-slate-200 opacity-70"
+                      }`}
+                    >
+                      <div>
+                        <h3 className="font-bold text-foreground text-sm">משלוח מהיר (תוך 24 שעות)</h3>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">זמינות לקבלת הזמנות מהירות רגילות</p>
+                      </div>
+                      <div
+                        role="switch"
+                        aria-checked={fastDeliveryEnabled}
+                        className={`relative w-11 h-6 rounded-full flex-shrink-0 transition-colors duration-200 ${fastDeliveryEnabled ? "bg-primary" : "bg-slate-300"}`}
+                      >
+                        <span
+                          className="absolute top-[2px] left-[2px] w-5 h-5 bg-white border border-slate-200 rounded-full shadow transition-transform duration-200"
+                          style={{ transform: fastDeliveryEnabled ? "translateX(0px)" : "translateX(20px)" }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Express Delivery Toggle */}
+                    <div
+                      onClick={() => toggleDeliveryAvailability("express", !expressDeliveryEnabled)}
+                      className={`p-4 rounded-xl border flex items-center justify-between transition-all cursor-pointer select-none ${
+                        expressDeliveryEnabled
+                          ? "bg-primary/5 border-primary/25 shadow-sm"
+                          : "bg-slate-50 border-slate-200 opacity-70"
+                      }`}
+                    >
+                      <div>
+                        <h3 className="font-bold text-foreground text-sm">משלוח אקספרס (מהיום להיום)</h3>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">זמינות לקבלת הזמנות סופר-דחופות</p>
+                      </div>
+                      <div
+                        role="switch"
+                        aria-checked={expressDeliveryEnabled}
+                        className={`relative w-11 h-6 rounded-full flex-shrink-0 transition-colors duration-200 ${expressDeliveryEnabled ? "bg-primary" : "bg-slate-300"}`}
+                      >
+                        <span
+                          className="absolute top-[2px] left-[2px] w-5 h-5 bg-white border border-slate-200 rounded-full shadow transition-transform duration-200"
+                          style={{ transform: expressDeliveryEnabled ? "translateX(0px)" : "translateX(20px)" }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Chat link */}
+                <button
+                  onClick={() => navigate({ to: "/admin-chat" })}
+                  className="dash-card w-full p-4 flex items-center justify-between gap-3 text-right hover:bg-primary/5 transition-all active:scale-[0.99] group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="relative size-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
+                      <MessageSquareText className="size-5" />
+                      {unreadChatCount > 0 && (
+                        <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[9px] font-black rounded-full flex items-center justify-center shadow">
+                          {unreadChatCount > 99 ? "99+" : unreadChatCount}
+                        </span>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-sm font-black text-foreground">לוח הודעות (צ׳אט)</p>
+                      <p className="text-[11px] text-muted-foreground">שוחח עם לקוחות בזמן אמת</p>
+                    </div>
+                  </div>
+                  <ArrowRight className="size-4 rotate-180 text-muted-foreground/50 group-hover:text-primary group-hover:-translate-x-1 transition-all" />
+                </button>
+
+                {/* Pricing management panel */}
+                <AdminPricingPanel />
+
+                {/* Laundry Settings Panel */}
+                <LaundrySettingsCRUDPanel />
+              </div>
+            )}
+
+            {/* ════════════════════════════════════════════════════════
+                ORDERS VIEW  (הזמנות)
+            ═══════════════════════════════════════════════════════════ */}
+            {viewMode === "orders" && (
+              <div className="space-y-4">
+
+                {/* Onboarding link */}
+                <div className="dash-card p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="font-black text-foreground flex items-center gap-2 text-sm">
+                      <span className="size-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-sm">🔗</span>
+                      לינק לצירוף לקוחות
+                    </h3>
+                    <p className="text-[11px] text-muted-foreground mt-1">שלח ללקוחות שלך — יזמינו ישירות מהמכבסה שלך.</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const slug = user?.shopSlug;
+                      if (!slug) { toast.error("הגדר קישור חנות בהגדרות לפני שתעתיק את הלינק."); return; }
+                      const link = `${window.location.origin}/shop/${slug}`;
+                      navigator.clipboard.writeText(link);
+                      toast.success("הלינק הועתק בהצלחה!");
+                    }}
+                    className="shrink-0 inline-flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-xl text-xs font-black hover:bg-primary/90 transition active:scale-95"
+                  >
+                    <Copy className="size-3.5" />
+                    העתק לינק
+                  </button>
+                </div>
+
+                {/* ── Stats strip ──────────────────────────────────── */}
+                <div className="grid grid-cols-5 gap-2">
+                  {[
+                    { label: "ממתינים", count: orders.filter((o) => o.status === "pending").length,   color: "text-purple-700 bg-purple-50 border-purple-200" },
+                    { label: "התקבלו",  count: orders.filter((o) => o.status === "accepted").length,  color: "text-blue-700   bg-blue-50   border-blue-200"   },
+                    { label: "נאספו",   count: orders.filter((o) => o.status === "collected").length, color: "text-amber-700  bg-amber-50  border-amber-200"  },
+                    { label: "מוכנים",  count: orders.filter((o) => o.status === "ready").length,     color: "text-lime-foreground bg-lime/20 border-lime/40" },
+                    { label: "בוטלו",   count: orders.filter((o) => o.status === "cancelled").length, color: "text-red-600    bg-red-50    border-red-200"    },
+                  ].map((stat, idx) => (
+                    <div key={idx} className={`stat-pill ${stat.color}`}>
+                      <span className="text-base font-black leading-none">{stat.count}</span>
+                      <span className="text-[9px] font-bold opacity-80 whitespace-nowrap">{stat.label}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* ── Tab bar ──────────────────────────────────────── */}
+                <div className="flex gap-2 bg-white rounded-2xl p-1 border border-purple-100/60" style={{ boxShadow: "var(--card-shadow)" }}>
+                  {[
+                    { key: "active",    label: "פעילות", count: orders.filter((o) => o.status !== "delivered").length },
+                    { key: "delivered", label: "הסטוריה", count: orders.filter((o) => o.status === "delivered").length },
+                  ].map((t) => (
+                    <button
+                      key={t.key}
+                      onClick={() => setActiveTab(t.key)}
+                      className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-black transition-all duration-200 active:scale-[0.98] ${
+                        activeTab === t.key
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground hover:bg-purple-50/60"
+                      }`}
+                    >
+                      {t.label}
+                      <span className={`min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-black flex items-center justify-center ${
+                        activeTab === t.key ? "bg-white/20 text-white" : "bg-primary/10 text-primary"
+                      }`}>
+                        {t.count}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* ── Order list header + sub-filters ──────────────── */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-extrabold text-foreground">
+                      {activeTab === "active" ? "הזמנות לטיפול" : "הזמנות שהושלמו"}
+                    </h2>
+                    <button
+                      onClick={() => toast.success("הנתונים מסונכרנים בזמן אמת! ✨")}
+                      className="size-7 rounded-full hover:bg-white flex items-center justify-center text-primary transition active:rotate-180 duration-500"
+                    >
+                      <RefreshCw className="size-3.5" />
+                    </button>
+                  </div>
+                  {activeTab === "active" && (
+                    <div className="flex items-center gap-1 bg-white p-0.5 rounded-xl border border-purple-100/60" style={{ boxShadow: "var(--card-shadow)" }}>
+                      {[
+                        { key: "all",       label: "הכל" },
+                        { key: "treatment", label: "בטיפול" },
+                        { key: "ready",     label: "מוכן" },
+                      ].map((tab) => (
+                        <button
+                          key={tab.key}
+                          onClick={() => setSubFilter(tab.key as any)}
+                          className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all duration-200 ${
+                            subFilter === tab.key
+                              ? "bg-primary text-primary-foreground shadow-sm"
+                              : "text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* ── Order cards ───────────────────────────────────── */}
+                {isLoading ? (
+                  <div className="py-16 flex flex-col items-center gap-3">
+                    <div className="animate-spin rounded-full size-8 border-4 border-primary border-t-transparent" />
+                    <span className="text-xs text-muted-foreground font-semibold">טוען הזמנות כביסה...</span>
+                  </div>
+                ) : filteredOrders.length === 0 ? (
+                  <div className="dash-card p-12 text-center">
+                    <p className="text-3xl mb-3">🧺</p>
+                    <p className="text-sm font-bold text-muted-foreground">לא נמצאו הזמנות בקטגוריה זו.</p>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-right text-xs">
-                      <thead>
-                        <tr className="bg-muted/30 border-b border-muted-foreground/5 text-muted-foreground font-black text-[10px]">
-                          <th className="py-2.5 px-4">שם/אימייל</th>
-                          <th className="py-2.5 px-4 text-center">מספר הזמנות החודש</th>
-                          <th className="py-2.5 px-4 text-left">סך הכל שולם</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-muted-foreground/5">
-                        {activeCustomers.map((c, idx) => (
-                          <tr key={idx} className="hover:bg-muted/10 transition-colors">
-                            <td className="py-2.5 px-4 font-bold text-foreground truncate max-w-[200px]" title={c.email}>
-                              {c.email}
-                            </td>
-                            <td className="py-2.5 px-4 text-center font-bold text-foreground">
-                              {c.orderCount}
-                            </td>
-                            <td className="py-2.5 px-4 text-left font-black text-emerald-600">
-                              ₪{c.totalPaid.toLocaleString("he-IL")}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+                  <div className="space-y-2 pb-6">
+                    {filteredOrders.map((order) => {
+                      const isExpanded = expandedOrderId === order.id;
+                      const [custNotes, laundryMsg] = (order.notes || "").split(" ||LAUNDRY_MSG|| ");
+                      const displayPrice = order.price !== undefined ? order.price : order.amount_due;
+                      const isCancelled = order.status === "cancelled";
 
-          {viewMode === "settings" && (
-            <div className="space-y-4">
-              {/* ── Quick Availability Toggles ───────────────────────────────── */}
-              <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm mb-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="size-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center font-black text-lg">
-                    ⚡
-                  </div>
-                  <div>
-                    <h2 className="text-lg font-black text-slate-800">ניהול זמינות מהירה</h2>
-                    <p className="text-xs text-slate-500">הפעל או כבה זמנית קבלת הזמנות דחופות</p>
-                  </div>
-                </div>
-                
-                <div className="space-y-3">
-                  {/* Fast Delivery Toggle */}
-                  <div
-                    onClick={() => toggleDeliveryAvailability("fast", !fastDeliveryEnabled)}
-                    className={`p-4 rounded-xl border flex items-center justify-between transition-all cursor-pointer select-none ${fastDeliveryEnabled ? "bg-slate-50 border-primary/30" : "bg-white border-slate-100 opacity-70"}`}
-                  >
-                    <div>
-                      <h3 className="font-bold text-slate-800 text-sm">משלוח מהיר (תוך 24 שעות)</h3>
-                      <p className="text-xs text-slate-500 mt-0.5">זמינות לקבלת הזמנות מהירות רגילות</p>
-                    </div>
-                    {/* Toggle switch — uses inline-block knob with marginLeft to avoid absolute/translate conflicts */}
-                    <div
-                      role="switch"
-                      aria-checked={fastDeliveryEnabled}
-                      className={`relative w-11 h-6 rounded-full flex-shrink-0 transition-colors duration-200 ${fastDeliveryEnabled ? "bg-primary" : "bg-slate-200"}`}
-                    >
-                      <span
-                        className="absolute top-[2px] left-[2px] w-5 h-5 bg-white border border-slate-200 rounded-full shadow transition-transform duration-200"
-                        style={{ transform: fastDeliveryEnabled ? "translateX(0px)" : "translateX(20px)" }}
-                      />
-                    </div>
-                  </div>
+                      // Priority stripe class
+                      const tierKey = (order?.deliveryTier || "standard").toLowerCase();
+                      const isSuper   = tierKey === "super_express" || tierKey.includes("super") || tierKey.includes("מהיום") || tierKey.includes("מהירה");
+                      const isExpress = !isSuper && (tierKey === "express" || tierKey.includes("express") || tierKey.includes("אקספרס"));
+                      const stripeClass = isSuper ? "order-row-super" : isExpress ? "order-row-express" : "order-row-standard";
+                      const tierLabel  = isSuper ? "אקספרס מהיום להיום" : isExpress ? "משלוח אקספרס" : "משלוח רגיל";
+                      const tierBadge  = isSuper
+                        ? "bg-red-50 text-red-700 border-red-200 font-extrabold"
+                        : isExpress
+                          ? "bg-amber-50 text-amber-700 border-amber-200 font-bold"
+                          : "bg-slate-50 text-slate-500 border-slate-200";
 
-                  {/* Express Delivery Toggle */}
-                  <div
-                    onClick={() => toggleDeliveryAvailability("express", !expressDeliveryEnabled)}
-                    className={`p-4 rounded-xl border flex items-center justify-between transition-all cursor-pointer select-none ${expressDeliveryEnabled ? "bg-slate-50 border-primary/30" : "bg-white border-slate-100 opacity-70"}`}
-                  >
-                    <div>
-                      <h3 className="font-bold text-slate-800 text-sm">משלוח אקספרס (מהיום להיום)</h3>
-                      <p className="text-xs text-slate-500 mt-0.5">זמינות לקבלת הזמנות סופר-דחופות</p>
-                    </div>
-                    <div
-                      role="switch"
-                      aria-checked={expressDeliveryEnabled}
-                      className={`relative w-11 h-6 rounded-full flex-shrink-0 transition-colors duration-200 ${expressDeliveryEnabled ? "bg-primary" : "bg-slate-200"}`}
-                    >
-                      <span
-                        className="absolute top-[2px] left-[2px] w-5 h-5 bg-white border border-slate-200 rounded-full shadow transition-transform duration-200"
-                        style={{ transform: expressDeliveryEnabled ? "translateX(0px)" : "translateX(20px)" }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {onboardingLinkBlock}
-              
-              {/* ── Chat link ────────────────────────────────────────────── */}
-              <button
-                onClick={() => navigate({ to: "/admin-chat" })}
-                className="relative w-full bg-primary/10 border border-primary/20 text-primary hover:bg-primary hover:text-primary-foreground rounded-xl px-4 py-2.5 flex items-center justify-between font-bold text-sm transition-all group active:scale-95"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="relative size-8 rounded-full bg-background/50 grid place-items-center group-hover:bg-primary-foreground/20">
-                    <MessageSquareText className="size-4" />
-                    {unreadChatCount > 0 && (
-                      <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-0.5 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center shadow">
-                        {unreadChatCount > 99 ? "99+" : unreadChatCount}
-                      </span>
-                    )}
-                  </div>
-                  <span>לוח הודעות (צ׳אט)</span>
-                </div>
-                <ArrowRight className="size-4 rotate-180 opacity-50 group-hover:opacity-100 group-hover:-translate-x-1 transition-all" />
-              </button>
-
-              {/* Pricing management panel */}
-              <AdminPricingPanel />
-
-              {/* Laundry Settings Panel */}
-              <LaundrySettingsCRUDPanel />
-            </div>
-          )}
-
-          {viewMode === "orders" && (
-            <div className="space-y-4">
-              {onboardingLinkBlock}
-              
-              {/* ── Stats strip ──────────────────────────────────────────── */}
-              <section className="grid grid-cols-5 gap-1.5">
-                {[
-                  { label: "ממתינים", count: orders.filter((o) => o.status === "pending").length,   color: "text-purple-600 bg-purple-50 border-purple-100" },
-                  { label: "התקבלו",  count: orders.filter((o) => o.status === "accepted").length,  color: "text-blue-600   bg-blue-50   border-blue-100"   },
-                  { label: "נאספו",   count: orders.filter((o) => o.status === "collected").length, color: "text-amber-600  bg-amber-50  border-amber-100"  },
-                  { label: "מוכנים",  count: orders.filter((o) => o.status === "ready").length,     color: "text-lime-foreground bg-lime/10 border-lime/20" },
-                  { label: "נמסרו",   count: orders.filter((o) => o.status === "delivered").length, color: "text-slate-600  bg-slate-50  border-slate-100"  },
-                  { label: "מוכנים",  count: orders.filter((o) => o.status === "ready").length,       color: "text-lime-foreground bg-lime/10 border-lime/20" },
-                  { label: "הושלמו",  count: orders.filter((o) => o.status === "delivered").length,   color: "text-slate-600  bg-slate-50  border-slate-100"  },
-                ].map((stat, idx) => (
-                  <div key={idx} className={`border rounded-xl p-2 flex flex-col items-center text-center ${stat.color}`}>
-                    <span className="text-sm font-black leading-none">{stat.count}</span>
-                    <span className="text-[9px] font-bold opacity-75 mt-0.5">{stat.label}</span>
-                  </div>
-                ))}
-              </section>
-
-              {/* ── Tabs ─────────────────────────────────────────────────── */}
-              <div className="flex gap-1.5">
-                {[
-                  { key: "active",    label: `פעילות (${orders.filter((o) => o.status !== "delivered").length})` },
-                  { key: "delivered", label: `הסטוריה (${orders.filter((o) => o.status === "delivered").length})` },
-                ].map((t) => (
-                  <button
-                    key={t.key}
-                    onClick={() => setActiveTab(t.key)}
-                    className={`flex-1 py-2 rounded-xl text-xs font-black transition border active:scale-95 ${
-                      activeTab === t.key
-                        ? "bg-primary text-primary-foreground border-primary"
-                        : "bg-muted text-muted-foreground border-muted-foreground/10"
-                    }`}
-                  >
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* ── Order list header + sub-filters ──────────────────────── */}
-              <div className="flex items-center justify-between gap-2 border-b border-muted-foreground/10 pb-2">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-sm font-extrabold">
-                    {activeTab === "active" ? "הזמנות לטיפול" : "הזמנות שהושלמו"}
-                  </h2>
-                  <button
-                    onClick={() => toast.success("הנתונים מסונכרנים בזמן אמת! ✨")}
-                    className="size-7 rounded-full hover:bg-muted flex items-center justify-center text-primary transition active:rotate-180 duration-500"
-                  >
-                    <RefreshCw className="size-3.5" />
-                  </button>
-                </div>
-                {activeTab === "active" && (
-                  <div className="flex items-center gap-1 bg-muted/40 p-0.5 rounded-lg border border-muted-foreground/5">
-                    {[
-                      { key: "all",       label: "הכל" },
-                      { key: "treatment", label: "בטיפול" },
-                      { key: "ready",     label: "מוכן" },
-                    ].map((tab) => (
-                      <button
-                        key={tab.key}
-                        onClick={() => setSubFilter(tab.key as any)}
-                        className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition-all duration-200 ${
-                          subFilter === tab.key
-                            ? "bg-background text-primary shadow-sm"
-                            : "text-muted-foreground hover:text-foreground"
-                        }`}
-                      >
-                        {tab.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* ── Order cards ──────────────────────────────────────────── */}
-              {isLoading ? (
-                <div className="py-16 flex flex-col items-center gap-2">
-                  <div className="animate-spin rounded-full size-7 border-4 border-primary border-t-transparent" />
-                  <span className="text-xs text-muted-foreground">טוען הזמנות כביסה...</span>
-                </div>
-              ) : filteredOrders.length === 0 ? (
-                <div className="bg-muted/30 border border-muted/50 rounded-2xl p-10 text-center text-sm text-muted-foreground">
-                  לא נמצאו הזמנות בקטגוריה זו.
-                </div>
-              ) : (
-                <div className="space-y-1.5 pb-4">
-                  {filteredOrders.map((order) => {
-                    const isExpanded = expandedOrderId === order.id;
-                    const [custNotes, laundryMsg] = (order.notes || "").split(" ||LAUNDRY_MSG|| ");
-                    const displayPrice = order.price !== undefined ? order.price : order.amount_due;
-                    const isCancelled = order.status === "cancelled";
-
-                    return (
-                      <div
-                        key={order.id}
-                        className={`bg-card border rounded-xl transition-all duration-200 overflow-hidden ${
-                          isCancelled
-                            ? "border-destructive/30 ring-1 ring-destructive/10 bg-muted/30 opacity-80"
-                            : isExpanded
-                              ? "border-primary/30 shadow-md ring-1 ring-primary/10"
-                              : "border-muted-foreground/10 hover:border-muted-foreground/25 hover:shadow-sm cursor-pointer"
-                        }`}
-                        onClick={() => { if (!isExpanded) setExpandedOrderId(order.id); }}
-                      >
-                        {/* ── Slim collapsed row ───────────────────────── */}
+                      return (
                         <div
-                          className="flex items-center justify-between gap-2 py-2.5 px-4 select-none"
-                          onClick={(e) => {
-                            if (isExpanded) { e.stopPropagation(); setExpandedOrderId(null); }
-                          }}
-                        >
-                          {/* Right: chevron + status + ID */}
-                          <div className="flex items-center gap-2 min-w-0 shrink-0">
-                            <div
-                              className="p-0.5 rounded cursor-pointer"
-                              onClick={(e) => { e.stopPropagation(); setExpandedOrderId(isExpanded ? null : order.id); }}
-                            >
-                              <ChevronDown
-                                className={`size-4 text-muted-foreground transition-transform duration-300 ${isExpanded ? "rotate-180 text-primary" : ""}`}
-                              />
-                            </div>
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${getStatusColor(order.status)}`}>
-                              {getStatusLabel(order.status)}
-                            </span>
-                            {(() => {
-                              const tierKey = (order?.deliveryTier || "standard").toLowerCase();
-                              const isSuper = tierKey === "super_express" || tierKey.includes("super") || tierKey.includes("מהיום") || tierKey.includes("מהירה");
-                              const isExpress = !isSuper && (tierKey === "express" || tierKey.includes("express") || tierKey.includes("אקספרס"));
-                              const tierLabel = isSuper ? "אקספרס מהיום להיום" : isExpress ? "משלוח אקספרס" : "משלוח רגיל";
-                              const badgeStyle = isSuper 
-                                ? "bg-red-50 text-red-700 border-red-200 font-extrabold" 
-                                : isExpress 
-                                  ? "bg-amber-50 text-amber-700 border-amber-200 font-bold" 
-                                  : "bg-slate-50 text-slate-600 border-slate-200";
-                              return (
-                                <span className={`px-2 py-0.5 rounded-full text-[10px] border whitespace-nowrap ${badgeStyle}`}>
-                                  {tierLabel}
-                                </span>
-                              );
-                            })()}
-                            <span className="font-mono text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-muted-foreground/5 hidden sm:inline">
-                              #{order.id.slice(0, 8)}
-                            </span>
-                          </div>
-
-                          {/* Center: email & date inline */}
-                          <div className="flex-1 min-w-0 px-3 flex items-center justify-between gap-3 text-right">
-                            <span className="text-xs font-extrabold truncate text-foreground" title={order.user_email}>
-                              {order.user_email}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground whitespace-nowrap hidden sm:inline-block">
-                              {new Date(order.created_at).toLocaleDateString("he-IL")}
-                            </span>
-                          </div>
-
-                          {/* Left: price */}
-                          <div className="shrink-0 text-left">
-                            <span className="text-sm font-black text-foreground">
-                              {displayPrice !== undefined && displayPrice !== 0
-                                ? `₪${displayPrice}`
-                                : <span className="text-[10px] text-muted-foreground font-semibold">טרם נקבע</span>
-                              }
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* ── Expanded panel ───────────────────────────── */}
-                        <div
-                          className={`grid transition-all duration-300 ease-in-out ${
-                            isExpanded
-                              ? "grid-rows-[1fr] opacity-100"
-                              : "grid-rows-[0fr] opacity-0"
+                          key={order.id}
+                          className={`bg-white rounded-2xl border transition-all duration-200 overflow-hidden ${stripeClass} ${
+                            isCancelled
+                              ? "border-red-100 opacity-75"
+                              : isExpanded
+                                ? "border-primary/30 shadow-md"
+                                : "border-purple-100/60 hover:border-primary/20 hover:shadow-sm cursor-pointer"
                           }`}
-                          onClick={(e) => e.stopPropagation()}
+                          style={{ boxShadow: isExpanded ? "0 4px 20px rgba(107,29,92,0.12)" : "var(--card-shadow)" }}
+                          onClick={() => { if (!isExpanded) setExpandedOrderId(order.id); }}
                         >
-                          <div className="overflow-hidden">
-                            <div className="border-t border-muted-foreground/10 mx-4" />
-                            <div className="px-4 pt-3 pb-4">
+                          {/* ── Collapsed row ─────────────────────── */}
+                          <div
+                            className="flex items-center justify-between gap-2 py-3 px-4 select-none"
+                            onClick={(e) => { if (isExpanded) { e.stopPropagation(); setExpandedOrderId(null); } }}
+                          >
+                            {/* Right: chevron + status + tier badge + ID */}
+                            <div className="flex items-center gap-2 min-w-0 shrink-0">
+                              <div
+                                className="p-0.5 rounded cursor-pointer"
+                                onClick={(e) => { e.stopPropagation(); setExpandedOrderId(isExpanded ? null : order.id); }}
+                              >
+                                <ChevronDown
+                                  className={`size-4 text-muted-foreground transition-transform duration-300 ${isExpanded ? "rotate-180 text-primary" : ""}`}
+                                />
+                              </div>
+                              <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border whitespace-nowrap ${getStatusColor(order.status)}`}>
+                                {getStatusLabel(order.status)}
+                              </span>
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] border whitespace-nowrap hidden sm:inline ${tierBadge}`}>
+                                {tierLabel}
+                              </span>
+                              <span className="font-mono text-[10px] text-muted-foreground bg-slate-50 px-1.5 py-0.5 rounded-lg border border-slate-100 hidden md:inline">
+                                #{order.id.slice(0, 8)}
+                              </span>
+                            </div>
 
-                              {isCancelled && (
-                                <div className="mb-3 rounded-xl border-2 border-destructive/40 bg-destructive/10 text-destructive px-4 py-3 flex items-center gap-2">
-                                  <XCircle className="size-5 shrink-0" />
-                                  <div className="text-right">
-                                    <p className="text-xs font-black">הזמנה זו בוטלה</p>
-                                    <p className="text-[10px] font-semibold opacity-80">לא ניתן לערוך פרטים, סטטוס או חשבונית.</p>
+                            {/* Center: email & date */}
+                            <div className="flex-1 min-w-0 px-3 flex items-center justify-between gap-3 text-right">
+                              <span className="text-xs font-extrabold truncate text-foreground" title={order.user_email}>
+                                {order.user_email}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground whitespace-nowrap hidden sm:inline-block">
+                                {new Date(order.created_at).toLocaleDateString("he-IL")}
+                              </span>
+                            </div>
+
+                            {/* Left: price */}
+                            <div className="shrink-0 text-left">
+                              <span className="text-sm font-black text-foreground">
+                                {displayPrice !== undefined && displayPrice !== 0
+                                  ? `₪${displayPrice}`
+                                  : <span className="text-[10px] text-muted-foreground font-semibold">טרם נקבע</span>
+                                }
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* ── Expanded panel ────────────────────── */}
+                          <div
+                            className={`grid transition-all duration-300 ease-in-out ${
+                              isExpanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+                            }`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div className="overflow-hidden">
+                              <div className="border-t border-purple-50 mx-4" />
+                              <div className="px-4 pt-4 pb-5">
+
+                                {isCancelled && (
+                                  <div className="mb-4 rounded-xl border-2 border-destructive/40 bg-destructive/10 text-destructive px-4 py-3 flex items-center gap-2">
+                                    <XCircle className="size-5 shrink-0" />
+                                    <div className="text-right">
+                                      <p className="text-xs font-black">הזמנה זו בוטלה</p>
+                                      <p className="text-[10px] font-semibold opacity-80">לא ניתן לערוך פרטים, סטטוס או חשבונית.</p>
+                                    </div>
                                   </div>
-                                </div>
-                              )}
+                                )}
 
-                              {/* 3-column grid */}
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4" dir="rtl">
+                                {/* 3-column grid */}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-5" dir="rtl">
 
-                                {/* ── Col 1: Context (read-only typography) ── */}
-                                <div className="space-y-3">
-                                  <h4 className="text-[10px] font-black text-primary uppercase tracking-widest">
-                                    פרטי לקוח
-                                  </h4>
+                                  {/* ── Col 1: Context ──────────────── */}
+                                  <div className="space-y-3">
+                                    <h4 className="text-[10px] font-black text-primary uppercase tracking-widest">פרטי לקוח</h4>
 
-                                  {/* Customer info */}
-                                  <div className="space-y-1 text-xs">
-                                    <div className="flex justify-between">
-                                      <span className="text-muted-foreground">לקוח:</span>
-                                      <span className="font-semibold text-foreground break-all text-left">{order.user_email}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                      <span className="text-muted-foreground">מסירה:</span>
-                                      <span className="font-semibold text-foreground">
-                                        {order.delivery_method === "home_delivery" ? "משלוח 🚗" : order.delivery_method === "self_pickup" ? "איסוף 🧺" : "טרם נקבע"}
-                                      </span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                      <span className="text-muted-foreground">תאריך:</span>
-                                      <span className="font-semibold text-foreground">{new Date(order.created_at).toLocaleString("he-IL")}</span>
-                                    </div>
-                                  </div>
-
-                                  {/* Services badges */}
-                                  {(order.requires_washing || order.requires_ironing || order.requires_dry_cleaning || (order.addons && order.addons.length > 0)) && (
-                                    <div className="flex gap-1.5 flex-wrap">
-                                      {order.requires_washing && (
-                                        <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-black px-2 py-0.5 rounded-full">כביסה 👕</span>
-                                      )}
-                                      {order.requires_ironing && (
-                                        <span className="bg-primary/10 text-primary border border-primary/20 text-[10px] font-black px-2 py-0.5 rounded-full">גיהוץ 🧺</span>
-                                      )}
-                                      {order.requires_dry_cleaning && (
-                                        <span className="bg-lime/20 text-lime-foreground border border-lime-foreground/20 text-[10px] font-black px-2 py-0.5 rounded-full">ניקוי יבש ✨</span>
-                                      )}
-                                      {order.addons?.map((key) => {
-                                        const m = ADDONS_META[key];
-                                        if (!m) return null;
-                                        return (
-                                          <span key={key} className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-black px-2 py-0.5 rounded-full">
-                                            {m.label} (+₪{m.price})
-                                          </span>
-                                        );
-                                      })}
-                                      {order.delivery_method === "home_delivery" && order.deliveryTier && (
-                                        <span className="bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-black px-2 py-0.5 rounded-full">
-                                          {DELIVERY_TIERS_META[order.deliveryTier]?.label} (+₪{DELIVERY_TIERS_META[order.deliveryTier]?.price})
+                                    <div className="space-y-1.5 text-xs">
+                                      <div className="flex justify-between">
+                                        <span className="text-muted-foreground">לקוח:</span>
+                                        <span className="font-semibold text-foreground break-all text-left">{order.user_email}</span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span className="text-muted-foreground">מסירה:</span>
+                                        <span className="font-semibold text-foreground">
+                                          {order.delivery_method === "home_delivery" ? "משלוח 🚗" : order.delivery_method === "self_pickup" ? "איסוף 🧺" : "טרם נקבע"}
                                         </span>
-                                      )}
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span className="text-muted-foreground">תאריך:</span>
+                                        <span className="font-semibold text-foreground">{new Date(order.created_at).toLocaleString("he-IL")}</span>
+                                      </div>
                                     </div>
-                                  )}
 
-                                  {/* Customer notes/address — plain typography, no textarea */}
-                                  {custNotes?.trim() && (
-                                    <div>
-                                      <p className="text-[10px] font-black text-muted-foreground mb-0.5">כתובת והנחיות:</p>
-                                      <p className="text-[11px] text-foreground leading-relaxed bg-muted/40 rounded-lg px-2.5 py-2 border border-muted-foreground/10 whitespace-pre-wrap">
-                                        {custNotes.trim()}
-                                      </p>
-                                    </div>
-                                  )}
-
-                                  {/* Last laundry message sent */}
-                                  {laundryMsg?.trim() && (
-                                    <div>
-                                      <p className="text-[10px] font-black text-lime-foreground mb-0.5 flex items-center gap-1">
-                                        <MessageSquare className="size-3" /> הודעה אחרונה שנשלחה:
-                                      </p>
-                                      <p className="text-[11px] text-foreground leading-relaxed bg-lime/10 rounded-lg px-2.5 py-2 border border-lime/20 whitespace-pre-wrap">
-                                        {laundryMsg.trim()}
-                                      </p>
-                                    </div>
-                                  )}
-
-                                  {/* Image thumbnails */}
-                                  {order.images && order.images.length > 0 && (
-                                    <div>
-                                      <p className="text-[10px] font-black text-muted-foreground mb-1">תמונות:</p>
+                                    {/* Services badges */}
+                                    {(order.requires_washing || order.requires_ironing || order.requires_dry_cleaning || (order.addons && order.addons.length > 0)) && (
                                       <div className="flex gap-1.5 flex-wrap">
-                                        {order.images.map((img, idx) => (
-                                          <div key={idx} className="relative size-12 rounded-lg overflow-hidden border border-muted-foreground/10 group shrink-0">
-                                            <img
-                                              src={img}
-                                              alt="תצוגה"
-                                              className="size-full object-cover cursor-pointer"
-                                              onClick={() => { const w = window.open(); if (w) w.document.write(`<img src="${img}" style="max-width:100%;max-height:100vh;display:block;margin:auto" />`); }}
-                                            />
-                                            <button
-                                              type="button"
-                                              onClick={(e) => { e.stopPropagation(); deleteOrderImage(order.id, img); }}
-                                              className="absolute top-0.5 left-0.5 bg-destructive/90 text-destructive-foreground rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition"
-                                            >
-                                              <Trash2 className="size-2.5" />
-                                            </button>
-                                          </div>
-                                        ))}
+                                        {order.requires_washing && (
+                                          <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-black px-2 py-0.5 rounded-full">כביסה 👕</span>
+                                        )}
+                                        {order.requires_ironing && (
+                                          <span className="bg-primary/10 text-primary border border-primary/20 text-[10px] font-black px-2 py-0.5 rounded-full">גיהוץ 🧺</span>
+                                        )}
+                                        {order.requires_dry_cleaning && (
+                                          <span className="bg-lime/20 text-lime-foreground border border-lime-foreground/20 text-[10px] font-black px-2 py-0.5 rounded-full">ניקוי יבש ✨</span>
+                                        )}
+                                        {order.addons?.map((key) => {
+                                          const m = ADDONS_META[key];
+                                          if (!m) return null;
+                                          return (
+                                            <span key={key} className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-black px-2 py-0.5 rounded-full">
+                                              {m.label} (+₪{m.price})
+                                            </span>
+                                          );
+                                        })}
+                                        {order.delivery_method === "home_delivery" && order.deliveryTier && (
+                                          <span className="bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-black px-2 py-0.5 rounded-full">
+                                            {DELIVERY_TIERS_META[order.deliveryTier]?.label} (+₪{DELIVERY_TIERS_META[order.deliveryTier]?.price})
+                                          </span>
+                                        )}
                                       </div>
-                                    </div>
-                                  )}
-                                </div>
-
-                                {/* ── Col 2: Controls ─────────────────────── */}
-                                <div className="space-y-3">
-                                  <h4 className="text-[10px] font-black text-primary uppercase tracking-widest">
-                                    עדכונים
-                                  </h4>
-
-                                  {/* Price input */}
-                                  <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-foreground flex items-center justify-between">
-                                      <span>מחיר בסיס (₪)</span>
-                                      <span className="text-muted-foreground font-semibold">
-                                        נוכחי: {order.basePrice !== undefined && order.basePrice !== 0 ? `₪${order.basePrice}` : "—"}
-                                      </span>
-                                    </label>
-                                    <input
-                                      type="number"
-                                      disabled={isCancelled}
-                                      value={typedPrices[order.id] !== undefined ? typedPrices[order.id] : String(order.basePrice !== undefined ? order.basePrice : "")}
-                                      onChange={(e) => setTypedPrices((prev) => ({ ...prev, [order.id]: e.target.value }))}
-                                      placeholder="מחיר בסיס"
-                                      className="h-10 w-full max-w-xs bg-background border border-muted-foreground/20 rounded-lg px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed text-right"
-                                    />
-
-                                    {/* Real-time Math Summary */}
-                                    <div className="mt-2 p-2.5 rounded-lg bg-muted/40 border border-muted-foreground/10 text-[10px] font-semibold space-y-1 max-w-xs text-right">
-                                      <div className="flex justify-between">
-                                        <span>מחיר בסיס:</span>
-                                        <span>₪{Number(typedPrices[order.id] !== undefined ? typedPrices[order.id] : (order.basePrice ?? 0)) || 0}</span>
-                                      </div>
-                                      <div className="flex justify-between">
-                                        <span>שדרוגי כביסה (+):</span>
-                                        <span>₪{(order.addons || []).reduce((sum: number, key: string) => sum + (ADDONS_META[key]?.price || 0), 0)}</span>
-                                      </div>
-                                      <div className="flex justify-between">
-                                        <span>דמי משלוח (+):</span>
-                                        <span>₪{order.delivery_method === "home_delivery" ? (DELIVERY_TIERS_META[order.deliveryTier || "standard"]?.price || 0) : 0}</span>
-                                      </div>
-                                      <div className="border-t border-muted-foreground/20 pt-1 flex justify-between font-black text-primary text-xs">
-                                        <span>מחיר סופי ללקוח:</span>
-                                        <span>
-                                          ₪{(Number(typedPrices[order.id] !== undefined ? typedPrices[order.id] : (order.basePrice ?? 0)) || 0) +
-                                            (order.addons || []).reduce((sum: number, key: string) => sum + (ADDONS_META[key]?.price || 0), 0) +
-                                            (order.delivery_method === "home_delivery" ? (DELIVERY_TIERS_META[order.deliveryTier || "standard"]?.price || 0) : 0)}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  {/* Status dropdown — options conditional on delivery method */}
-                                  <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-foreground block">סטטוס טיפול</label>
-                                    <select
-                                      disabled={isCancelled}
-                                      value={pendingStatuses[order.id] || order.status}
-                                      onChange={(e) => setPendingStatuses((prev) => ({ ...prev, [order.id]: e.target.value }))}
-                                      className="h-10 w-full max-w-xs bg-background border border-muted-foreground/20 rounded-lg px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary text-right disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                      <option value="pending">ממתין</option>
-                                      <option value="accepted">התקבל</option>
-                                      <option value="collected">נאסף</option>
-                                      <option value="ready">מוכן</option>
-                                      {/* "delivered" only relevant for home delivery */}
-                                      {order.delivery_method !== "self_pickup" && (
-                                        <option value="delivered">נמסר</option>
-                                      )}
-                                      <option value="cancelled">בוטלה</option>
-                                    </select>
-                                    {/* Visual hint for self-pickup */}
-                                    {order.delivery_method === "self_pickup" && (
-                                      <p className="text-[9px] text-muted-foreground mt-0.5">
-                                        איסוף עצמי — המסלול מסתיים במצב מוכן
-                                      </p>
                                     )}
-                                  </div>
 
-                                  {/* Delivery notes */}
-                                  <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-foreground block">הערות לשליח</label>
-                                    <textarea
-                                      rows={3}
-                                      disabled={isCancelled}
-                                      value={typedDeliveryNotes[order.id] !== undefined ? typedDeliveryNotes[order.id] : order.deliveryNotes || ""}
-                                      onChange={(e) => setTypedDeliveryNotes((prev) => ({ ...prev, [order.id]: e.target.value }))}
-                                      placeholder="כתובת מפורטת, קוד כניסה..."
-                                      className="w-full max-w-xs bg-background border border-muted-foreground/20 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary resize-none leading-relaxed disabled:opacity-50 disabled:cursor-not-allowed"
-                                    />
-                                  </div>
-                                </div>
+                                    {custNotes?.trim() && (
+                                      <div>
+                                        <p className="text-[10px] font-black text-muted-foreground mb-0.5">כתובת והנחיות:</p>
+                                        <p className="text-[11px] text-foreground leading-relaxed bg-slate-50 rounded-xl px-2.5 py-2 border border-slate-100 whitespace-pre-wrap">
+                                          {custNotes.trim()}
+                                        </p>
+                                      </div>
+                                    )}
 
-                                {/* ── Col 3: Actions ──────────────────────── */}
-                                <div className="space-y-3">
-                                  <h4 className="text-[10px] font-black text-primary uppercase tracking-widest">
-                                    פעולות
-                                  </h4>
+                                    {laundryMsg?.trim() && (
+                                      <div>
+                                        <p className="text-[10px] font-black text-lime-foreground mb-0.5 flex items-center gap-1">
+                                          <MessageSquare className="size-3" /> הודעה אחרונה שנשלחה:
+                                        </p>
+                                        <p className="text-[11px] text-foreground leading-relaxed bg-lime/10 rounded-xl px-2.5 py-2 border border-lime/20 whitespace-pre-wrap">
+                                          {laundryMsg.trim()}
+                                        </p>
+                                      </div>
+                                    )}
 
-                                  {/* Message to customer */}
-                                  <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-foreground block">הודעה ללקוח</label>
-                                    <textarea
-                                      rows={3}
-                                      disabled={isCancelled}
-                                      value={
-                                        typedMessages[order.id] !== undefined
-                                          ? typedMessages[order.id]
-                                          : (() => { const [, msg] = (order.notes || "").split(" ||LAUNDRY_MSG|| "); return msg || ""; })()
-                                      }
-                                      onChange={(e) => setTypedMessages((prev) => ({ ...prev, [order.id]: e.target.value }))}
-                                      placeholder="הקלד הודעה ללקוח..."
-                                      className="w-full bg-background border border-muted-foreground/20 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary resize-none leading-relaxed disabled:opacity-50 disabled:cursor-not-allowed"
-                                    />
-                                  </div>
-
-                                  {/* Invoice uploader */}
-                                  <div className="space-y-1.5">
-                                    <label className="text-[10px] font-black text-foreground block">חשבונית</label>
-
-                                    {/* Existing invoices */}
-                                    {order.invoices && order.invoices.length > 0 && (
-                                      <div className="space-y-1">
-                                        {order.invoices.map((inv, idx) => (
-                                          <div key={idx} className="flex items-center justify-between bg-muted/30 rounded-lg px-2.5 py-1.5 border border-muted-foreground/10 gap-1">
-                                            <span className="text-[10px] font-bold truncate max-w-[120px]" title={inv.name}>📄 {inv.name}</span>
-                                            <div className="flex items-center gap-1 shrink-0">
-                                              <a href={inv.data} download={inv.name} className="text-[10px] font-black text-primary bg-primary/10 px-2 py-0.5 rounded-md hover:bg-primary/20 transition">
-                                                הורד
-                                              </a>
+                                    {/* Image thumbnails */}
+                                    {order.images && order.images.length > 0 && (
+                                      <div>
+                                        <p className="text-[10px] font-black text-muted-foreground mb-1">תמונות:</p>
+                                        <div className="flex gap-1.5 flex-wrap">
+                                          {order.images.map((img, idx) => (
+                                            <div key={idx} className="relative size-12 rounded-xl overflow-hidden border border-slate-100 group shrink-0">
+                                              <img
+                                                src={img}
+                                                alt="תצוגה"
+                                                className="size-full object-cover cursor-pointer"
+                                                onClick={() => { const w = window.open(); if (w) w.document.write(`<img src="${img}" style="max-width:100%;max-height:100vh;display:block;margin:auto" />`); }}
+                                              />
                                               <button
                                                 type="button"
-                                                onClick={() => deleteUploadedInvoice(order.id)}
-                                                className="text-[10px] font-black text-destructive bg-destructive/10 px-2 py-0.5 rounded-md hover:bg-destructive/20 transition flex items-center gap-0.5"
+                                                onClick={(e) => { e.stopPropagation(); deleteOrderImage(order.id, img); }}
+                                                className="absolute top-0.5 left-0.5 bg-destructive/90 text-destructive-foreground rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition"
                                               >
-                                                <Trash2 className="size-2.5" /> מחק
+                                                <Trash2 className="size-2.5" />
                                               </button>
                                             </div>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
-
-                                    {/* File input */}
-                                    <input
-                                      type="file"
-                                      disabled={isCancelled}
-                                      accept="application/pdf,image/*"
-                                      className="text-[10px] block w-full text-muted-foreground
-                                        file:ml-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0
-                                        file:text-[10px] file:font-bold file:bg-primary file:text-primary-foreground
-                                        hover:file:bg-primary/90 file:cursor-pointer cursor-pointer transition disabled:opacity-50 disabled:cursor-not-allowed"
-                                      onChange={(e) => {
-                                        if (e.target.files && e.target.files[0]) {
-                                          setPendingInvoices((prev) => ({ ...prev, [order.id]: e.target.files![0] }));
-                                          toast.info(`קובץ "${e.target.files[0].name}" נבחר — לחץ שמור לשליחה`);
-                                        }
-                                      }}
-                                    />
-
-                                    {/* Pending file preview */}
-                                    {pendingInvoices[order.id] && (
-                                      <div className="flex items-center justify-between bg-primary/5 rounded-lg px-2.5 py-1.5 border border-primary/10 gap-1">
-                                        <p className="text-[10px] text-primary font-bold truncate flex-1">📎 {pendingInvoices[order.id]!.name}</p>
-                                        <button
-                                          type="button"
-                                          onClick={() => setPendingInvoices((prev) => { const n = { ...prev }; delete n[order.id]; return n; })}
-                                          className="text-destructive hover:text-destructive/80 font-black flex items-center gap-0.5 text-[10px] bg-destructive/10 px-1.5 py-0.5 rounded-md transition shrink-0"
-                                        >
-                                          <X className="size-2.5" /> בטל
-                                        </button>
+                                          ))}
+                                        </div>
                                       </div>
                                     )}
                                   </div>
-                                </div>
-                              </div>{/* /grid */}
 
-                              {/* ── Action buttons (admin) ── */}
-                              <div className="mt-4 pt-3 border-t border-muted-foreground/10 flex justify-between items-center gap-2">
-                                {order.status !== "cancelled" ? (
-                                  <AlertDialog>
-                                    <AlertDialogTrigger asChild>
-                                      <button
-                                        className="inline-flex items-center justify-center gap-1.5 px-4 text-[11px] font-black rounded-full border-2 border-destructive/40 text-destructive bg-destructive/5 hover:bg-destructive/10 active:scale-[0.97] transition h-10"
+                                  {/* ── Col 2: Controls ─────────────── */}
+                                  <div className="space-y-3">
+                                    <h4 className="text-[10px] font-black text-primary uppercase tracking-widest">עדכונים</h4>
+
+                                    {/* Price input */}
+                                    <div className="space-y-1">
+                                      <label className="text-[10px] font-black text-foreground flex items-center justify-between">
+                                        <span>מחיר בסיס (₪)</span>
+                                        <span className="text-muted-foreground font-semibold">
+                                          נוכחי: {order.basePrice !== undefined && order.basePrice !== 0 ? `₪${order.basePrice}` : "—"}
+                                        </span>
+                                      </label>
+                                      <input
+                                        type="number"
+                                        disabled={isCancelled}
+                                        value={typedPrices[order.id] !== undefined ? typedPrices[order.id] : String(order.basePrice !== undefined ? order.basePrice : "")}
+                                        onChange={(e) => setTypedPrices((prev) => ({ ...prev, [order.id]: e.target.value }))}
+                                        placeholder="מחיר בסיס"
+                                        className="h-10 w-full max-w-xs bg-background border border-purple-200/60 rounded-xl px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed text-right"
+                                      />
+
+                                      {/* Real-time Math Summary */}
+                                      <div className="mt-2 p-3 rounded-xl bg-slate-50 border border-slate-100 text-[10px] font-semibold space-y-1.5 max-w-xs text-right">
+                                        <div className="flex justify-between">
+                                          <span className="text-muted-foreground">מחיר בסיס:</span>
+                                          <span>₪{Number(typedPrices[order.id] !== undefined ? typedPrices[order.id] : (order.basePrice ?? 0)) || 0}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                          <span className="text-muted-foreground">שדרוגי כביסה (+):</span>
+                                          <span>₪{(order.addons || []).reduce((sum: number, key: string) => sum + (ADDONS_META[key]?.price || 0), 0)}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                          <span className="text-muted-foreground">דמי משלוח (+):</span>
+                                          <span>₪{order.delivery_method === "home_delivery" ? (DELIVERY_TIERS_META[order.deliveryTier || "standard"]?.price || 0) : 0}</span>
+                                        </div>
+                                        <div className="border-t border-slate-200 pt-1.5 flex justify-between font-black text-primary text-xs">
+                                          <span>מחיר סופי ללקוח:</span>
+                                          <span>
+                                            ₪{(Number(typedPrices[order.id] !== undefined ? typedPrices[order.id] : (order.basePrice ?? 0)) || 0) +
+                                              (order.addons || []).reduce((sum: number, key: string) => sum + (ADDONS_META[key]?.price || 0), 0) +
+                                              (order.delivery_method === "home_delivery" ? (DELIVERY_TIERS_META[order.deliveryTier || "standard"]?.price || 0) : 0)}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Status dropdown */}
+                                    <div className="space-y-1">
+                                      <label className="text-[10px] font-black text-foreground block">סטטוס טיפול</label>
+                                      <select
+                                        disabled={isCancelled}
+                                        value={pendingStatuses[order.id] || order.status}
+                                        onChange={(e) => setPendingStatuses((prev) => ({ ...prev, [order.id]: e.target.value }))}
+                                        className="h-10 w-full max-w-xs bg-background border border-purple-200/60 rounded-xl px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary text-right disabled:opacity-50 disabled:cursor-not-allowed"
                                       >
-                                        <XCircle className="size-3.5" />
-                                        <span>בטל הזמנה</span>
-                                      </button>
-                                    </AlertDialogTrigger>
-                                    <AlertDialogContent dir="rtl" className="text-right">
-                                      <AlertDialogHeader>
-                                        <AlertDialogTitle>לבטל הזמנה זו?</AlertDialogTitle>
-                                        <AlertDialogDescription>
-                                          ביטול הזמנה ע״י המכבסה תקף בכל סטטוס. הפעולה אינה הפיכה.
-                                        </AlertDialogDescription>
-                                      </AlertDialogHeader>
-                                      <AlertDialogFooter>
-                                        <AlertDialogCancel>חזור</AlertDialogCancel>
-                                        <AlertDialogAction
-                                          onClick={async () => {
-                                            await updateOrderStatus(order.id, "cancelled");
-                                          }}
-                                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                        >
-                                          בטל הזמנה
-                                        </AlertDialogAction>
-                                      </AlertDialogFooter>
-                                    </AlertDialogContent>
-                                  </AlertDialog>
-                                ) : (
-                                  <span className="text-[11px] font-bold text-destructive">הזמנה זו בוטלה</span>
-                                )}
-                                {!isCancelled && (
-                                  <button
-                                    onClick={() => saveAllChanges(order.id)}
-                                    disabled={savingOrder[order.id]}
-                                    className="inline-flex items-center justify-center gap-2 px-6 bg-primary text-primary-foreground text-xs font-black rounded-full hover:bg-primary/90 hover:shadow-md hover:shadow-primary/20 active:scale-[0.97] transition disabled:opacity-60 disabled:cursor-not-allowed h-10"
-                                  >
-                                    {savingOrder[order.id] ? (
-                                      <>
-                                        <div className="animate-spin rounded-full size-3.5 border-2 border-primary-foreground border-t-transparent" />
-                                        <span>שומר...</span>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Save className="size-3.5" />
-                                        <span>שמור שינויים</span>
-                                      </>
-                                    )}
-                                  </button>
-                                )}
+                                        <option value="pending">ממתין</option>
+                                        <option value="accepted">התקבל</option>
+                                        <option value="collected">נאסף</option>
+                                        <option value="ready">מוכן</option>
+                                        {order.delivery_method !== "self_pickup" && (
+                                          <option value="delivered">נמסר</option>
+                                        )}
+                                        <option value="cancelled">בוטלה</option>
+                                      </select>
+                                      {order.delivery_method === "self_pickup" && (
+                                        <p className="text-[9px] text-muted-foreground mt-0.5">איסוף עצמי — המסלול מסתיים במצב מוכן</p>
+                                      )}
+                                    </div>
+
+                                    {/* Delivery notes */}
+                                    <div className="space-y-1">
+                                      <label className="text-[10px] font-black text-foreground block">הערות לשליח</label>
+                                      <textarea
+                                        rows={3}
+                                        disabled={isCancelled}
+                                        value={typedDeliveryNotes[order.id] !== undefined ? typedDeliveryNotes[order.id] : order.deliveryNotes || ""}
+                                        onChange={(e) => setTypedDeliveryNotes((prev) => ({ ...prev, [order.id]: e.target.value }))}
+                                        placeholder="כתובת מפורטת, קוד כניסה..."
+                                        className="w-full max-w-xs bg-background border border-purple-200/60 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary resize-none leading-relaxed disabled:opacity-50 disabled:cursor-not-allowed"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {/* ── Col 3: Actions ──────────────── */}
+                                  <div className="space-y-3">
+                                    <h4 className="text-[10px] font-black text-primary uppercase tracking-widest">פעולות</h4>
+
+                                    {/* Message to customer */}
+                                    <div className="space-y-1">
+                                      <label className="text-[10px] font-black text-foreground block">הודעה ללקוח</label>
+                                      <textarea
+                                        rows={3}
+                                        disabled={isCancelled}
+                                        value={
+                                          typedMessages[order.id] !== undefined
+                                            ? typedMessages[order.id]
+                                            : (() => { const [, msg] = (order.notes || "").split(" ||LAUNDRY_MSG|| "); return msg || ""; })()
+                                        }
+                                        onChange={(e) => setTypedMessages((prev) => ({ ...prev, [order.id]: e.target.value }))}
+                                        placeholder="הקלד הודעה ללקוח..."
+                                        className="w-full bg-background border border-purple-200/60 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary resize-none leading-relaxed disabled:opacity-50 disabled:cursor-not-allowed"
+                                      />
+                                    </div>
+
+                                    {/* Invoice uploader */}
+                                    <div className="space-y-1.5">
+                                      <label className="text-[10px] font-black text-foreground block">חשבונית</label>
+
+                                      {order.invoices && order.invoices.length > 0 && (
+                                        <div className="space-y-1">
+                                          {order.invoices.map((inv, idx) => (
+                                            <div key={idx} className="flex items-center justify-between bg-slate-50 rounded-xl px-3 py-2 border border-slate-100 gap-1">
+                                              <span className="text-[10px] font-bold truncate max-w-[120px]" title={inv.name}>📄 {inv.name}</span>
+                                              <div className="flex items-center gap-1 shrink-0">
+                                                <a href={inv.data} download={inv.name} className="text-[10px] font-black text-primary bg-primary/10 px-2 py-0.5 rounded-lg hover:bg-primary/20 transition">
+                                                  הורד
+                                                </a>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => deleteUploadedInvoice(order.id)}
+                                                  className="text-[10px] font-black text-destructive bg-destructive/10 px-2 py-0.5 rounded-lg hover:bg-destructive/20 transition flex items-center gap-0.5"
+                                                >
+                                                  <Trash2 className="size-2.5" /> מחק
+                                                </button>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+
+                                      <input
+                                        type="file"
+                                        disabled={isCancelled}
+                                        accept="application/pdf,image/*"
+                                        className="text-[10px] block w-full text-muted-foreground
+                                          file:ml-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0
+                                          file:text-[10px] file:font-bold file:bg-primary file:text-primary-foreground
+                                          hover:file:bg-primary/90 file:cursor-pointer cursor-pointer transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                        onChange={(e) => {
+                                          if (e.target.files && e.target.files[0]) {
+                                            setPendingInvoices((prev) => ({ ...prev, [order.id]: e.target.files![0] }));
+                                            toast.info(`קובץ "${e.target.files[0].name}" נבחר — לחץ שמור לשליחה`);
+                                          }
+                                        }}
+                                      />
+
+                                      {pendingInvoices[order.id] && (
+                                        <div className="flex items-center justify-between bg-primary/5 rounded-xl px-3 py-2 border border-primary/15 gap-1">
+                                          <p className="text-[10px] text-primary font-bold truncate flex-1">📎 {pendingInvoices[order.id]!.name}</p>
+                                          <button
+                                            type="button"
+                                            onClick={() => setPendingInvoices((prev) => { const n = { ...prev }; delete n[order.id]; return n; })}
+                                            className="text-destructive hover:text-destructive/80 font-black flex items-center gap-0.5 text-[10px] bg-destructive/10 px-1.5 py-0.5 rounded-lg transition shrink-0"
+                                          >
+                                            <X className="size-2.5" /> בטל
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>{/* /grid */}
+
+                                {/* ── Action buttons ───────────────── */}
+                                <div className="mt-5 pt-4 border-t border-purple-50 flex justify-between items-center gap-2">
+                                  {order.status !== "cancelled" ? (
+                                    <AlertDialog>
+                                      <AlertDialogTrigger asChild>
+                                        <button className="inline-flex items-center justify-center gap-1.5 px-4 text-[11px] font-black rounded-full border-2 border-destructive/40 text-destructive bg-destructive/5 hover:bg-destructive/10 active:scale-[0.97] transition h-10">
+                                          <XCircle className="size-3.5" />
+                                          <span>בטל הזמנה</span>
+                                        </button>
+                                      </AlertDialogTrigger>
+                                      <AlertDialogContent dir="rtl" className="text-right">
+                                        <AlertDialogHeader>
+                                          <AlertDialogTitle>לבטל הזמנה זו?</AlertDialogTitle>
+                                          <AlertDialogDescription>
+                                            ביטול הזמנה ע״י המכבסה תקף בכל סטטוס. הפעולה אינה הפיכה.
+                                          </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                          <AlertDialogCancel>חזור</AlertDialogCancel>
+                                          <AlertDialogAction
+                                            onClick={async () => { await updateOrderStatus(order.id, "cancelled"); }}
+                                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                          >
+                                            בטל הזמנה
+                                          </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                      </AlertDialogContent>
+                                    </AlertDialog>
+                                  ) : (
+                                    <span className="text-[11px] font-bold text-destructive">הזמנה זו בוטלה</span>
+                                  )}
+                                  {!isCancelled && (
+                                    <button
+                                      onClick={() => saveAllChanges(order.id)}
+                                      disabled={savingOrder[order.id]}
+                                      className="inline-flex items-center justify-center gap-2 px-6 bg-primary text-primary-foreground text-xs font-black rounded-full hover:bg-primary/90 hover:shadow-md hover:shadow-primary/20 active:scale-[0.97] transition disabled:opacity-60 disabled:cursor-not-allowed h-10"
+                                    >
+                                      {savingOrder[order.id] ? (
+                                        <>
+                                          <div className="animate-spin rounded-full size-3.5 border-2 border-primary-foreground border-t-transparent" />
+                                          <span>שומר...</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Save className="size-3.5" />
+                                          <span>שמור שינויים</span>
+                                        </>
+                                      )}
+                                    </button>
+                                  )}
+                                </div>
+
                               </div>
+                            </div>
+                          </div>{/* /accordion */}
 
-                            </div>{/* /inner */}
-                          </div>
-                        </div>{/* /accordion */}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
 
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              {/* Load More — history tab */}
-              {activeTab === "delivered" && hasMoreHistorical && (
-                <div className="flex justify-center pt-3">
-                  <button
-                    onClick={() => fetchHistoricalOrders(false)}
-                    disabled={loadingMoreHistorical}
-                    className="px-6 py-2.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 transition disabled:opacity-50 active:scale-95"
-                  >
-                    {loadingMoreHistorical ? (
-                      <span className="flex items-center gap-2"><span className="animate-spin rounded-full size-3.5 border-2 border-current border-t-transparent inline-block" /> טוען...</span>
-                    ) : "טען עוד הזמנות היסטוריה"}
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
+                {/* Load More — history tab */}
+                {activeTab === "delivered" && hasMoreHistorical && (
+                  <div className="flex justify-center pt-3 pb-6">
+                    <button
+                      onClick={() => fetchHistoricalOrders(false)}
+                      disabled={loadingMoreHistorical}
+                      className="px-6 py-2.5 rounded-full text-xs font-bold bg-white text-primary border border-primary/20 hover:bg-primary/5 transition disabled:opacity-50 active:scale-95 shadow-sm"
+                    >
+                      {loadingMoreHistorical ? (
+                        <span className="flex items-center gap-2">
+                          <span className="animate-spin rounded-full size-3.5 border-2 border-current border-t-transparent inline-block" /> טוען...
+                        </span>
+                      ) : "טען עוד הזמנות היסטוריה"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
+          </div>
         </main>
       </div>
     </AppLayout>
   );
-}
+}
