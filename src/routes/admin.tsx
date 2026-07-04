@@ -750,6 +750,9 @@ function AdminDashboard() {
     }
   };
 
+  // ── Sidebar state (mobile hamburger) ──────────────────────────────────
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   // RENDER ORDER CARD HELPER
   const renderOrderCard = (order: LaundryOrder) => {
     const isExpanded = expandedOrderId === order.id;
@@ -946,214 +949,264 @@ function AdminDashboard() {
     );
   };
 
+  // ── Nav config ──────────────────────────────────────────────────────
+  const adminNavItems = [
+    { key: "users"     as const, label: "משתמשים",         icon: <Users className="size-4 shrink-0" />,         badge: profiles.filter(p => p.role !== "laundry" && p.status === "pending_approval").length || undefined },
+    { key: "laundries" as const, label: "מכבסות",           icon: <Building2 className="size-4 shrink-0" />,     badge: profiles.filter(p => p.role === "laundry" && p.status === "pending_approval").length || undefined },
+    { key: "orders"    as const, label: "הזמנות גלובליות", icon: <ClipboardList className="size-4 shrink-0" />, badge: activeOrders.length || undefined },
+    { key: "pricing"   as const, label: "מחירונים",         icon: <Tag className="size-4 shrink-0" />,           badge: undefined },
+  ];
+
   return (
     <AppLayout>
-      <div
-        className="min-h-screen bg-background pb-12 dir-rtl text-right overflow-x-hidden"
-        dir="rtl"
-      >
-        {/* Header banner */}
-        <header className="bg-lavender px-4 pb-4 sm:px-6 sm:pb-6 pt-safe-lavender rounded-b-[2rem] shadow-sm flex items-center justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <span className="text-[10px] sm:text-xs font-bold text-primary bg-primary/10 px-2.5 sm:px-3 py-1 rounded-full">
-              לוח בקרה מנהל
-            </span>
-            <h1 className="text-lg sm:text-2xl font-black mt-2 text-lavender-foreground truncate">
-              {activeTab === "users" && "ניהול פרופילי משתמשים"}
-              {activeTab === "laundries" && "ניהול פרופילי מכבסות"}
-              {activeTab === "orders" && "הזמנות גלובליות"}
-              {activeTab === "pricing" && "מחירון שירותים גלובלי"}
-            </h1>
+      <div className="dashboard-layout" dir="rtl">
+
+        {/* ── Mobile hamburger ──────────────────────────────────────────── */}
+        <button
+          className="hamburger-btn"
+          onClick={() => setSidebarOpen(true)}
+          aria-label="פתח תפריט"
+        >
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <line x1="3" y1="6" x2="17" y2="6" /><line x1="3" y1="10" x2="17" y2="10" /><line x1="3" y1="14" x2="17" y2="14" />
+          </svg>
+        </button>
+
+        {/* ── Backdrop ──────────────────────────────────────────────────── */}
+        <div className={`sidebar-backdrop ${sidebarOpen ? "visible" : ""}`} onClick={() => setSidebarOpen(false)} />
+
+        {/* ═══════════════════════════════════════════════════════════════
+            SIDEBAR
+        ════════════════════════════════════════════════════════════════ */}
+        <aside className={`dashboard-sidebar ${sidebarOpen ? "sidebar-open" : ""}`}>
+
+          {/* Brand */}
+          <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10">
+            <div className="size-10 rounded-xl bg-white/15 flex items-center justify-center text-xl shadow-inner shrink-0">🛡️</div>
+            <div className="min-w-0">
+              <p className="text-white font-black text-sm leading-tight">לוח בקרה מנהל</p>
+              <p className="text-[10px] font-semibold truncate" style={{ color: "var(--sidebar-muted)" }}>{user?.email}</p>
+            </div>
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="mr-auto shrink-0 size-7 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/70 transition md:hidden"
+              aria-label="סגור תפריט"
+            >
+              <X className="size-3.5" />
+            </button>
           </div>
-          <button
-            onClick={() => {
-              logout();
-              window.location.href = "/login";
-            }}
-            className="size-11 shrink-0 rounded-2xl bg-background/50 hover:bg-background/80 flex items-center justify-center text-destructive transition-colors active:scale-95 shadow-sm"
-            title="התנתק"
-          >
-            <LogOut className="size-5" />
-          </button>
-        </header>
 
-        <main className="px-3 sm:px-5 mt-4 sm:mt-6 space-y-4 sm:space-y-6">
-          {/* Quick stats grid */}
-          <section className="grid grid-cols-3 gap-2 sm:gap-3">
-            <div className="bg-lavender/40 border border-lavender/50 rounded-2xl p-3 sm:p-4 flex flex-col items-center justify-center text-center">
-              <Users className="size-5 sm:size-6 text-primary mb-1" />
-              <span className="text-lg sm:text-xl font-black text-foreground">
-                {profiles.length}
-              </span>
-              <span className="text-[9px] sm:text-[10px] text-muted-foreground font-bold">
-                סה"כ רשומים
-              </span>
-            </div>
-            <div className="bg-cyan-50 border border-cyan-100 rounded-2xl p-3 sm:p-4 flex flex-col items-center justify-center text-center">
-              <UserCheck className="size-5 sm:size-6 text-cyan-600 mb-1" />
-              <span className="text-lg sm:text-xl font-black text-cyan-700">
-                {profiles.filter((p) => p.role === "laundry").length}
-              </span>
-              <span className="text-[9px] sm:text-[10px] text-cyan-600 font-bold">מכבסות</span>
-            </div>
-            <div className="bg-rose-50 border border-rose-100 rounded-2xl p-3 sm:p-4 flex flex-col items-center justify-center text-center">
-              <Shield className="size-5 sm:size-6 text-rose-600 mb-1" />
-              <span className="text-lg sm:text-xl font-black text-rose-700">
-                {profiles.filter((p) => p.role === "admin").length}
-              </span>
-              <span className="text-[9px] sm:text-[10px] text-rose-600 font-bold">מנהלים</span>
-            </div>
-          </section>
+          {/* KPI mini-strip */}
+          <div className="px-4 pt-3 pb-2 grid grid-cols-3 gap-1.5">
+            {[
+              { label: "רשומים", value: profiles.length,                                       color: "bg-white/10" },
+              { label: "מכבסות", value: profiles.filter(p => p.role === "laundry").length,     color: "bg-cyan-400/20" },
+              { label: "ממתינים",value: profiles.filter(p => p.status === "pending_approval").length, color: "bg-rose-400/20" },
+            ].map((stat, idx) => (
+              <div key={idx} className={`${stat.color} rounded-xl p-2 text-center`}>
+                <p className="text-white font-black text-base leading-none">{stat.value}</p>
+                <p className="text-[9px] font-semibold mt-0.5" style={{ color: "var(--sidebar-muted)" }}>{stat.label}</p>
+              </div>
+            ))}
+          </div>
 
-          {/* Chat Dashboard Link */}
-          <button
-            onClick={() => navigate({ to: "/admin-chat" })}
-            className="w-full bg-primary/10 border-2 border-primary/20 text-primary hover:bg-primary hover:text-primary-foreground hover:border-primary rounded-2xl p-3 sm:p-4 flex items-center justify-between font-extrabold transition-all group active:scale-95 no-underline cursor-pointer min-h-[48px]"
-          >
-            <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-              <div className="relative size-9 sm:size-10 shrink-0 rounded-full bg-background/50 grid place-items-center group-hover:bg-primary-foreground/20">
-                <MessageSquareText className="size-4 sm:size-5" />
+          {/* Nav */}
+          <nav className="flex-1 overflow-y-auto py-2 space-y-0.5">
+            <p className="section-heading">ניהול</p>
+            {adminNavItems.map(item => (
+              <button
+                key={item.key}
+                onClick={() => { setActiveTab(item.key); setSearchQuery(""); setSidebarOpen(false); }}
+                className={`sidebar-nav-item w-full text-right${activeTab === item.key ? " active" : ""}`}
+              >
+                <span className="nav-icon">{item.icon}</span>
+                <span className="flex-1 text-right">{item.label}</span>
+                {item.badge !== undefined && item.badge > 0 && (
+                  <span className="min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-black flex items-center justify-center"
+                    style={{ background: "rgba(239,68,68,0.85)", color: "#fff" }}>
+                    {item.badge > 99 ? "99+" : item.badge}
+                  </span>
+                )}
+              </button>
+            ))}
+
+            <div className="my-3 mx-5 border-t border-white/10" />
+            <p className="section-heading">כלים</p>
+
+            <button
+              onClick={() => { navigate({ to: "/admin-chat" }); setSidebarOpen(false); }}
+              className="sidebar-nav-item w-full text-right"
+            >
+              <span className="nav-icon"><MessageSquareText className="size-4" /></span>
+              <span className="flex-1 text-right">לוח הודעות</span>
+              {unreadChatCount > 0 && (
+                <span className="min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-black flex items-center justify-center"
+                  style={{ background: "rgba(239,68,68,0.85)", color: "#fff" }}>
+                  {unreadChatCount > 99 ? "99+" : unreadChatCount}
+                </span>
+              )}
+            </button>
+          </nav>
+
+          {/* Footer logout */}
+          <div className="p-4 border-t border-white/10">
+            <button
+              onClick={() => { logout(); window.location.href = "/login"; }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-right"
+              style={{ color: "var(--sidebar-muted)", background: "transparent" }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(239,68,68,0.15)"; (e.currentTarget as HTMLButtonElement).style.color = "#fca5a5"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.color = "var(--sidebar-muted)"; }}
+            >
+              <span className="size-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(255,255,255,0.08)" }}>
+                <LogOut className="size-4" />
+              </span>
+              <span className="text-sm font-bold">התנתק</span>
+            </button>
+          </div>
+        </aside>
+
+        {/* ═══════════════════════════════════════════════════════════════
+            MAIN CONTENT
+        ════════════════════════════════════════════════════════════════ */}
+        <main className="dashboard-main min-h-screen" style={{ background: "var(--dashboard-bg)" }}>
+
+          {/* Top-bar */}
+          <div className="sticky top-0 z-30 bg-white/80 border-b border-purple-100/60 backdrop-blur-md px-6 py-3.5 flex items-center justify-between gap-4"
+            style={{ boxShadow: "0 1px 8px rgba(107,29,92,0.07)" }}>
+            <div className="w-10 md:hidden shrink-0" />
+            <div className="flex-1 min-w-0 text-right">
+              <h1 className="text-base font-black text-foreground">
+                {activeTab === "users"     && "ניהול משתמשים"}
+                {activeTab === "laundries" && "ניהול מכבסות"}
+                {activeTab === "orders"    && "הזמנות גלובליות"}
+                {activeTab === "pricing"   && "מחירונים גלובליים"}
+              </h1>
+              <p className="text-[11px] text-muted-foreground font-semibold">
+                {activeTab === "users"     && `${filteredProfiles.filter(p => p.role !== "laundry").length} משתמשים רשומים`}
+                {activeTab === "laundries" && `${filteredProfiles.filter(p => p.role === "laundry").length} מכבסות רשומות`}
+                {activeTab === "orders"    && `${filteredOrders.length} הזמנות בסינון הנוכחי`}
+                {activeTab === "pricing"   && "עריכת מחירי שירותים גלובלית"}
+              </p>
+            </div>
+            {/* Chat shortcut + LIVE */}
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => navigate({ to: "/admin-chat" })}
+                className="relative size-9 rounded-xl bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground flex items-center justify-center transition"
+                title="לוח הודעות"
+              >
+                <MessageSquareText className="size-4" />
                 {unreadChatCount > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-[20px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-md">
+                  <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[9px] font-black rounded-full flex items-center justify-center shadow">
                     {unreadChatCount > 99 ? "99+" : unreadChatCount}
                   </span>
                 )}
-              </div>
-              <div className="text-right min-w-0">
-                <span className="block text-sm sm:text-base truncate">
-                  לוח הודעות ללקוחות (צ'אט)
-                </span>
-                <span className="text-[10px] sm:text-xs opacity-80 font-semibold block mt-0.5 truncate">
-                  מענה מיידי ללקוחות בזמן אמת
-                </span>
+              </button>
+              <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1">
+                <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-[10px] font-black text-emerald-700">LIVE</span>
               </div>
             </div>
-            <ArrowRight className="size-5 shrink-0 rotate-180 opacity-50 group-hover:opacity-100 group-hover:-translate-x-1 transition-all" />
-          </button>
-
-          {/* Tab Navigation */}
-          <div className="flex border-b border-muted-foreground/10 mb-4 overflow-x-auto pb-1 gap-2">
-            {[
-              { key: "users", label: "משתמשים", icon: Users },
-              { key: "laundries", label: "מכבסות", icon: Building2 },
-              { key: "orders", label: "הזמנות גלובליות", icon: ClipboardList },
-              { key: "pricing", label: "ניהול מחירונים", icon: Tag },
-            ].map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.key}
-                  onClick={() => {
-                    setActiveTab(tab.key as any);
-                    setSearchQuery("");
-                  }}
-                  className={`flex items-center gap-1.5 px-4 py-2.5 border-b-2 font-bold text-xs sm:text-sm whitespace-nowrap transition-all rounded-t-xl ${
-                    activeTab === tab.key
-                      ? "border-primary text-primary bg-primary/5"
-                      : "border-transparent text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <Icon className="size-4 shrink-0" />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
           </div>
 
-          {/* TAB CONTENT: Pricing */}
-          {activeTab === "pricing" && (
-            <AdminPricingPanel
-              laundries={profiles
-                .filter((p) => p.role === "laundry")
-                .map((p) => ({ id: p.id, name: p.businessName || p.fullName || p.email }))}
-            />
-          )}
+          <div className="p-4 sm:p-6 space-y-5 max-w-full">
 
-          {/* TAB CONTENT: Users */}
-          {activeTab === "users" && (
-            <div className="space-y-4">
-              <div className="space-y-3">
-                <div className="relative">
-                  <Input
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="חפש לפי שם או אימייל..."
-                    className="pr-10 rounded-2xl border-muted-foreground/15 h-11 sm:h-12 text-right text-sm sm:text-base"
-                  />
-                  <Search className="absolute right-3.5 top-3.5 size-5 text-muted-foreground" />
+            {/* ════════ TAB: PRICING ════════════════════════════════════ */}
+            {activeTab === "pricing" && (
+              <div className="dash-card overflow-hidden">
+                <div className="px-5 py-4 border-b border-purple-50">
+                  <h2 className="text-sm font-black text-foreground">מחירון שירותים גלובלי</h2>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">הגדרת מחירי ברירת מחדל לכל המכבסות</p>
                 </div>
-
-                <div className="flex gap-2 overflow-x-auto pb-1">
-                  {[
-                    { key: "all", label: "הכל" },
-                    { key: "customer", label: "לקוחות" },
-                    { key: "admin", label: "מנהלים" },
-                  ].map((filter) => (
-                    <button
-                      key={filter.key}
-                      onClick={() => setRoleFilter(filter.key)}
-                      className={`px-3 sm:px-4 py-2 rounded-full text-[11px] sm:text-xs font-bold transition-all border active:scale-95 whitespace-nowrap min-h-[36px] ${
-                        roleFilter === filter.key
-                          ? "bg-primary text-primary-foreground border-primary"
-                          : "bg-muted text-muted-foreground border-muted-foreground/10"
-                      }`}
-                    >
-                      {filter.label}
-                    </button>
-                  ))}
+                <div className="p-5">
+                  <AdminPricingPanel
+                    laundries={profiles
+                      .filter(p => p.role === "laundry")
+                      .map(p => ({ id: p.id, name: p.businessName || p.fullName || p.email }))}
+                  />
                 </div>
               </div>
+            )}
 
-              <div className="space-y-3">
-                <h2 className="text-base font-extrabold text-foreground px-1">
-                  רשימת משתמשים ({filteredProfiles.filter(p => p.role !== "laundry").length})
-                </h2>
+            {/* ════════ TAB: USERS ══════════════════════════════════════ */}
+            {activeTab === "users" && (
+              <div className="space-y-4">
+                {/* Search + filters */}
+                <div className="dash-card p-4 space-y-3">
+                  <div className="relative">
+                    <input
+                      value={searchQuery}
+                      onChange={e => setSearchQuery(e.target.value)}
+                      placeholder="חפש לפי שם, אימייל..."
+                      className="w-full h-10 pr-10 pl-4 rounded-xl border border-purple-200/60 bg-background text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary text-right"
+                      style={{ boxShadow: "var(--card-shadow)" }}
+                    />
+                    <Search className="absolute right-3.5 top-3 size-4 text-muted-foreground" />
+                  </div>
+                  <div className="flex gap-2 flex-wrap">
+                    {[
+                      { key: "all",      label: "הכל" },
+                      { key: "customer", label: "לקוחות" },
+                      { key: "admin",    label: "מנהלים" },
+                    ].map(f => (
+                      <button
+                        key={f.key}
+                        onClick={() => setRoleFilter(f.key)}
+                        className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-all border active:scale-95 ${
+                          roleFilter === f.key
+                            ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                            : "bg-white text-muted-foreground border-purple-100/60 hover:text-foreground"
+                        }`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-                {isLoading ? (
-                  <div className="py-20 flex flex-col items-center justify-center gap-2">
-                    <div className="animate-spin rounded-full size-8 border-4 border-primary border-t-transparent" />
-                    <span className="text-sm text-muted-foreground">טוען משתמשים...</span>
+                {/* User list */}
+                <div className="dash-card overflow-hidden">
+                  <div className="px-5 py-3.5 border-b border-purple-50 flex items-center gap-2">
+                    <h2 className="text-sm font-black text-foreground">רשימת משתמשים</h2>
+                    <span className="min-w-[22px] h-[22px] rounded-full bg-primary/10 text-primary text-[10px] font-black flex items-center justify-center px-1.5">
+                      {filteredProfiles.filter(p => p.role !== "laundry").length}
+                    </span>
                   </div>
-                ) : filteredProfiles.filter(p => p.role !== "laundry").length === 0 ? (
-                  <div className="bg-muted/30 border border-muted/50 rounded-3xl p-12 text-center text-muted-foreground">
-                    לא נמצאו משתמשים התואמים את הסינון.
-                  </div>
-                ) : (
-                  <>
-                    <div className="space-y-3">
-                      {filteredProfiles.filter(p => p.role !== "laundry").map((profile) => (
-                        <div
-                          key={profile.id}
-                          className="bg-card border border-muted-foreground/10 rounded-3xl p-3 sm:p-4 flex items-center justify-between gap-2 shadow-sm transition-all hover:shadow-md"
-                        >
-                          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-                            <div className="size-10 sm:size-12 shrink-0 rounded-2xl bg-lavender text-primary font-black text-base sm:text-lg flex items-center justify-center">
-                              {(profile.fullName || "?")[0]}
+
+                  {isLoading ? (
+                    <div className="py-16 flex flex-col items-center gap-3">
+                      <div className="animate-spin rounded-full size-8 border-4 border-primary border-t-transparent" />
+                      <span className="text-xs text-muted-foreground font-semibold">טוען משתמשים...</span>
+                    </div>
+                  ) : filteredProfiles.filter(p => p.role !== "laundry").length === 0 ? (
+                    <div className="p-12 text-center text-xs text-muted-foreground">לא נמצאו משתמשים התואמים את הסינון.</div>
+                  ) : (
+                    <div className="divide-y divide-purple-50/60">
+                      {filteredProfiles.filter(p => p.role !== "laundry").map(profile => (
+                        <div key={profile.id} className="px-5 py-3.5 flex items-center justify-between gap-3 hover:bg-purple-50/20 transition-colors">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <div className="size-10 shrink-0 rounded-xl bg-lavender text-primary font-black text-base flex items-center justify-center">
+                              {(profile.fullName || "?")[0].toUpperCase()}
                             </div>
-                            <div className="min-w-0 flex-1">
-                              <h3 className="font-extrabold text-foreground text-xs sm:text-sm truncate">
-                                {profile.fullName || "משתמש ללא שם"}
-                              </h3>
-                              <p className="text-[10px] sm:text-xs text-muted-foreground leading-normal mt-0.5 truncate" style={{ overflowWrap: "anywhere" }}>
-                                {profile.email}
-                              </p>
-                              <span className={`inline-block mt-1.5 sm:mt-2 px-2 sm:px-2.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold ${getRoleBadge(profile.role)}`}>
+                            <div className="min-w-0">
+                              <p className="font-extrabold text-foreground text-xs truncate">{profile.fullName || "משתמש ללא שם"}</p>
+                              <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{profile.email}</p>
+                              <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[9px] font-bold ${getRoleBadge(profile.role)}`}>
                                 {getRoleLabel(profile.role)}
                               </span>
                             </div>
                           </div>
-
-                          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                          <div className="flex items-center gap-1.5 shrink-0">
                             <button
                               onClick={() => openEditModal(profile)}
-                              className="size-10 sm:size-9 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 flex items-center justify-center transition active:scale-95"
+                              className="size-9 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 flex items-center justify-center transition active:scale-95"
                               title="ערוך פרופיל"
                             >
                               <Edit2 className="size-4" />
                             </button>
                             <button
                               onClick={() => handleDeleteProfile(profile.id, profile.email)}
-                              className="size-10 sm:size-9 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20 flex items-center justify-center transition active:scale-95"
+                              className="size-9 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20 flex items-center justify-center transition active:scale-95"
                               title="מחק משתמש"
                             >
                               <Trash2 className="size-4" />
@@ -1162,243 +1215,237 @@ function AdminDashboard() {
                         </div>
                       ))}
                     </div>
-                    {/* Load More — profiles */}
-                    {hasMoreProfiles && (
-                      <div className="pt-2 flex justify-center">
-                        <button
-                          onClick={() => fetchProfiles(false)}
-                          disabled={loadingMoreProfiles}
-                          className="px-6 py-2.5 rounded-full text-xs font-bold bg-primary/10 text-primary hover:bg-primary/20 transition disabled:opacity-50 active:scale-95"
-                        >
-                          {loadingMoreProfiles ? (
-                            <span className="flex items-center gap-2"><Loader2 className="size-3.5 animate-spin" /> טוען...</span>
-                          ) : "טען עוד משתמשים"}
-                        </button>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-          )}
+                  )}
 
-          {/* TAB CONTENT: Laundries */}
-          {activeTab === "laundries" && (
-            <div className="space-y-4">
-              <div className="space-y-3">
-                <div className="relative">
-                  <Input
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="חפש מכבסה לפי שם עסק או אימייל..."
-                    className="pr-10 rounded-2xl border-muted-foreground/15 h-11 sm:h-12 text-right text-sm sm:text-base"
-                  />
-                  <Search className="absolute right-3.5 top-3.5 size-5 text-muted-foreground" />
+                  {hasMoreProfiles && (
+                    <div className="px-5 pb-4 pt-2 flex justify-center">
+                      <button
+                        onClick={() => fetchProfiles(false)}
+                        disabled={loadingMoreProfiles}
+                        className="px-6 py-2.5 rounded-full text-xs font-bold bg-white text-primary border border-primary/20 hover:bg-primary/5 transition disabled:opacity-50 active:scale-95 shadow-sm"
+                      >
+                        {loadingMoreProfiles ? (
+                          <span className="flex items-center gap-2"><Loader2 className="size-3.5 animate-spin" /> טוען...</span>
+                        ) : "טען עוד משתמשים"}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
+            )}
 
-              <div className="space-y-3">
-                <h2 className="text-base font-extrabold text-foreground px-1">
-                  רשימת מכבסות רשומות ({filteredProfiles.filter(p => p.role === "laundry").length})
-                </h2>
+            {/* ════════ TAB: LAUNDRIES ══════════════════════════════════ */}
+            {activeTab === "laundries" && (
+              <div className="space-y-4">
+                {/* Search */}
+                <div className="dash-card p-4">
+                  <div className="relative">
+                    <input
+                      value={searchQuery}
+                      onChange={e => setSearchQuery(e.target.value)}
+                      placeholder="חפש מכבסה לפי שם עסק או אימייל..."
+                      className="w-full h-10 pr-10 pl-4 rounded-xl border border-purple-200/60 bg-background text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary text-right"
+                      style={{ boxShadow: "var(--card-shadow)" }}
+                    />
+                    <Search className="absolute right-3.5 top-3 size-4 text-muted-foreground" />
+                  </div>
+                </div>
 
-                {isLoading ? (
-                  <div className="py-20 flex flex-col items-center justify-center gap-2">
-                    <div className="animate-spin rounded-full size-8 border-4 border-primary border-t-transparent" />
-                    <span className="text-sm text-muted-foreground">טוען מכבסות...</span>
+                {/* Status summary pills */}
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: "פעילות",          count: profiles.filter(p => p.role === "laundry" && p.status === "approved").length,          color: "bg-emerald-50 border-emerald-200 text-emerald-700" },
+                    { label: "ממתינות לאישור",  count: profiles.filter(p => p.role === "laundry" && p.status === "pending_approval").length,   color: "bg-amber-50 border-amber-200 text-amber-700"    },
+                    { label: "מושעות",          count: profiles.filter(p => p.role === "laundry" && p.status === "suspended").length,          color: "bg-red-50 border-red-200 text-red-600"          },
+                  ].map((s, idx) => (
+                    <div key={idx} className={`stat-pill border ${s.color}`}>
+                      <span className="text-xl font-black leading-none">{s.count}</span>
+                      <span className="text-[10px] font-bold opacity-80">{s.label}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Laundries list */}
+                <div className="dash-card overflow-hidden">
+                  <div className="px-5 py-3.5 border-b border-purple-50 flex items-center gap-2">
+                    <h2 className="text-sm font-black text-foreground">מכבסות רשומות</h2>
+                    <span className="min-w-[22px] h-[22px] rounded-full bg-cyan-100 text-cyan-700 text-[10px] font-black flex items-center justify-center px-1.5">
+                      {filteredProfiles.filter(p => p.role === "laundry").length}
+                    </span>
                   </div>
-                ) : filteredProfiles.filter(p => p.role === "laundry").length === 0 ? (
-                  <div className="bg-muted/30 border border-muted/50 rounded-3xl p-12 text-center text-muted-foreground">
-                    לא נמצאו מכבסות התואמות את החיפוש.
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {filteredProfiles.filter(p => p.role === "laundry").map((profile) => (
-                      <div
-                        key={profile.id}
-                        className="bg-card border border-muted-foreground/10 rounded-3xl p-3 sm:p-4 flex items-center justify-between gap-2 shadow-sm transition-all hover:shadow-md"
-                      >
-                        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-                          <div className="size-10 sm:size-12 shrink-0 rounded-2xl bg-cyan-100 text-cyan-700 font-black text-base sm:text-lg flex items-center justify-center">
-                            {(profile.businessName || profile.fullName || "?")[0]}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <h3 className="font-extrabold text-foreground text-xs sm:text-sm truncate">
-                              {profile.businessName || "מכבסה ללא שם"}
-                            </h3>
-                            <p className="text-[10px] sm:text-xs text-muted-foreground leading-normal mt-0.5 truncate">
-                              חנות: {profile.shopSlug ? `/shop/${profile.shopSlug}` : "טרם הוגדר קישור"}
-                            </p>
-                            <p className="text-[9px] text-muted-foreground truncate">
-                              איש קשר: {profile.fullName} | {profile.email}
-                            </p>
-                            <div className="flex items-center gap-1.5 mt-1">
-                              <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-bold ${getRoleBadge(profile.role)}`}>
-                                {getRoleLabel(profile.role)}
-                              </span>
-                              {profile.status === "pending_approval" && (
-                                <span className="inline-block px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-200">
-                                  ⏳ ממתין לאישור
+
+                  {isLoading ? (
+                    <div className="py-16 flex flex-col items-center gap-3">
+                      <div className="animate-spin rounded-full size-8 border-4 border-primary border-t-transparent" />
+                      <span className="text-xs text-muted-foreground font-semibold">טוען מכבסות...</span>
+                    </div>
+                  ) : filteredProfiles.filter(p => p.role === "laundry").length === 0 ? (
+                    <div className="p-12 text-center text-xs text-muted-foreground">לא נמצאו מכבסות התואמות את החיפוש.</div>
+                  ) : (
+                    <div className="divide-y divide-purple-50/60">
+                      {filteredProfiles.filter(p => p.role === "laundry").map(profile => (
+                        <div key={profile.id} className="px-5 py-4 flex items-center justify-between gap-3 hover:bg-purple-50/20 transition-colors">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <div className="size-11 shrink-0 rounded-xl bg-cyan-100 text-cyan-700 font-black text-lg flex items-center justify-center">
+                              {(profile.businessName || profile.fullName || "?")[0].toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-extrabold text-foreground text-sm truncate">{profile.businessName || "מכבסה ללא שם"}</p>
+                              <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
+                                {profile.shopSlug ? `/shop/${profile.shopSlug}` : "טרם הוגדר קישור"}
+                              </p>
+                              <p className="text-[9px] text-muted-foreground truncate">{profile.fullName} · {profile.email}</p>
+                              <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${getRoleBadge(profile.role)}`}>
+                                  {getRoleLabel(profile.role)}
                                 </span>
-                              )}
-                              {profile.status === "approved" && (
-                                <span className="inline-block px-2 py-0.5 rounded-full text-[9px] font-bold bg-green-100 text-green-700 border border-green-200">
-                                  ✅ פעיל
-                                </span>
-                              )}
-                              {profile.status === "suspended" && (
-                                <span className="inline-block px-2 py-0.5 rounded-full text-[9px] font-bold bg-red-100 text-red-700 border border-red-200">
-                                  ❌ מושעה
-                                </span>
-                              )}
+                                {profile.status === "pending_approval" && (
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-200">⏳ ממתין לאישור</span>
+                                )}
+                                {profile.status === "approved" && (
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">✅ פעיל</span>
+                                )}
+                                {profile.status === "suspended" && (
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-red-100 text-red-700 border border-red-200">❌ מושעה</span>
+                                )}
+                              </div>
                             </div>
                           </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              onClick={() => openLaundrySettingsModal(profile)}
+                              className="h-9 px-3 rounded-xl bg-cyan-600 text-white hover:bg-cyan-700 flex items-center justify-center gap-1.5 text-[11px] font-extrabold transition active:scale-95 shadow-sm"
+                            >
+                              <Settings className="size-3.5" />
+                              <span className="hidden sm:inline">ניהול שירותים</span>
+                            </button>
+                            <button
+                              onClick={() => openEditModal(profile)}
+                              className="size-9 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 flex items-center justify-center transition active:scale-95"
+                            >
+                              <Edit2 className="size-4" />
+                            </button>
+                          </div>
                         </div>
-
-                        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-                          <button
-                            onClick={() => openLaundrySettingsModal(profile)}
-                            className="h-10 px-3 sm:px-4 rounded-xl bg-cyan-600 text-white hover:bg-cyan-700 flex items-center justify-center gap-1.5 text-xs font-extrabold transition active:scale-95 shadow-sm"
-                            title="נהל שירותים ומחירים"
-                          >
-                            <Settings className="size-4" />
-                            <span className="hidden sm:inline">ניהול שירותים</span>
-                          </button>
-                          <button
-                            onClick={() => openEditModal(profile)}
-                            className="size-10 sm:size-9 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 flex items-center justify-center transition active:scale-95"
-                            title="ערוך פרופיל"
-                          >
-                            <Edit2 className="size-4" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* TAB CONTENT: Orders */}
-          {activeTab === "orders" && (
-            <div className="space-y-4">
-              {/* Order filters */}
-              <div className="space-y-3 bg-muted/20 border border-muted-foreground/5 p-4 rounded-3xl">
-                <h3 className="text-xs font-black text-primary uppercase tracking-widest">חיפוש וסינון הזמנות</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="relative">
-                    <Input
-                      value={orderSearchQuery}
-                      onChange={(e) => setOrderSearchQuery(e.target.value)}
-                      placeholder="חפש לפי מזהה הזמנה או אימייל..."
-                      className="pr-9 text-xs rounded-xl h-10 text-right bg-background border-muted-foreground/15"
-                    />
-                    <Search className="absolute right-3 top-3 size-4 text-muted-foreground" />
-                  </div>
+            {/* ════════ TAB: ORDERS ═════════════════════════════════════ */}
+            {activeTab === "orders" && (
+              <div className="space-y-4">
+                {/* Filters card */}
+                <div className="dash-card p-4 space-y-3">
+                  <h3 className="text-xs font-black text-primary uppercase tracking-widest">חיפוש וסינון הזמנות</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="relative">
+                      <input
+                        value={orderSearchQuery}
+                        onChange={e => setOrderSearchQuery(e.target.value)}
+                        placeholder="חפש לפי מזהה או אימייל..."
+                        className="w-full h-10 pr-9 pl-4 rounded-xl border border-purple-200/60 bg-background text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary text-right"
+                        style={{ boxShadow: "var(--card-shadow)" }}
+                      />
+                      <Search className="absolute right-3 top-3 size-4 text-muted-foreground" />
+                    </div>
 
-                  <div>
                     <select
                       value={orderStatusFilter}
-                      onChange={(e) => setOrderStatusFilter(e.target.value)}
-                      className="w-full h-10 px-3 rounded-xl border border-muted-foreground/15 bg-background text-xs font-semibold text-right"
+                      onChange={e => setOrderStatusFilter(e.target.value)}
+                      className="h-10 w-full px-3 rounded-xl border border-purple-200/60 bg-background text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary text-right"
                       dir="rtl"
                     >
                       <option value="all">כל הסטטוסים</option>
-                      <option value="pending">⏳ ממתין (Pending)</option>
-                      <option value="accepted">🔵 התקבל (Accepted)</option>
-                      <option value="collected">🟡 נאסף (Collected)</option>
-                      <option value="ready">🟢 מוכן (Ready)</option>
-                      <option value="delivered">✅ נמסר (Delivered)</option>
-                      <option value="cancelled">❌ בוטלה (Cancelled)</option>
+                      <option value="pending">⏳ ממתין</option>
+                      <option value="accepted">🔵 התקבל</option>
+                      <option value="collected">🟡 נאסף</option>
+                      <option value="ready">🟢 מוכן</option>
+                      <option value="delivered">✅ נמסר</option>
+                      <option value="cancelled">❌ בוטלה</option>
                     </select>
-                  </div>
 
-                  <div>
                     <select
                       value={orderLaundryFilter}
-                      onChange={(e) => setOrderLaundryFilter(e.target.value)}
-                      className="w-full h-10 px-3 rounded-xl border border-muted-foreground/15 bg-background text-xs font-semibold text-right"
+                      onChange={e => setOrderLaundryFilter(e.target.value)}
+                      className="h-10 w-full px-3 rounded-xl border border-purple-200/60 bg-background text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary text-right"
                       dir="rtl"
                     >
                       <option value="all">כל המכבסות</option>
                       <option value="unassigned">ללא שיוך / עצמאי</option>
                       {profiles.filter(p => p.role === "laundry").map(vendor => (
-                        <option key={vendor.id} value={vendor.id}>
-                          {vendor.businessName || vendor.fullName}
-                        </option>
+                        <option key={vendor.id} value={vendor.id}>{vendor.businessName || vendor.fullName}</option>
                       ))}
                     </select>
                   </div>
                 </div>
-              </div>
 
-              {/* Render Grouped Orders */}
-              <div className="space-y-6">
+                {/* Orders grouped by vendor */}
                 {ordersLoading ? (
-                  <div className="py-20 flex flex-col items-center justify-center gap-2">
+                  <div className="py-16 flex flex-col items-center gap-3">
                     <div className="animate-spin rounded-full size-8 border-4 border-primary border-t-transparent" />
-                    <span className="text-sm text-muted-foreground">טוען הזמנות מהמערכת...</span>
+                    <span className="text-xs text-muted-foreground font-semibold">טוען הזמנות מהמערכת...</span>
                   </div>
                 ) : filteredOrders.length === 0 ? (
-                  <div className="bg-muted/30 border border-muted/50 rounded-3xl p-12 text-center text-muted-foreground">
-                    לא נמצאו הזמנות רשומות במערכת העונות לסינון.
+                  <div className="dash-card p-12 text-center">
+                    <p className="text-3xl mb-3">📦</p>
+                    <p className="text-sm font-bold text-muted-foreground">לא נמצאו הזמנות העונות לסינון.</p>
                   </div>
                 ) : (
                   (() => {
-                    // Group filtered orders by vendor
                     const vendors = profiles.filter(p => p.role === "laundry");
                     const unassignedOrders = filteredOrders.filter(o => !o.laundryId || !vendors.some(v => v.id === o.laundryId));
-                    
+
                     return (
-                      <div className="space-y-6">
-                        {/* 1. Grouped by registered vendors */}
+                      <div className="space-y-5 pb-6">
                         {vendors.map(vendor => {
                           const vendorOrders = filteredOrders.filter(o => o.laundryId === vendor.id);
                           if (vendorOrders.length === 0) return null;
-
                           return (
-                            <div key={vendor.id} className="space-y-3 bg-card border border-muted-foreground/10 rounded-[2rem] p-4 shadow-sm">
-                              <div className="flex items-center gap-2 border-b border-muted-foreground/5 pb-2 mb-2">
-                                <Building2 className="size-4 text-cyan-600" />
+                            <div key={vendor.id} className="dash-card overflow-hidden">
+                              <div className="px-5 py-3.5 border-b border-purple-50 flex items-center gap-2">
+                                <Building2 className="size-4 text-cyan-600 shrink-0" />
                                 <h3 className="text-sm font-black text-cyan-800">
-                                  {vendor.businessName || vendor.fullName} ({vendorOrders.length} הזמנות)
+                                  {vendor.businessName || vendor.fullName}
                                 </h3>
+                                <span className="min-w-[22px] h-[22px] rounded-full bg-cyan-100 text-cyan-700 text-[10px] font-black flex items-center justify-center px-1.5 mr-auto">
+                                  {vendorOrders.length}
+                                </span>
                               </div>
-
-                              <div className="space-y-3">
+                              <div className="divide-y divide-purple-50/40 p-2 space-y-1.5">
                                 {vendorOrders.map(order => renderOrderCard(order))}
                               </div>
                             </div>
                           );
                         })}
 
-                        {/* 2. Unassigned Group */}
                         {unassignedOrders.length > 0 && (
-                          <div className="space-y-3 bg-slate-50 border border-slate-200 rounded-[2rem] p-4 shadow-sm">
-                            <div className="flex items-center gap-2 border-b border-slate-200 pb-2 mb-2">
-                              <XCircle className="size-4 text-slate-500" />
-                              <h3 className="text-sm font-black text-slate-700">
-                                הזמנות עצמאיות / ללא שיוך למכבסה ({unassignedOrders.length} הזמנות)
-                              </h3>
+                          <div className="dash-card overflow-hidden" style={{ borderColor: "rgba(148,163,184,0.3)" }}>
+                            <div className="px-5 py-3.5 border-b border-slate-100 flex items-center gap-2">
+                              <XCircle className="size-4 text-slate-400 shrink-0" />
+                              <h3 className="text-sm font-black text-slate-600">עצמאיות / ללא שיוך</h3>
+                              <span className="min-w-[22px] h-[22px] rounded-full bg-slate-100 text-slate-600 text-[10px] font-black flex items-center justify-center px-1.5 mr-auto">
+                                {unassignedOrders.length}
+                              </span>
                             </div>
-
-                            <div className="space-y-3">
+                            <div className="divide-y divide-slate-50 p-2 space-y-1.5">
                               {unassignedOrders.map(order => renderOrderCard(order))}
                             </div>
                           </div>
                         )}
-                        {/* Load More — historical orders */}
+
                         {hasMoreHistorical && (
-                          <div className="flex justify-center pt-2">
+                          <div className="flex justify-center">
                             <button
                               onClick={() => fetchHistoricalOrders(false)}
                               disabled={loadingMoreHistorical}
-                              className="px-6 py-2.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 transition disabled:opacity-50 active:scale-95"
+                              className="px-6 py-2.5 rounded-full text-xs font-bold bg-white text-primary border border-primary/20 hover:bg-primary/5 transition disabled:opacity-50 active:scale-95 shadow-sm"
                             >
-                              {loadingMoreHistorical ? (
-                                <span className="flex items-center gap-2"><Loader2 className="size-3.5 animate-spin" /> טוען...</span>
-                              ) : "טען עוד הזמנות בוצעו"}
+                              {loadingMoreHistorical
+                                ? <span className="flex items-center gap-2"><Loader2 className="size-3.5 animate-spin" /> טוען...</span>
+                                : "טען עוד הזמנות"}
                             </button>
                           </div>
                         )}
@@ -1407,16 +1454,14 @@ function AdminDashboard() {
                   })()
                 )}
               </div>
-            </div>
-          )}
+            )}
+
+          </div>
         </main>
       </div>
 
-      {/* Dialog 1: General User Edit Modal */}
-      <Dialog
-        open={editingProfile !== null}
-        onOpenChange={(open) => !open && setEditingProfile(null)}
-      >
+      {/* ── Dialog 1: User Edit Modal ──────────────────────────────────────── */}
+      <Dialog open={editingProfile !== null} onOpenChange={open => !open && setEditingProfile(null)}>
         <DialogContent
           className="max-w-md w-[96%] sm:w-[92%] rounded-2xl sm:rounded-3xl p-4 sm:p-6 text-right dir-rtl backdrop-blur-xl bg-background/95 border-none shadow-[0_20px_50px_rgba(0,0,0,0.15)] focus:outline-none max-h-[90dvh] overflow-y-auto"
           dir="rtl"
@@ -1434,49 +1479,30 @@ function AdminDashboard() {
           <div className="space-y-3 sm:space-y-4 my-3 sm:my-4 text-right">
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-foreground block">שם מלא</label>
-              <Input
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                placeholder="שם מלא"
-                className="text-right"
-              />
+              <Input value={editName} onChange={e => setEditName(e.target.value)} placeholder="שם מלא" className="text-right" />
             </div>
-
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-foreground block">אימייל</label>
-              <Input
-                value={editEmail}
-                onChange={(e) => setEditEmail(e.target.value)}
-                placeholder="אימייל"
-                className="text-right text-left"
-                disabled={editingProfile?.email === "talfarage3331@gmail.com"}
-              />
+              <Input value={editEmail} onChange={e => setEditEmail(e.target.value)} placeholder="אימייל" className="text-right text-left"
+                disabled={editingProfile?.email === "talfarage3331@gmail.com"} />
             </div>
-
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-foreground block">תפקיד / הרשאה</label>
               <select
-                value={editRole}
-                onChange={(e) => setEditRole(e.target.value as any)}
+                value={editRole} onChange={e => setEditRole(e.target.value as any)}
                 className="w-full h-11 px-3 rounded-xl border border-muted-foreground/20 bg-background text-foreground text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary text-right appearance-none"
-                disabled={editingProfile?.email === "talfarage3331@gmail.com"}
-                dir="rtl"
+                disabled={editingProfile?.email === "talfarage3331@gmail.com"} dir="rtl"
               >
                 <option value="customer">לקוח (Customer)</option>
                 <option value="laundry">צוות מכבסה (Laundry)</option>
                 <option value="admin">מנהל מערכת (Admin)</option>
               </select>
             </div>
-
             {editRole === "laundry" && (
               <div className="space-y-1.5 animate-in slide-in-from-top-2 duration-200">
                 <label className="text-xs font-bold text-foreground block">סטטוס אישור</label>
-                <select
-                  value={editStatus}
-                  onChange={(e) => setEditStatus(e.target.value as any)}
-                  className="w-full h-11 px-3 rounded-xl border border-muted-foreground/20 bg-background text-foreground text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary text-right appearance-none"
-                  dir="rtl"
-                >
+                <select value={editStatus} onChange={e => setEditStatus(e.target.value as any)}
+                  className="w-full h-11 px-3 rounded-xl border border-muted-foreground/20 bg-background text-foreground text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary text-right appearance-none" dir="rtl">
                   <option value="pending_setup">🛠️ בהקמה (Pending Setup)</option>
                   <option value="pending_approval">⏳ ממתין לאישור (Pending)</option>
                   <option value="approved">✅ מאושר (Approved)</option>
@@ -1487,28 +1513,20 @@ function AdminDashboard() {
           </div>
 
           <div className="flex gap-2 mt-2">
-            <button
-              onClick={handleUpdateProfile}
-              disabled={isUpdating}
-              className="flex-1 h-11 sm:h-12 rounded-2xl bg-primary text-primary-foreground text-sm sm:text-base font-bold active:scale-95 transition flex items-center justify-center disabled:opacity-50 min-h-[44px]"
-            >
+            <button onClick={handleUpdateProfile} disabled={isUpdating}
+              className="flex-1 h-11 sm:h-12 rounded-2xl bg-primary text-primary-foreground text-sm sm:text-base font-bold active:scale-95 transition flex items-center justify-center disabled:opacity-50 min-h-[44px]">
               {isUpdating ? "מעדכן..." : "שמור שינויים"}
             </button>
-            <button
-              onClick={() => setEditingProfile(null)}
-              className="h-11 sm:h-12 px-4 sm:px-5 rounded-2xl border border-muted-foreground/20 text-sm sm:text-base font-bold active:scale-95 transition min-h-[44px]"
-            >
+            <button onClick={() => setEditingProfile(null)}
+              className="h-11 sm:h-12 px-4 sm:px-5 rounded-2xl border border-muted-foreground/20 text-sm sm:text-base font-bold active:scale-95 transition min-h-[44px]">
               ביטול
             </button>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Dialog 2: Laundry Profile & Services CRUD Management Modal */}
-      <Dialog
-        open={selectedLaundry !== null}
-        onOpenChange={(open) => !open && setSelectedLaundry(null)}
-      >
+      {/* ── Dialog 2: Laundry Services CRUD Modal ─────────────────────────── */}
+      <Dialog open={selectedLaundry !== null} onOpenChange={open => !open && setSelectedLaundry(null)}>
         <DialogContent
           className="max-w-xl w-[96%] sm:w-[92%] rounded-2xl sm:rounded-3xl p-4 sm:p-6 text-right dir-rtl backdrop-blur-xl bg-background/95 border-none shadow-[0_20px_50px_rgba(0,0,0,0.15)] focus:outline-none max-h-[90dvh] overflow-y-auto"
           dir="rtl"
@@ -1524,71 +1542,51 @@ function AdminDashboard() {
           </DialogHeader>
 
           <div className="space-y-6 my-4 text-right">
-            {/* Tab navigation within Laundry Modal */}
+            {/* Tab navigation within modal */}
             <div className="flex gap-2 border-b border-muted-foreground/10 pb-2">
-              <button
-                onClick={() => setLaundryModalTab("details")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  laundryModalTab === "details" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-                }`}
-              >
-                פרטי עסק
-              </button>
-              <button
-                onClick={() => setLaundryModalTab("addons")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  laundryModalTab === "addons" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-                }`}
-              >
-                שירותים ותוספות ({laundryAddons.length})
-              </button>
-              <button
-                onClick={() => setLaundryModalTab("tiers")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  laundryModalTab === "tiers" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-                }`}
-              >
-                רמות משלוח ותמחור ({laundryTiers.length})
-              </button>
+              {[
+                { key: "details" as const, label: "פרטי עסק" },
+                { key: "addons"  as const, label: `שירותים ותוספות (${laundryAddons.length})` },
+                { key: "tiers"   as const, label: `רמות משלוח (${laundryTiers.length})` },
+              ].map(t => (
+                <button key={t.key} onClick={() => setLaundryModalTab(t.key)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    laundryModalTab === t.key ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"
+                  }`}>
+                  {t.label}
+                </button>
+              ))}
             </div>
 
             {/* TAB: details */}
             {laundryModalTab === "details" && (
               <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-foreground block">שם עסק במערכת</label>
-                  <Input value={editBusinessName} onChange={(e) => setEditBusinessName(e.target.value)} placeholder="שם עסק" className="text-right" />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-foreground block">קישור ייחודי (Slug)</label>
-                  <Input value={editShopSlug} onChange={(e) => setEditShopSlug(e.target.value)} placeholder="slug" className="text-right text-left font-mono text-xs" />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-foreground block">שם איש קשר</label>
-                  <Input value={editFullName} onChange={(e) => setEditFullName(e.target.value)} placeholder="שם מלא" className="text-right" />
-                </div>
+                {[
+                  { label: "שם עסק במערכת",   value: editBusinessName, setter: setEditBusinessName, placeholder: "שם עסק",   cls: "text-right" },
+                  { label: "קישור ייחודי (Slug)", value: editShopSlug,    setter: setEditShopSlug,    placeholder: "slug",      cls: "text-right text-left font-mono text-xs" },
+                  { label: "שם איש קשר",      value: editFullName,     setter: setEditFullName,     placeholder: "שם מלא",    cls: "text-right" },
+                ].map(field => (
+                  <div key={field.label} className="space-y-1.5">
+                    <label className="text-xs font-bold text-foreground block">{field.label}</label>
+                    <Input value={field.value} onChange={e => field.setter(e.target.value)} placeholder={field.placeholder} className={field.cls} />
+                  </div>
+                ))}
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-foreground block">אימייל מכבסה</label>
-                  <Input value={editEmail} onChange={(e) => setEditEmail(e.target.value)} placeholder="אימייל" className="text-right text-left" disabled />
+                  <Input value={editEmail} onChange={e => setEditEmail(e.target.value)} placeholder="אימייל" className="text-right text-left" disabled />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-foreground block">סטטוס אישור</label>
-                  <select
-                    value={editStatus}
-                    onChange={(e) => setEditStatus(e.target.value as any)}
-                    className="w-full h-11 px-3 rounded-xl border border-muted-foreground/20 bg-background text-foreground text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary text-right"
-                    dir="rtl"
-                  >
+                  <select value={editStatus} onChange={e => setEditStatus(e.target.value as any)}
+                    className="w-full h-11 px-3 rounded-xl border border-muted-foreground/20 bg-background text-foreground text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary text-right" dir="rtl">
                     <option value="pending_setup">🛠️ בהקמה</option>
                     <option value="pending_approval">⏳ ממתין לאישור</option>
                     <option value="approved">✅ מאושר ופעיל</option>
                     <option value="suspended">❌ מושעה</option>
                   </select>
                 </div>
-                <button
-                  onClick={handleUpdateLaundryDetails}
-                  className="w-full h-11 rounded-xl bg-primary text-primary-foreground font-bold active:scale-95 transition mt-2"
-                >
+                <button onClick={handleUpdateLaundryDetails}
+                  className="w-full h-11 rounded-xl bg-primary text-primary-foreground font-bold active:scale-95 transition mt-2">
                   שמור פרטי עסק
                 </button>
               </div>
@@ -1600,56 +1598,31 @@ function AdminDashboard() {
                 <div className="flex justify-between items-center">
                   <h3 className="text-xs sm:text-sm font-bold text-foreground">שירותים ותוספות מותאמים אישית</h3>
                   {laundryAddons.length === 0 && (
-                    <button
-                      onClick={handleSeedDefaults}
-                      disabled={isSeeding}
-                      className="px-3 py-1 rounded-lg bg-amber-500 text-white text-xs font-extrabold flex items-center gap-1 active:scale-95 transition"
-                    >
+                    <button onClick={handleSeedDefaults} disabled={isSeeding}
+                      className="px-3 py-1 rounded-lg bg-amber-500 text-white text-xs font-extrabold flex items-center gap-1 active:scale-95 transition">
                       {isSeeding ? "טוען..." : "טען ברירת מחדל"}
                     </button>
                   )}
                 </div>
 
-                {/* Inline form for Add / Edit Addon */}
                 {showAddonForm && (
                   <div className="p-3 border border-muted-foreground/15 bg-muted/20 rounded-2xl space-y-3">
                     <h4 className="text-xs font-black text-primary">{editingAddonId ? "עריכת שירות/תוספת" : "הוספת שירות/תוספת חדשה"}</h4>
                     <div className="space-y-2">
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-muted-foreground block">שם השירות</label>
-                        <Input
-                          value={addonForm.label}
-                          onChange={(e) => setAddonForm(prev => ({ ...prev, label: e.target.value }))}
-                          placeholder="למשל: אקסטרה ריח"
-                          className="text-right text-xs"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-muted-foreground block">תוספת מחיר (₪)</label>
-                        <Input
-                          type="number"
-                          value={addonForm.price === 0 ? "" : addonForm.price}
-                          onChange={(e) => setAddonForm(prev => ({ ...prev, price: Number(e.target.value) }))}
-                          placeholder="0"
-                          className="text-right text-xs"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-muted-foreground block">תיאור השירות</label>
-                        <Input
-                          value={addonForm.desc}
-                          onChange={(e) => setAddonForm(prev => ({ ...prev, desc: e.target.value }))}
-                          placeholder="תיאור קצר של הטיפול"
-                          className="text-right text-xs"
-                        />
-                      </div>
+                      {[
+                        { label: "שם השירות",      val: addonForm.label, set: (v: string) => setAddonForm(p => ({ ...p, label: v })), placeholder: "למשל: אקסטרה ריח", type: "text" },
+                        { label: "תוספת מחיר (₪)", val: String(addonForm.price || ""), set: (v: string) => setAddonForm(p => ({ ...p, price: Number(v) })), placeholder: "0", type: "number" },
+                        { label: "תיאור השירות",   val: addonForm.desc,  set: (v: string) => setAddonForm(p => ({ ...p, desc: v })), placeholder: "תיאור קצר", type: "text" },
+                      ].map(f => (
+                        <div key={f.label} className="space-y-1">
+                          <label className="text-[10px] font-bold text-muted-foreground block">{f.label}</label>
+                          <Input type={f.type} value={f.val} onChange={e => f.set(e.target.value)} placeholder={f.placeholder} className="text-right text-xs" />
+                        </div>
+                      ))}
                       <div className="space-y-1">
                         <label className="text-[10px] font-bold text-muted-foreground block">קבוצה / קטגוריה</label>
-                        <select
-                          value={addonForm.group}
-                          onChange={(e) => setAddonForm(prev => ({ ...prev, group: e.target.value }))}
-                          className="w-full h-9 px-2 rounded-lg border border-muted-foreground/10 bg-background text-xs"
-                        >
+                        <select value={addonForm.group} onChange={e => setAddonForm(p => ({ ...p, group: e.target.value }))}
+                          className="w-full h-9 px-2 rounded-lg border border-muted-foreground/10 bg-background text-xs">
                           <option value="שדרוגי פרימיום">שדרוגי פרימיום</option>
                           <option value="סוגי טיפול מיוחדים">סוגי טיפול מיוחדים</option>
                           <option value="חוויית לוגיסטיקה">חוויית לוגיסטיקה</option>
@@ -1666,15 +1639,9 @@ function AdminDashboard() {
 
                 {!showAddonForm && (
                   <button
-                    onClick={() => {
-                      setAddonForm({ label: "", price: 0, desc: "", group: "שדרוגי פרימיום" });
-                      setEditingAddonId(null);
-                      setShowAddonForm(true);
-                    }}
-                    className="w-full py-2 border-2 border-dashed border-primary/20 hover:border-primary text-primary text-xs font-bold rounded-xl flex items-center justify-center gap-1 transition"
-                  >
-                    <PlusCircle className="size-3.5" />
-                    <span>הוסף שירות/תוספת מותאמת</span>
+                    onClick={() => { setAddonForm({ label: "", price: 0, desc: "", group: "שדרוגי פרימיום" }); setEditingAddonId(null); setShowAddonForm(true); }}
+                    className="w-full py-2 border-2 border-dashed border-primary/20 hover:border-primary text-primary text-xs font-bold rounded-xl flex items-center justify-center gap-1 transition">
+                    <PlusCircle className="size-3.5" /><span>הוסף שירות/תוספת מותאמת</span>
                   </button>
                 )}
 
@@ -1693,19 +1660,9 @@ function AdminDashboard() {
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-black text-primary whitespace-nowrap">₪{addon.price}</span>
-                          <button
-                            onClick={() => {
-                              setAddonForm({ label: addon.label, price: addon.price, desc: addon.desc || "", group: addon.group || "שדרוגי פרימיום" });
-                              setEditingAddonId(addon.id);
-                              setShowAddonForm(true);
-                            }}
-                            className="p-1 text-primary hover:bg-primary/10 rounded-md"
-                          >
-                            <Edit2 className="size-3.5" />
-                          </button>
-                          <button onClick={() => handleDeleteAddon(addon.id)} className="p-1 text-destructive hover:bg-destructive/10 rounded-md">
-                            <Trash2 className="size-3.5" />
-                          </button>
+                          <button onClick={() => { setAddonForm({ label: addon.label, price: addon.price, desc: addon.desc || "", group: addon.group || "שדרוגי פרימיום" }); setEditingAddonId(addon.id); setShowAddonForm(true); }}
+                            className="p-1 text-primary hover:bg-primary/10 rounded-md"><Edit2 className="size-3.5" /></button>
+                          <button onClick={() => handleDeleteAddon(addon.id)} className="p-1 text-destructive hover:bg-destructive/10 rounded-md"><Trash2 className="size-3.5" /></button>
                         </div>
                       </div>
                     ))}
@@ -1720,49 +1677,27 @@ function AdminDashboard() {
                 <div className="flex justify-between items-center">
                   <h3 className="text-xs sm:text-sm font-bold text-foreground">רמות משלוח, מהירות ותמחור</h3>
                   {laundryTiers.length === 0 && (
-                    <button
-                      onClick={handleSeedDefaults}
-                      disabled={isSeeding}
-                      className="px-3 py-1 rounded-lg bg-amber-500 text-white text-xs font-extrabold flex items-center gap-1 active:scale-95 transition"
-                    >
+                    <button onClick={handleSeedDefaults} disabled={isSeeding}
+                      className="px-3 py-1 rounded-lg bg-amber-500 text-white text-xs font-extrabold flex items-center gap-1 active:scale-95 transition">
                       {isSeeding ? "טוען..." : "טען ברירת מחדל"}
                     </button>
                   )}
                 </div>
 
-                {/* Inline form for Add / Edit Tier */}
                 {showTierForm && (
                   <div className="p-3 border border-muted-foreground/15 bg-muted/20 rounded-2xl space-y-3">
                     <h4 className="text-xs font-black text-primary">{editingTierId ? "עריכת רמת משלוח" : "הוספת רמת משלוח חדשה"}</h4>
                     <div className="space-y-2">
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-muted-foreground block">שם רמת משלוח</label>
-                        <Input
-                          value={tierForm.label}
-                          onChange={(e) => setTierForm(prev => ({ ...prev, label: e.target.value }))}
-                          placeholder="למשל: משלוח אקספרס"
-                          className="text-right text-xs"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-muted-foreground block">תוספת מחיר (₪)</label>
-                        <Input
-                          type="number"
-                          value={tierForm.price === 0 ? "" : tierForm.price}
-                          onChange={(e) => setTierForm(prev => ({ ...prev, price: Number(e.target.value) }))}
-                          placeholder="0"
-                          className="text-right text-xs"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-muted-foreground block">תיאור וזמני הגעה</label>
-                        <Input
-                          value={tierForm.desc}
-                          onChange={(e) => setTierForm(prev => ({ ...prev, desc: e.target.value }))}
-                          placeholder="למשל: איסוף והחזרה תוך 24 שעות"
-                          className="text-right text-xs"
-                        />
-                      </div>
+                      {[
+                        { label: "שם רמת משלוח",  val: tierForm.label, set: (v: string) => setTierForm(p => ({ ...p, label: v })), placeholder: "למשל: משלוח אקספרס", type: "text" },
+                        { label: "תוספת מחיר (₪)",val: String(tierForm.price || ""), set: (v: string) => setTierForm(p => ({ ...p, price: Number(v) })), placeholder: "0", type: "number" },
+                        { label: "תיאור וזמני הגעה",val: tierForm.desc, set: (v: string) => setTierForm(p => ({ ...p, desc: v })), placeholder: "למשל: איסוף תוך 24 שעות", type: "text" },
+                      ].map(f => (
+                        <div key={f.label} className="space-y-1">
+                          <label className="text-[10px] font-bold text-muted-foreground block">{f.label}</label>
+                          <Input type={f.type} value={f.val} onChange={e => f.set(e.target.value)} placeholder={f.placeholder} className="text-right text-xs" />
+                        </div>
+                      ))}
                     </div>
                     <div className="flex gap-2 pt-1">
                       <button onClick={handleSaveTier} className="flex-1 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-bold">שמור רמת משלוח</button>
@@ -1773,15 +1708,9 @@ function AdminDashboard() {
 
                 {!showTierForm && (
                   <button
-                    onClick={() => {
-                      setTierForm({ label: "", price: 0, desc: "" });
-                      setEditingTierId(null);
-                      setShowTierForm(true);
-                    }}
-                    className="w-full py-2 border-2 border-dashed border-primary/20 hover:border-primary text-primary text-xs font-bold rounded-xl flex items-center justify-center gap-1 transition"
-                  >
-                    <PlusCircle className="size-3.5" />
-                    <span>הוסף רמת משלוח/תמחור</span>
+                    onClick={() => { setTierForm({ label: "", price: 0, desc: "" }); setEditingTierId(null); setShowTierForm(true); }}
+                    className="w-full py-2 border-2 border-dashed border-primary/20 hover:border-primary text-primary text-xs font-bold rounded-xl flex items-center justify-center gap-1 transition">
+                    <PlusCircle className="size-3.5" /><span>הוסף רמת משלוח/תמחור</span>
                   </button>
                 )}
 
@@ -1799,19 +1728,9 @@ function AdminDashboard() {
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-black text-primary whitespace-nowrap">₪{tier.price}</span>
-                          <button
-                            onClick={() => {
-                              setTierForm({ label: tier.label, price: tier.price, desc: tier.desc || "" });
-                              setEditingTierId(tier.id);
-                              setShowTierForm(true);
-                            }}
-                            className="p-1 text-primary hover:bg-primary/10 rounded-md"
-                          >
-                            <Edit2 className="size-3.5" />
-                          </button>
-                          <button onClick={() => handleDeleteTier(tier.id)} className="p-1 text-destructive hover:bg-destructive/10 rounded-md">
-                            <Trash2 className="size-3.5" />
-                          </button>
+                          <button onClick={() => { setTierForm({ label: tier.label, price: tier.price, desc: tier.desc || "" }); setEditingTierId(tier.id); setShowTierForm(true); }}
+                            className="p-1 text-primary hover:bg-primary/10 rounded-md"><Edit2 className="size-3.5" /></button>
+                          <button onClick={() => handleDeleteTier(tier.id)} className="p-1 text-destructive hover:bg-destructive/10 rounded-md"><Trash2 className="size-3.5" /></button>
                         </div>
                       </div>
                     ))}
@@ -1822,10 +1741,8 @@ function AdminDashboard() {
           </div>
 
           <div className="flex justify-end mt-4 pt-3 border-t border-muted-foreground/5">
-            <button
-              onClick={() => setSelectedLaundry(null)}
-              className="h-11 px-6 rounded-2xl bg-muted text-foreground text-sm font-bold active:scale-95 transition"
-            >
+            <button onClick={() => setSelectedLaundry(null)}
+              className="h-11 px-6 rounded-2xl bg-muted text-foreground text-sm font-bold active:scale-95 transition">
               סגור חלון
             </button>
           </div>
