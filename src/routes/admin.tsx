@@ -135,7 +135,7 @@ function AdminDashboard() {
   }, [isProfileReady, user, navigate]);
 
   // Tab State
-  const [activeTab, setActiveTab] = useState<"users" | "laundries" | "orders" | "pricing">("users");
+  const [activeTab, setActiveTab] = useState<"users" | "laundries" | "orders" | "pricing" | "messages">("users");
 
   // User Profiles State
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -202,6 +202,13 @@ function AdminDashboard() {
   const [tierForm, setTierForm] = useState({ label: "", price: 0, desc: "" });
 
   const [isSeeding, setIsSeeding] = useState(false);
+
+  // Messaging System State
+  const [msgSubject, setMsgSubject] = useState("");
+  const [msgContent, setMsgContent] = useState("");
+  const [msgAudience, setMsgAudience] = useState<"all" | "laundries" | "specific_laundry">("all");
+  const [msgTargetLaundryId, setMsgTargetLaundryId] = useState("");
+  const [isSendingMsg, setIsSendingMsg] = useState(false);
 
   // Fetch unread chat messages count for admin — scoped query instead of full collectionGroup scan
   useEffect(() => {
@@ -309,80 +316,49 @@ function AdminDashboard() {
 
   // Real-time listener — active orders ONLY (pending/accepted/collected/ready)
   // Historical orders (delivered/cancelled) are fetched on-demand via paginated getDocs
+    // Real-time listener — loading all orders (limit 300) to avoid composite index requirements
   useEffect(() => {
     if (!isProfileReady || !user || user.role !== "admin") return;
     setOrdersLoading(true);
-    const activeQ = query(
+    const q = query(
       collection(db, "orders"),
-      where("status", "in", ACTIVE_STATUSES),
       orderBy("created_at", "desc"),
-      limit(100), // safety cap — active orders are inherently bounded
+      limit(300),
     );
     const unsub = onSnapshot(
-      activeQ,
+      q,
       (snap) => {
         const parsed = snap.docs.map(parseOrderDoc).filter(Boolean) as LaundryOrder[];
-        setActiveOrders(parsed);
-        // Merge with existing historical for the unified display array
-        setOrders((prev) => {
-          const historical = prev.filter(o => !ACTIVE_STATUSES.includes(o.status));
-          return [...parsed, ...historical].sort(
-            (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-          );
-        });
+        setOrders(parsed);
+        setActiveOrders(parsed.filter(o => ACTIVE_STATUSES.includes(o.status)));
         setOrdersLoading(false);
       },
       (err) => {
-        console.error("[admin] active orders listener error:", err);
-        setOrdersLoading(false);
+        console.error("[admin] orders listener error (falling back to unsorted fetch):", err);
+        const fallbackQ = query(collection(db, "orders"), limit(300));
+        onSnapshot(
+          fallbackQ,
+          (fallbackSnap) => {
+            const parsed = fallbackSnap.docs.map(parseOrderDoc).filter(Boolean) as LaundryOrder[];
+            parsed.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+            setOrders(parsed);
+            setActiveOrders(parsed.filter(o => ACTIVE_STATUSES.includes(o.status)));
+            setOrdersLoading(false);
+          },
+          (fallbackErr) => {
+            console.error("[admin] fallback orders listener error:", fallbackErr);
+            setOrdersLoading(false);
+          }
+        );
       },
     );
     return () => unsub();
   }, [isProfileReady, user?.uid, user?.role]);
 
   // Fetch first page of historical orders (delivered/cancelled) on mount
+    // Dummy function: all orders are now fetched in real-time
   const fetchHistoricalOrders = async (reset = true) => {
-    if (reset) {
-      setLastHistoricalDoc(null);
-      setHasMoreHistorical(false);
-    } else {
-      setLoadingMoreHistorical(true);
-    }
-    try {
-      const constraints: any[] = [
-        where("status", "in", ["delivered", "cancelled"]),
-        orderBy("created_at", "desc"),
-        limit(ORDERS_PAGE_SIZE),
-      ];
-      if (!reset && lastHistoricalDoc) constraints.push(startAfter(lastHistoricalDoc));
-      const q = query(collection(db, "orders"), ...constraints);
-      const snap = await getDocs(q);
-      const parsed = snap.docs.map(parseOrderDoc).filter(Boolean) as LaundryOrder[];
-      if (reset) {
-        setHistoricalOrders(parsed);
-        setOrders((prev) => {
-          const active = prev.filter(o => ACTIVE_STATUSES.includes(o.status));
-          return [...active, ...parsed].sort(
-            (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-          );
-        });
-      } else {
-        setHistoricalOrders((prev) => [...prev, ...parsed]);
-        setOrders((prev) => {
-          const active = prev.filter(o => ACTIVE_STATUSES.includes(o.status));
-          const allHistorical = [...prev.filter(o => !ACTIVE_STATUSES.includes(o.status)), ...parsed];
-          return [...active, ...allHistorical].sort(
-            (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-          );
-        });
-      }
-      setLastHistoricalDoc(snap.docs[snap.docs.length - 1] ?? null);
-      setHasMoreHistorical(snap.docs.length === ORDERS_PAGE_SIZE);
-    } catch (err: any) {
-      console.error("[admin] fetchHistoricalOrders error:", err);
-    } finally {
-      setLoadingMoreHistorical(false);
-    }
+    // No-op
   };
 
   useEffect(() => {
@@ -632,6 +608,77 @@ function AdminDashboard() {
       toast.error("שגיאה בטעינת ברירות מחדל: " + err.message);
     } finally {
       setIsSeeding(false);
+    }
+  };
+
+  // Delete Order
+  const handleDeleteOrder = async (orderId: string) => {
+    if (!confirm("האם אתה בטוח שברצונך למחוק הזמנה זו לצמיתות? פעולה זו בלתי הפיכה.")) return;
+    try {
+      await deleteDoc(doc(db, "orders", orderId));
+      setOrders(prev => prev.filter(o => o.id !== orderId));
+      toast.success("ההזמנה נמחקה בהצלחה");
+    } catch (err: any) {
+      toast.error("שגיאה במחיקת ההזמנה: " + err.message);
+    }
+  };
+
+  // Send Targeted Message
+  const handleSendMessage = async () => {
+    if (!msgSubject.trim() || !msgContent.trim()) {
+      toast.error("נא למלא את נושא ותוכן ההודעה");
+      return;
+    }
+    if (msgAudience === "specific_laundry" && !msgTargetLaundryId) {
+      toast.error("נא לבחור מכבסה ספציפית");
+      return;
+    }
+    setIsSendingMsg(true);
+    try {
+      let targetUserIds: string[] = [];
+
+      if (msgAudience === "all") {
+        targetUserIds = profiles.map(p => p.id);
+      } else if (msgAudience === "laundries") {
+        targetUserIds = profiles.filter(p => p.role === "laundry").map(p => p.id);
+      } else if (msgAudience === "specific_laundry") {
+        // Send to all customers who have orders with this laundry
+        const customerIds = new Set(
+          orders
+            .filter(o => o.laundryId === msgTargetLaundryId)
+            .map(o => o.userId)
+            .filter(Boolean)
+        );
+        targetUserIds = Array.from(customerIds);
+      }
+
+      if (targetUserIds.length === 0) {
+        toast.error("לא נמצאו נמענים לשליחה");
+        setIsSendingMsg(false);
+        return;
+      }
+
+      const batch = targetUserIds.map(userId =>
+        addDoc(collection(db, "notifications"), {
+          userId,
+          title: msgSubject,
+          body: msgContent,
+          createdAt: new Date().toISOString(),
+          read: false,
+          type: "admin_broadcast",
+        })
+      );
+      await Promise.all(batch);
+
+      toast.success(`ההודעה נשלחה בהצלחה ל-${targetUserIds.length} נמענים!`);
+      setMsgSubject("");
+      setMsgContent("");
+      setMsgAudience("all");
+      setMsgTargetLaundryId("");
+    } catch (err: any) {
+      toast.error("שגיאה בשליחת ההודעה: " + err.message);
+    } finally {
+      setIsSendingMsg(false);
     }
   };
 
@@ -939,6 +986,14 @@ function AdminDashboard() {
                     >
                       בטל הזמנה
                     </button>
+                    <button
+                      disabled={updatingOrderId === order.id}
+                      onClick={() => handleDeleteOrder(order.id)}
+                      className="size-8 bg-rose-100 text-rose-600 hover:bg-rose-600 hover:text-white rounded-lg transition active:scale-95 flex items-center justify-center"
+                      title="מחק הזמנה לצמיתות"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
                   </div>
                 </div>
               )}
@@ -955,6 +1010,7 @@ function AdminDashboard() {
     { key: "laundries" as const, label: "מכבסות",           icon: <Building2 className="size-4 shrink-0" />,     badge: profiles.filter(p => p.role === "laundry" && p.status === "pending_approval").length || undefined },
     { key: "orders"    as const, label: "הזמנות גלובליות", icon: <ClipboardList className="size-4 shrink-0" />, badge: activeOrders.length || undefined },
     { key: "pricing"   as const, label: "מחירונים",         icon: <Tag className="size-4 shrink-0" />,           badge: undefined },
+    { key: "messages"  as const, label: "לוח הודעות",       icon: <MessageSquareText className="size-4 shrink-0" />, badge: undefined },
   ];
 
   return (
@@ -1038,7 +1094,7 @@ function AdminDashboard() {
               className="sidebar-nav-item w-full text-right"
             >
               <span className="nav-icon"><MessageSquareText className="size-4" /></span>
-              <span className="flex-1 text-right">לוח הודעות</span>
+              <span className="flex-1 text-right">צ'אט תמיכה</span>
               {unreadChatCount > 0 && (
                 <span className="min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-black flex items-center justify-center"
                   style={{ background: "rgba(239,68,68,0.85)", color: "#fff" }}>
@@ -1080,12 +1136,14 @@ function AdminDashboard() {
                 {activeTab === "laundries" && "ניהול מכבסות"}
                 {activeTab === "orders"    && "הזמנות גלובליות"}
                 {activeTab === "pricing"   && "מחירונים גלובליים"}
+                {activeTab === "messages"  && "לוח הודעות"}
               </h1>
               <p className="text-[11px] text-muted-foreground font-semibold">
                 {activeTab === "users"     && `${filteredProfiles.filter(p => p.role !== "laundry").length} משתמשים רשומים`}
-                {activeTab === "laundries" && `${filteredProfiles.filter(p => p.role === "laundry").length} מכבסות רשומות`}
+                {activeTab === "laundries" && `${filteredLaundries.length} מכבסות רשומות`}
                 {activeTab === "orders"    && `${filteredOrders.length} הזמנות בסינון הנוכחי`}
                 {activeTab === "pricing"   && "עריכת מחירי שירותים גלובלית"}
+                {activeTab === "messages"  && "שלח הודעות מתוקשרות לקהל יעד"}
               </p>
             </div>
             {/* Chat shortcut + LIVE */}
@@ -1270,7 +1328,7 @@ function AdminDashboard() {
                   <div className="px-5 py-3.5 border-b border-purple-50 flex items-center gap-2">
                     <h2 className="text-sm font-black text-foreground">מכבסות רשומות</h2>
                     <span className="min-w-[22px] h-[22px] rounded-full bg-cyan-100 text-cyan-700 text-[10px] font-black flex items-center justify-center px-1.5">
-                      {filteredProfiles.filter(p => p.role === "laundry").length}
+                      {filteredLaundries.length}
                     </span>
                   </div>
 
@@ -1279,11 +1337,11 @@ function AdminDashboard() {
                       <div className="animate-spin rounded-full size-8 border-4 border-primary border-t-transparent" />
                       <span className="text-xs text-muted-foreground font-semibold">טוען מכבסות...</span>
                     </div>
-                  ) : filteredProfiles.filter(p => p.role === "laundry").length === 0 ? (
+                  ) : filteredLaundries.length === 0 ? (
                     <div className="p-12 text-center text-xs text-muted-foreground">לא נמצאו מכבסות התואמות את החיפוש.</div>
                   ) : (
                     <div className="divide-y divide-purple-50/60">
-                      {filteredProfiles.filter(p => p.role === "laundry").map(profile => (
+                      {filteredLaundries.map(profile => (
                         <div key={profile.id} className="px-5 py-4 flex items-center justify-between gap-3 hover:bg-purple-50/20 transition-colors">
                           <div className="flex items-center gap-3 min-w-0 flex-1">
                             <div className="size-11 shrink-0 rounded-xl bg-cyan-100 text-cyan-700 font-black text-lg flex items-center justify-center">
@@ -1321,9 +1379,16 @@ function AdminDashboard() {
                             </button>
                             <button
                               onClick={() => openEditModal(profile)}
-                              className="size-9 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 flex items-center justify-center transition active:scale-95"
+                              title="ערוך מכבסה" className="size-9 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 flex items-center justify-center transition active:scale-95"
                             >
                               <Edit2 className="size-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteProfile(profile.id, profile.email)}
+                              className="size-9 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20 flex items-center justify-center transition active:scale-95"
+                              title="מחק מכבסה"
+                            >
+                              <Trash2 className="size-4" />
                             </button>
                           </div>
                         </div>
@@ -1453,6 +1518,141 @@ function AdminDashboard() {
                     );
                   })()
                 )}
+              </div>
+            )}
+
+            {/* ════════ TAB: MESSAGES ═══════════════════════════════════ */}
+            {activeTab === "messages" && (
+              <div className="space-y-5 max-w-2xl mx-auto">
+                {/* Header card */}
+                <div className="dash-card p-5 space-y-1">
+                  <div className="flex items-center gap-3">
+                    <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                      <MessageSquareText className="size-5 text-primary" />
+                    </div>
+                    <div>
+                      <h2 className="text-sm font-black text-foreground">שליחת הודעה מתוקשרת</h2>
+                      <p className="text-[11px] text-muted-foreground">שלח התראות ישירות לנמענים נבחרים במערכת</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Message form */}
+                <div className="dash-card p-5 space-y-5">
+                  {/* Subject */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-foreground block">נושא ההודעה</label>
+                    <input
+                      value={msgSubject}
+                      onChange={e => setMsgSubject(e.target.value)}
+                      placeholder="הזן נושא ההודעה..."
+                      className="w-full h-11 px-4 rounded-xl border border-purple-200/60 bg-background text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary text-right"
+                      style={{ boxShadow: "var(--card-shadow)" }}
+                    />
+                  </div>
+
+                  {/* Content */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-foreground block">תוכן ההודעה</label>
+                    <textarea
+                      value={msgContent}
+                      onChange={e => setMsgContent(e.target.value)}
+                      placeholder="כתוב את תוכן ההודעה כאן..."
+                      rows={5}
+                      className="w-full px-4 py-3 rounded-xl border border-purple-200/60 bg-background text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary text-right resize-none"
+                      style={{ boxShadow: "var(--card-shadow)" }}
+                    />
+                  </div>
+
+                  {/* Audience selector */}
+                  <div className="space-y-3">
+                    <label className="text-xs font-bold text-foreground block">קהל יעד</label>
+                    <div className="space-y-2.5">
+                      {([
+                        { value: "all" as const,             label: "שליחה לכלל המשתמשים במערכת",            desc: `${profiles.length} משתמשים (לקוחות, מכבסות, מנהלים)`, icon: "👥" },
+                        { value: "laundries" as const,        label: "שליחה לכלל המכבסות בלבד",               desc: `${profiles.filter(p => p.role === "laundry").length} מכבסות רשומות`, icon: "🧺" },
+                        { value: "specific_laundry" as const, label: "שליחה לכל הלקוחות של מכבסה מסוימת",   desc: "בחר מכבסה ספציפית להגיע ללקוחותיה", icon: "🎯" },
+                      ] as const).map(opt => (
+                        <label
+                          key={opt.value}
+                          className={`flex items-start gap-3 p-3.5 rounded-2xl border-2 cursor-pointer transition-all ${
+                            msgAudience === opt.value
+                              ? "border-primary bg-primary/5 shadow-sm"
+                              : "border-muted-foreground/15 bg-background hover:border-primary/30"
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="msgAudience"
+                            value={opt.value}
+                            checked={msgAudience === opt.value}
+                            onChange={() => setMsgAudience(opt.value)}
+                            className="mt-0.5 accent-primary shrink-0"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span>{opt.icon}</span>
+                              <span className="text-xs font-extrabold text-foreground">{opt.label}</span>
+                            </div>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">{opt.desc}</p>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Specific laundry picker */}
+                  {msgAudience === "specific_laundry" && (
+                    <div className="space-y-2 animate-in slide-in-from-top-2 duration-200">
+                      <label className="text-xs font-bold text-foreground block">בחר מכבסה</label>
+                      <select
+                        value={msgTargetLaundryId}
+                        onChange={e => setMsgTargetLaundryId(e.target.value)}
+                        className="w-full h-11 px-3 rounded-xl border border-purple-200/60 bg-background text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary text-right"
+                        dir="rtl"
+                      >
+                        <option value="">-- בחר מכבסה --</option>
+                        {profiles.filter(p => p.role === "laundry").map(v => (
+                          <option key={v.id} value={v.id}>
+                            {v.businessName || v.fullName || v.email}
+                          </option>
+                        ))}
+                      </select>
+                      {msgTargetLaundryId && (
+                        <p className="text-[10px] text-muted-foreground">
+                          יישלח לכל לקוחות מכבסה זו שביצעו לפחות הזמנה אחת
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Send button */}
+                  <button
+                    onClick={handleSendMessage}
+                    disabled={isSendingMsg || !msgSubject.trim() || !msgContent.trim()}
+                    className="w-full h-12 rounded-2xl bg-primary text-primary-foreground font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:opacity-90"
+                  >
+                    {isSendingMsg ? (
+                      <><Loader2 className="size-4 animate-spin" /> שולח...</>
+                    ) : (
+                      <><MessageSquareText className="size-4" /> שלח הודעה</>
+                    )}
+                  </button>
+                </div>
+
+                {/* Info card */}
+                <div className="dash-card p-4 bg-amber-50/60 border border-amber-200/60">
+                  <div className="flex items-start gap-2.5 text-right">
+                    <span className="text-lg">💡</span>
+                    <div>
+                      <p className="text-xs font-bold text-amber-800">כיצד פועל מנגנון ההודעות?</p>
+                      <p className="text-[10px] text-amber-700 mt-1 leading-relaxed">
+                        ההודעות נשמרות כ-notifications בפיירסטור וניתן לראותן בתוך האפליקציה.
+                        בחר את קהל היעד המתאים, מלא נושא ותוכן, ולחץ שלח.
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
