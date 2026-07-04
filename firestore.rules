@@ -324,14 +324,27 @@ service cloud.firestore {
     // CollectionGroup query for `customers` — used by getCustomerLaundryIds.
     // Allows the calling user to read only their own customer documents
     // across all laundry sub-collections.
+    //
+    // LOW-SEVERITY FIX: on create via a CollectionGroup-style path we now
+    // also require `request.resource.data.uid == request.auth.uid` so a user
+    // can never seed a customer doc under someone else's identity (matches
+    // the per-laundry rule above; this closes the CG-write escape hatch).
+    //
+    // FILTER-BINDING NOTE: list() only succeeds when the client's query has
+    // the implicit `userId == auth.uid` binding — collectionGroup('customers')
+    // must be filtered by the caller's uid or Firestore denies the read.
     match /{path=**}/customers/{userId} {
-      allow get:  if isSignedIn() && request.auth.uid == userId;
-      allow list: if isSignedIn() && request.auth.uid == userId && paginatedRead();
+      allow get:    if isSignedIn() && request.auth.uid == userId;
+      allow list:   if isSignedIn() && request.auth.uid == userId && paginatedRead();
+      allow create: if isSignedIn()
+                    && request.auth.uid == userId
+                    && request.resource.data.uid == request.auth.uid;
     }
     // CollectionGroup query for `messages` — used by admin dashboard to count unread messages.
     match /{path=**}/messages/{messageId} {
       allow read: if isAdmin();
     }
+
 
 
     // ──────────────────────────────────────────────────────────────────────
