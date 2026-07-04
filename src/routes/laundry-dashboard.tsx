@@ -60,6 +60,8 @@ interface LaundryOrder {
   addons?: string[];
   deliveryTier?: string;
   laundryId?: string;
+  /** Phone number extracted from notes ("טלפון לתיאום: ...") */
+  userPhone?: string;
 }
 
 /* ─── status helpers ─────────────────────────────────────────────── */
@@ -128,7 +130,7 @@ function LaundryDashboard() {
   const [savingOrder, setSavingOrder]                 = useState<Record<string, boolean>>({});
   const [unreadChatCount, setUnreadChatCount]         = useState(0);
   const [expandedOrderId, setExpandedOrderId]         = useState<string | null>(null);
-  const [subFilter, setSubFilter]                     = useState<"all" | "treatment" | "ready">("all");
+  const [subFilter, setSubFilter]                     = useState<"all" | "treatment" | "ready" | "logistics">("all");
   const [viewMode, setViewMode]                       = useState<"orders" | "settings" | "analytics">("orders");
   const [selectedMonth, setSelectedMonth]             = useState(() => {
     const d = new Date();
@@ -260,6 +262,10 @@ function LaundryDashboard() {
             try { const parsed = JSON.parse(rawImages); parsedImages = Array.isArray(parsed) ? parsed : []; } catch { parsedImages = []; }
           }
           const createdAt = safeIso(o.created_at ?? o.createdAt);
+          const rawNotes = o.notes ?? "";
+          // Extract phone number appended by customer order flow: "טלפון לתיאום: 05X-XXXXXXX"
+          const phoneMatch = rawNotes.match(/טלפון לתיאום:\s*([\d\-\+\s]+)/);
+          const extractedPhone = phoneMatch ? phoneMatch[1].trim() : (o.userPhone ?? o.phone ?? "");
           const order: LaundryOrder = {
             id: docSnap.id,
             created_at: createdAt,
@@ -270,7 +276,7 @@ function LaundryDashboard() {
             price:      Number(o.price ?? o.amount_due ?? o.amountDue ?? 0) || 0,
             user_email: o.user_email ?? o.userEmail ?? "",
             userId:     o.user_id  ?? o.userId  ?? "",
-            notes:            o.notes ?? "",
+            notes:            rawNotes,
             deliveryNotes:    o.deliveryNotes ?? o.delivery_notes ?? "",
             images:           parsedImages,
             requires_ironing:     !!(o.requires_ironing || o.requiresIroning),
@@ -283,6 +289,7 @@ function LaundryDashboard() {
             deliveryTier:     o.deliveryTier || "standard",
             basePrice:        o.basePrice !== undefined ? Number(o.basePrice) : undefined,
             laundryId:        o.laundryId || "",
+            userPhone:        extractedPhone,
           };
           // Exclude placeholders
           if (order.delivery_method === "placeholder" || order.id.startsWith("placeholder")) return;
@@ -633,10 +640,38 @@ const toggleDeliveryAvailability = async (type: "fast" | "express", checked: boo
     ? historicalOrders
     : orders.filter((o) => {
         if (o.status === "delivered") return false;
+        if (subFilter === "logistics") return false; // logistics has its own view
         if (subFilter === "treatment") return ["accepted","pending","collected"].includes(o.status);
         if (subFilter === "ready")     return o.status === "ready";
         return true;
       });
+
+  /* ── logistics view: sorted delivery orders ─────────────────────── */
+  const getDeliveryPriority = (o: LaundryOrder): number => {
+    const tier = (o.deliveryTier || "").toLowerCase();
+    const addons = o.addons || [];
+    const isExpress =
+      tier === "super_express" || tier === "same_day" || tier.includes("super") ||
+      tier.includes("same") || tier.includes("מהיום") || tier.includes("מהירה") ||
+      addons.includes("express_wash") || tier === "express" || tier.includes("express");
+    if (isExpress) return 1; // Priority 1: express (any tier), any status
+    if (o.status === "ready") return 2; // Priority 2: ready regular
+    return 3; // Priority 3: in-progress regular
+  };
+
+  const logisticsOrders = orders
+    .filter((o) =>
+      o.delivery_method === "home_delivery" &&
+      o.status !== "cancelled" &&
+      o.status !== "delivered"
+    )
+    .sort((a, b) => {
+      const pa = getDeliveryPriority(a);
+      const pb = getDeliveryPriority(b);
+      if (pa !== pb) return pa - pb;
+      // Within same priority, sort by earliest creation date (most urgent first)
+      try { return new Date(a.created_at).getTime() - new Date(b.created_at).getTime(); } catch { return 0; }
+    });
 
   const onboardingLinkBlock = (
     <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm mb-4">
@@ -764,7 +799,7 @@ const toggleDeliveryAvailability = async (type: "fast" | "express", checked: boo
             </div>
             <div className="min-w-0">
               <p className="text-white font-black text-sm leading-tight truncate">
-                {user?.displayName || user?.email?.split("@")[0] || "מכבסה"}
+                {user?.name || user?.email?.split("@")[0] || "מכבסה"}
               </p>
               <p className="text-[10px] font-semibold truncate" style={{ color: "var(--sidebar-muted)" }}>
                 {user?.email}
@@ -1218,6 +1253,7 @@ const toggleDeliveryAvailability = async (type: "fast" | "express", checked: boo
                         { key: "all",       label: "הכל" },
                         { key: "treatment", label: "בטיפול" },
                         { key: "ready",     label: "מוכן" },
+                        { key: "logistics", label: "📦 רשימת כתובות להפצה" },
                       ].map((tab) => (
                         <button
                           key={tab.key}
@@ -1235,8 +1271,175 @@ const toggleDeliveryAvailability = async (type: "fast" | "express", checked: boo
                   )}
                 </div>
 
+                {/* ── Logistics Address View ────────────────────────── */}
+                {subFilter === "logistics" && activeTab === "active" && (
+                  isLoading ? (
+                    <div className="py-16 flex flex-col items-center gap-3">
+                      <div className="animate-spin rounded-full size-8 border-4 border-primary border-t-transparent" />
+                      <span className="text-xs text-muted-foreground font-semibold">טוען הזמנות משלוח...</span>
+                    </div>
+                  ) : logisticsOrders.length === 0 ? (
+                    <div className="dash-card p-12 text-center">
+                      <p className="text-3xl mb-3">📦</p>
+                      <p className="text-sm font-bold text-muted-foreground">אין הזמנות משלוח פעילות כרגע.</p>
+                      <p className="text-xs text-muted-foreground mt-1">הזמנות ביטול ואיסוף עצמי לא מופיעות כאן.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 pb-6">
+                      {/* Legend */}
+                      <div className="flex flex-wrap gap-2 text-[10px] font-bold text-muted-foreground">
+                        <span className="flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full bg-red-500 animate-pulse" /> אקספרס מהיום להיום</span>
+                        <span className="flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full bg-lime-500" /> מוכן למשלוח רגיל</span>
+                        <span className="flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full bg-slate-400" /> בטיפול - משלוח רגיל</span>
+                      </div>
+                      {logisticsOrders.map((order, idx) => {
+                        const tier = (order.deliveryTier || "").toLowerCase();
+                        const isExpress =
+                          tier === "super_express" || tier === "same_day" || tier.includes("super") ||
+                          tier.includes("same") || tier.includes("מהיום") || tier.includes("מהירה") ||
+                          (order.addons || []).includes("express_wash") || tier === "express" || tier.includes("express");
+                        const priority = getDeliveryPriority(order);
+
+                        const badgeStyle = isExpress
+                          ? "bg-red-50 text-red-700 border-red-300 animate-pulse"
+                          : priority === 2
+                          ? "bg-lime/20 text-lime-foreground border-lime/40"
+                          : "bg-slate-100 text-slate-600 border-slate-200";
+                        const badgeLabel = isExpress
+                          ? "⚡ אקספרס מהיום להיום"
+                          : priority === 2
+                          ? "✅ מוכן למשלוח"
+                          : "🔄 בטיפול - משלוח רגיל";
+                        const cardBorder = isExpress
+                          ? "border-red-200 shadow-red-50"
+                          : priority === 2
+                          ? "border-lime/40"
+                          : "border-purple-100/60";
+
+                        // Extract address: first part of notes before ||LAUNDRY_MSG||
+                        const [custNotesRaw] = (order.notes || "").split(" ||LAUNDRY_MSG|| ");
+                        // Address is the first paragraph (before user notes separated by newlines)
+                        const addressLine = (custNotesRaw || "").split("\n")[0]?.replace(/טלפון לתיאום:.*/g, "").trim();
+                        const encodedAddress = encodeURIComponent(addressLine || order.user_email);
+                        const wazeUrl = `https://waze.com/ul?q=${encodedAddress}&navigate=yes`;
+                        const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`;
+
+                        const displayPrice = order.price !== undefined ? order.price : order.amount_due;
+
+                        return (
+                          <div
+                            key={order.id}
+                            className={`bg-white rounded-2xl border-2 ${cardBorder} overflow-hidden transition-all duration-200 hover:shadow-md`}
+                            style={{ boxShadow: isExpress ? "0 4px 16px rgba(239,68,68,0.12)" : "var(--card-shadow)" }}
+                          >
+                            {/* Priority stripe at top */}
+                            <div className={`h-1 w-full ${
+                              isExpress ? "bg-red-500" : priority === 2 ? "bg-lime-500" : "bg-slate-300"
+                            }`} />
+
+                            <div className="p-4 space-y-3">
+                              {/* Header row: priority badge + order ref + position */}
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border ${badgeStyle} whitespace-nowrap`}>
+                                    {badgeLabel}
+                                  </span>
+                                  <span className="font-mono text-[10px] text-muted-foreground bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-100">
+                                    #{order.id.slice(0, 8)}
+                                  </span>
+                                </div>
+                                <span className="text-[10px] font-black text-muted-foreground bg-slate-50 border border-slate-100 rounded-full px-2 py-0.5">
+                                  #{idx + 1}
+                                </span>
+                              </div>
+
+                              {/* Address — large & prominent */}
+                              <div>
+                                <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-0.5">📍 כתובת למסירה</p>
+                                {addressLine ? (
+                                  <p className="text-base font-black text-foreground leading-snug">{addressLine}</p>
+                                ) : (
+                                  <p className="text-sm font-semibold text-muted-foreground italic">כתובת לא צוינה</p>
+                                )}
+                              </div>
+
+                              {/* Customer details */}
+                              <div className="flex flex-wrap gap-3">
+                                <div>
+                                  <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-0.5">👤 לקוח</p>
+                                  <p className="text-xs font-bold text-foreground">{order.user_email}</p>
+                                </div>
+                                {order.userPhone && (
+                                  <div>
+                                    <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-0.5">📞 טלפון</p>
+                                    <a
+                                      href={`tel:${order.userPhone.replace(/\s/g, "")}`}
+                                      className="text-xs font-black text-primary hover:underline"
+                                    >
+                                      {order.userPhone}
+                                    </a>
+                                  </div>
+                                )}
+                                <div>
+                                  <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-0.5">💰 סכום</p>
+                                  <p className="text-xs font-black text-foreground">
+                                    {displayPrice && displayPrice > 0 ? `₪${displayPrice}` : "טרם נקבע"}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-0.5">📅 הוזמן</p>
+                                  <p className="text-xs font-semibold text-muted-foreground">
+                                    {new Date(order.created_at).toLocaleString("he-IL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Quick action buttons */}
+                              <div className="flex flex-wrap gap-2 pt-1 border-t border-purple-50">
+                                {/* Waze */}
+                                <a
+                                  href={wazeUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-black bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 transition active:scale-95 shrink-0"
+                                >
+                                  <span>🚗</span> Waze
+                                </a>
+                                {/* Google Maps */}
+                                <a
+                                  href={mapsUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition active:scale-95 shrink-0"
+                                >
+                                  <span>🗺️</span> Google Maps
+                                </a>
+                                {/* Delivered to courier */}
+                                <button
+                                  onClick={async () => {
+                                    await updateOrderStatus(order.id, "delivered");
+                                    if (order.user_email) {
+                                      await sendPushEvent(order.user_email, order.userId || "", "laundry-delivered", {
+                                        customTitle: "הכביסה נמסרה בהצלחה 🎉",
+                                        customBody: "הכביסה שלך נמסרה בהצלחה",
+                                      });
+                                    }
+                                  }}
+                                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-black bg-primary text-primary-foreground hover:bg-primary/90 transition active:scale-95 shrink-0 mr-auto"
+                                >
+                                  <span>✅</span> נמסר לשליח
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )
+                )}
+
                 {/* ── Order cards ───────────────────────────────────── */}
-                {isLoading ? (
+                {subFilter !== "logistics" && (isLoading ? (
                   <div className="py-16 flex flex-col items-center gap-3">
                     <div className="animate-spin rounded-full size-8 border-4 border-primary border-t-transparent" />
                     <span className="text-xs text-muted-foreground font-semibold">טוען הזמנות כביסה...</span>
@@ -1669,7 +1872,7 @@ const toggleDeliveryAvailability = async (type: "fast" | "express", checked: boo
                       );
                     })}
                   </div>
-                )}
+                ))}
 
                 {/* Load More — history tab */}
                 {activeTab === "delivered" && hasMoreHistorical && (
