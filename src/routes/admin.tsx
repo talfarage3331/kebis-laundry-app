@@ -10,6 +10,8 @@ import {
   collection,
   collectionGroup,
   doc,
+  getDoc,
+  setDoc,
   getDocs,
   updateDoc,
   deleteDoc,
@@ -636,15 +638,19 @@ function AdminDashboard() {
     }
     setIsSendingMsg(true);
     try {
-      let targetUserIds: string[] = [];
+      let targets: { id: string; email: string }[] = [];
 
       if (msgAudience === "all") {
         const snapshot = await getDocs(collection(db, "users"));
-        targetUserIds = snapshot.docs.map(doc => doc.id);
+        targets = snapshot.docs
+          .map(doc => ({ id: doc.id, email: doc.data().email }))
+          .filter(t => t.email);
       } else if (msgAudience === "laundries") {
         const q = query(collection(db, "users"), where("role", "==", "laundry"));
         const snapshot = await getDocs(q);
-        targetUserIds = snapshot.docs.map(doc => doc.id);
+        targets = snapshot.docs
+          .map(doc => ({ id: doc.id, email: doc.data().email }))
+          .filter(t => t.email);
       } else if (msgAudience === "specific_laundry") {
         // Send to all customers who have orders with this laundry
         const q = query(collection(db, "orders"), where("laundryId", "==", msgTargetLaundryId));
@@ -652,52 +658,87 @@ function AdminDashboard() {
         const customerIds = new Set(
           snapshot.docs.map(doc => doc.data().userId).filter(Boolean)
         );
-        targetUserIds = Array.from(customerIds) as string[];
+        
+        // Fetch profile details for these user IDs to resolve their emails
+        const userPromises = Array.from(customerIds).map(async (uid) => {
+          const userSnap = await getDoc(doc(db, "users", uid as string));
+          if (userSnap.exists()) {
+            return { id: uid as string, email: userSnap.data().email };
+          }
+          return null;
+        });
+        const resolvedUsers = await Promise.all(userPromises);
+        targets = resolvedUsers.filter((u): u is { id: string; email: string } => u !== null && !!u.email);
       }
 
-      if (targetUserIds.length === 0) {
+      if (targets.length === 0) {
         toast.error("לא נמצאו נמענים לשליחה");
         setIsSendingMsg(false);
         return;
       }
 
-      // Save notification documents to Firestore
-      const batch = targetUserIds.map(userId =>
-        addDoc(collection(db, "notifications"), {
+      const senderEmail = user?.email || "admin@kebisa.co.il";
+
+      // Process each target recipient
+      const sendPromises = targets.map(async ({ id: userId, email }) => {
+        // 1. Ensure parent chat document exists
+        const chatDocRef = doc(db, "chats", email);
+        const chatDocSnap = await getDoc(chatDocRef);
+        if (!chatDocSnap.exists()) {
+          await setDoc(chatDocRef, {
+            customer_email: email,
+            updated_at: new Date().toISOString(),
+          });
+        } else {
+          await updateDoc(chatDocRef, {
+            updated_at: new Date().toISOString(),
+          });
+        }
+
+        // 2. Add message to the chat's messages subcollection
+        await addDoc(collection(db, "chats", email, "messages"), {
+          sender_email: senderEmail,
+          content: `📢 **${msgSubject}**\n\n${msgContent}`,
+          is_read: false,
+          created_at: new Date().toISOString(),
+        });
+
+        // 3. Save notification document to Firestore notifications collection
+        await addDoc(collection(db, "notifications"), {
           userId,
           title: msgSubject,
           body: msgContent,
           createdAt: new Date().toISOString(),
           read: false,
           type: "admin_broadcast",
-        })
-      );
-      await Promise.all(batch);
+        });
 
-      // Trigger push notifications in parallel
-      const pushPromises = targetUserIds.map(userId =>
-        authFetch("/api/push/notify", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId,
-            event: "admin-broadcast",
-            customTitle: msgSubject,
-            customBody: msgContent,
-            url: "/",
-          }),
-        })
-          .then(async (res) => {
-            const data = await res.json().catch(() => null);
-            if (!res.ok) {
-              console.warn(`[push-broadcast] Failed to notify ${userId}: ${data?.error || res.status}`);
-            }
-          })
-          .catch((err) => console.error(`[push-broadcast] Error notifying ${userId}:`, err))
-      );
-      await Promise.all(pushPromises);
+        // 4. Trigger push notification via chat-to-customer event
+        try {
+          const res = await authFetch("/api/push/notify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId,
+              userEmail: email,
+              event: "chat-to-customer",
+              customTitle: msgSubject,
+              customBody: msgContent,
+              url: "/chat",
+            }),
+          });
+          const data = await res.json().catch(() => null);
+          if (!res.ok) {
+            console.warn(`[push-broadcast] Failed to notify ${email}: ${data?.error || res.status}`);
+          }
+        } catch (err) {
+          console.error(`[push-broadcast] Error notifying ${email}:`, err);
+        }
+      });
 
-      toast.success(`ההודעה נשלחה בהצלחה ל-${targetUserIds.length} נמענים!`);
+      await Promise.all(sendPromises);
+
+      toast.success(`ההודעה נשלחה בהצלחה ל-${targets.length} נמענים!`);
       setMsgSubject("");
       setMsgContent("");
       setMsgAudience("all");
