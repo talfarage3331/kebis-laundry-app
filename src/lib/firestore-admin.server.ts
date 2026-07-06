@@ -356,3 +356,104 @@ export async function createOrderAdmin(orderData: any): Promise<string> {
   throw new Error("Failed to create order document via REST");
 }
 
+// ─── Admin: reassign customer to a laundry ─────────────────────────
+/**
+ * CollectionGroup lookup — returns the set of laundryIds whose
+ * `customers/{uid}` subdoc exists for this user.
+ */
+export async function findCustomerLaundryIds(uid: string): Promise<string[]> {
+  try {
+    const body = {
+      structuredQuery: {
+        from: [{ collectionId: "customers", allDescendants: true }],
+        where: {
+          fieldFilter: {
+            field: { fieldPath: "uid" },
+            op: "EQUAL",
+            value: { stringValue: uid },
+          },
+        },
+        limit: 200,
+      },
+    };
+    const rows = (await fsRequest(":runQuery", body)) as any[];
+    return (Array.isArray(rows) ? rows : [])
+      .map((r) => r?.document?.name as string | undefined)
+      .filter(Boolean)
+      .map((name) => {
+        const parts = (name as string).split("/");
+        const idx = parts.indexOf("laundries");
+        return idx >= 0 ? parts[idx + 1] : null;
+      })
+      .filter(Boolean) as string[];
+  } catch (err) {
+    console.error("[firestore-admin] findCustomerLaundryIds failed:", err);
+    return [];
+  }
+}
+
+/**
+ * Idempotent upsert of `laundries/{laundryId}/customers/{uid}`. Uses an
+ * updateMask so unrelated fields (savedOrder, etc.) are not clobbered.
+ */
+export async function setCustomerProfile(
+  laundryId: string,
+  uid: string,
+  data: { email: string; fullName: string; activeTenantSlug: string },
+): Promise<void> {
+  const name = `${docsRoot()}/laundries/${laundryId}/customers/${uid}`;
+  await fsRequest(":commit", {
+    writes: [
+      {
+        update: {
+          name,
+          fields: {
+            uid: { stringValue: uid },
+            email: { stringValue: data.email },
+            fullName: { stringValue: data.fullName },
+            activeTenantSlug: { stringValue: data.activeTenantSlug },
+          },
+        },
+        updateMask: {
+          fieldPaths: ["uid", "email", "fullName", "activeTenantSlug"],
+        },
+        updateTransforms: [
+          { fieldPath: "joinedAt", setToServerValue: "REQUEST_TIME" },
+        ],
+      },
+    ],
+  });
+}
+
+/** Hard-delete `laundries/{laundryId}/customers/{uid}`. */
+export async function deleteCustomerProfile(
+  laundryId: string,
+  uid: string,
+): Promise<void> {
+  const name = `${docsRoot()}/laundries/${laundryId}/customers/${uid}`;
+  await fsRequest(":commit", { writes: [{ delete: name }] });
+}
+
+/**
+ * Update ONLY `users/{uid}.associatedLaundryId` via an updateMask so no
+ * other profile fields are affected.
+ */
+export async function updateUserAssociatedLaundry(
+  uid: string,
+  laundryId: string,
+): Promise<void> {
+  const name = `${docsRoot()}/users/${uid}`;
+  await fsRequest(":commit", {
+    writes: [
+      {
+        update: {
+          name,
+          fields: { associatedLaundryId: { stringValue: laundryId } },
+        },
+        updateMask: { fieldPaths: ["associatedLaundryId"] },
+      },
+    ],
+  });
+}
+
+
