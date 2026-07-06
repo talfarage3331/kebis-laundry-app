@@ -481,7 +481,59 @@ function AdminDashboard() {
     setEditEmail(profile.email || "");
     setEditRole(profile.role || "customer");
     setEditStatus(profile.status || "approved");
+    setEditAssignedLaundryId(profile.associatedLaundryId || "");
   };
+
+  // Admin: reassign a customer to a different laundry vendor.
+  // All work happens server-side (admin API) — the endpoint deletes any
+  // pre-existing per-tenant customer profile, upserts the new one, and
+  // patches `users/{uid}.associatedLaundryId` so downstream queries reflect
+  // the change immediately.
+  const handleReassignLaundry = async () => {
+    if (!editingProfile) return;
+    const targetLaundryId = editAssignedLaundryId.trim();
+    if (!targetLaundryId) {
+      toast.error("נא לבחור מכבסה");
+      return;
+    }
+    if (targetLaundryId === (editingProfile.associatedLaundryId || "")) {
+      toast.info("המכבסה שנבחרה זהה למכבסה הנוכחית");
+      return;
+    }
+    setIsReassigningLaundry(true);
+    try {
+      const res = await authFetch("/api/admin/reassign-customer-laundry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerUid: editingProfile.id,
+          newLaundryId: targetLaundryId,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error || `שגיאה (${res.status})`);
+      }
+      setProfiles((prev) =>
+        prev.map((p) =>
+          p.id === editingProfile.id
+            ? { ...p, associatedLaundryId: targetLaundryId }
+            : p,
+        ),
+      );
+      setEditingProfile({
+        ...editingProfile,
+        associatedLaundryId: targetLaundryId,
+      });
+      toast.success("שיוך המכבסה עודכן בהצלחה");
+    } catch (err: any) {
+      console.error("[admin] reassign laundry failed:", err);
+      toast.error("שגיאה בעדכון שיוך המכבסה: " + (err?.message || "unknown"));
+    } finally {
+      setIsReassigningLaundry(false);
+    }
+  };
+
 
   const openLaundrySettingsModal = (profile: Profile) => {
     setSelectedLaundry(profile);
