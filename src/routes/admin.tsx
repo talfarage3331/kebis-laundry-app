@@ -157,6 +157,8 @@ function AdminDashboard() {
   const [editEmail, setEditEmail] = useState("");
   const [editRole, setEditRole] = useState<"admin" | "laundry" | "customer">("customer");
   const [editStatus, setEditStatus] = useState<"pending_setup" | "pending_approval" | "approved" | "suspended">("approved");
+  const [editAssignedLaundryId, setEditAssignedLaundryId] = useState<string>("");
+  const [isReassigningLaundry, setIsReassigningLaundry] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
 
