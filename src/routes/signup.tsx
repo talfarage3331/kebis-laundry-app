@@ -481,7 +481,7 @@ function Signup() {
         localStorage.removeItem("pendingLaundrySlug");
         localStorage.removeItem("pendingLaundryId");
       }
-      navigate({ to: assignedRole === "admin" ? "/admin" : "/" });
+      navigate({ to: (assignedRole as string) === "admin" ? "/admin" : "/" });
     } catch (error: unknown) {
       const code = (error as { code?: string }).code ?? "";
 
