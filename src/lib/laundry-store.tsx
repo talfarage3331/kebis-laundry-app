@@ -44,7 +44,7 @@ export interface User {
   role?: "admin" | "laundry" | "customer";
   status?: "pending_setup" | "pending_approval" | "approved" | "suspended";
   onboardingCompleted?: boolean;
-  associatedLaundryId?: string;
+  assignedLaundryId?: string;
   fastDeliveryEnabled?: boolean;
   expressDeliveryEnabled?: boolean;
   /** URL slug for the laundry's public shop page (e.g. used in /shop/:slug) */
@@ -247,6 +247,53 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
     setActiveTenantSlug(null);
   }, []);
 
+  // Synchronise activeTenantId, activeTenantName, and activeTenantSlug with Firestore user.assignedLaundryId
+  useEffect(() => {
+    if (user && user.role === "customer" && user.assignedLaundryId) {
+      const fetchAndSyncAssignedLaundry = async () => {
+        try {
+          const { doc, getDoc } = await import("firebase/firestore");
+          // 1. Fetch laundry details from canonical laundries collection
+          const laundryDoc = await getDoc(doc(db, "laundries", user.assignedLaundryId));
+          let businessName = "";
+          let shopSlug = "";
+          if (laundryDoc.exists()) {
+            businessName = laundryDoc.data().businessName || laundryDoc.data().name || "";
+            shopSlug = laundryDoc.data().shopSlug || laundryDoc.data().slug || "";
+          }
+
+          // 2. Fallback to users collection if not found in laundries
+          if (!businessName) {
+            const userDoc = await getDoc(doc(db, "users", user.assignedLaundryId));
+            if (userDoc.exists()) {
+              businessName = userDoc.data().businessName || userDoc.data().fullName || "";
+              shopSlug = userDoc.data().shopSlug || userDoc.data().slug || "";
+            }
+          }
+
+          if (businessName) {
+            // Update localStorage
+            localStorage.setItem("activeLaundryId", user.assignedLaundryId);
+            localStorage.setItem("activeLaundryName", businessName);
+            localStorage.setItem("activeLaundrySlug", shopSlug);
+            localStorage.setItem("last_visited_laundry_slug", shopSlug);
+
+            // Update state
+            setActiveTenantId(user.assignedLaundryId);
+            setActiveTenantName(businessName);
+            setActiveTenantSlug(shopSlug);
+          }
+        } catch (err) {
+          console.error("Error syncing assigned laundry details:", err);
+        }
+      };
+      fetchAndSyncAssignedLaundry();
+    } else if (user && user.role === "customer" && !user.assignedLaundryId) {
+      // If customer has no assignment, clear any active tenant info to avoid stale data
+      clearActiveTenant();
+    }
+  }, [user?.assignedLaundryId, user?.role, clearActiveTenant]);
+
 
   // Auth listener — real-time role sync using onSnapshot with robust error callbacks and defaulting
   useEffect(() => {
@@ -277,7 +324,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
             let userRole: "admin" | "laundry" | "customer" = "customer";
             let dbName = defaultName;
 
-            let associatedLaundryId: string | undefined = undefined;
+            let assignedLaundryId: string | undefined = undefined;
             let userStatus: "pending_setup" | "pending_approval" | "approved" | "suspended" | undefined = undefined;
             let onboardingCompleted: boolean | undefined = undefined;
             let fastDeliveryEnabled: boolean = true;
@@ -288,7 +335,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
               const data = userDocSnap.data();
               dbName = data.fullName || data.name || dbName;
               userRole = data.role || userRole;
-              associatedLaundryId = data.associatedLaundryId;
+              assignedLaundryId = data.assignedLaundryId || data.associatedLaundryId || undefined;
               userStatus = data.status;
               onboardingCompleted = data.onboardingCompleted;
               fastDeliveryEnabled = data.fastDeliveryEnabled ?? true;
@@ -347,7 +394,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
               role: userRole,
               status: userStatus,
               onboardingCompleted: onboardingCompleted,
-              associatedLaundryId: associatedLaundryId,
+              assignedLaundryId: assignedLaundryId,
               fastDeliveryEnabled,
               expressDeliveryEnabled,
               shopSlug,
@@ -531,8 +578,12 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       customerLat?: number,
       customerLng?: number,
     ): Promise<string | null> => {
-      // Auto-resolve tenant from context if caller didn't supply one
-      const resolvedLaundryId = laundryId || activeTenantId || "";
+      // Resolve the target laundry. Priority (highest → lowest):
+      //   1. Explicit caller-supplied laundryId (e.g. shop page)
+      //   2. user.assignedLaundryId — sourced from Firestore via onSnapshot,
+      //      always up-to-date after an admin reassignment
+      //   3. activeTenantId — localStorage-backed fallback (may be stale)
+      const resolvedLaundryId = laundryId || user.assignedLaundryId || activeTenantId || "";
       if (!user) return null;
       const newState: OrderState = "pending";
       const amount = 0;

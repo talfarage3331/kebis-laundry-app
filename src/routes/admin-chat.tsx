@@ -92,25 +92,23 @@ function AdminChat() {
     try {
       const vendorId = user.uid;
 
-      // ── Dual-path customer resolution ────────────────────────────────────────
-      // Path A (new): laundries/{vendorId}/customers sub-collection
-      // Path B (legacy): users where associatedLaundryId == vendorId
+      // Path B (legacy): users where assignedLaundryId == vendorId
       // Both are merged and de-duplicated by email.
 
       // Path A: multi-tenant sub-collection
       const newProfiles = await getVendorCustomers(vendorId);
 
-      // Path B: legacy users with associatedLaundryId
+      // Path B: legacy users with assignedLaundryId
       const legacySnap = await getDocs(
         query(
           collection(db, "users"),
-          where("associatedLaundryId", "==", vendorId),
+          where("assignedLaundryId", "==", vendorId),
         ),
       );
       const legacyProfiles = legacySnap.docs
         .map((d) => ({
           id: d.id,
-          ...(d.data() as { fullName: string; email: string; role: string; associatedLaundryId?: string }),
+          ...(d.data() as { fullName: string; email: string; role: string; assignedLaundryId?: string }),
         }))
         .filter((p) => p.role !== "laundry" && p.email.toLowerCase() !== user?.email.toLowerCase());
 

@@ -451,7 +451,7 @@ function Signup() {
         await setDoc(newUserRef, {
           fullName: name,
           email: email,
-          associatedLaundryId: vendor.vendorId,
+          assignedLaundryId: vendor.vendorId,
           updatedAt: serverTimestamp(),
         }, { merge: true });
       } else {
@@ -460,7 +460,7 @@ function Signup() {
           fullName:             name,
           email:                email,
           role:                 assignedRole,
-          associatedLaundryId:  vendor.vendorId,
+          assignedLaundryId:    vendor.vendorId,
           createdAt:            serverTimestamp(),
         } as Record<string, unknown>);
       }
@@ -591,7 +591,7 @@ function Signup() {
         fullName:             displayName,
         email:                fbUser.email || "",
         role:                 "customer",
-        associatedLaundryId:  vendor.vendorId,
+        assignedLaundryId:    vendor.vendorId,
         createdAt:            serverTimestamp(),
       });
 

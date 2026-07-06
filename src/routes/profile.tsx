@@ -206,6 +206,41 @@ function Profile() {
   const [orders, setOrders] = useState<any[]>([]);
   const [fetchingOrders, setFetchingOrders] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
+
+  const [assignedLaundryName, setAssignedLaundryName] = useState<string | null>(null);
+  const [loadingLaundry, setLoadingLaundry] = useState(false);
+
+  useEffect(() => {
+    if (user?.assignedLaundryId) {
+      setLoadingLaundry(true);
+      const getLaundryName = async () => {
+        try {
+          const { doc, getDoc } = await import("firebase/firestore");
+          // Fetch from the canonical laundries collection
+          const laundryDoc = await getDoc(doc(db, "laundries", user.assignedLaundryId));
+          if (laundryDoc.exists()) {
+            setAssignedLaundryName(laundryDoc.data().businessName || laundryDoc.data().name || null);
+          } else {
+            // Fallback to users collection
+            const userDoc = await getDoc(doc(db, "users", user.assignedLaundryId));
+            if (userDoc.exists()) {
+              setAssignedLaundryName(userDoc.data().businessName || userDoc.data().fullName || null);
+            } else {
+              setAssignedLaundryName(null);
+            }
+          }
+        } catch (err) {
+          console.error("Error fetching assigned laundry details:", err);
+          setAssignedLaundryName(null);
+        } finally {
+          setLoadingLaundry(false);
+        }
+      };
+      getLaundryName();
+    } else {
+      setAssignedLaundryName(null);
+    }
+  }, [user?.assignedLaundryId]);
   // Pagination for user order history
   const [lastVisibleDoc, setLastVisibleDoc] = useState<DocumentSnapshot | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -294,6 +329,31 @@ function Profile() {
             </p>
           </div>
         </div>
+
+        {/* Assigned Laundry Card */}
+        {role === "customer" && (
+          <div className="rounded-3xl border border-muted-foreground/10 bg-background/50 p-4 sm:p-6 space-y-2 text-right">
+            <h3 className="text-xs font-bold text-muted-foreground">מכבסה משויכת</h3>
+            {loadingLaundry ? (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="size-3.5 animate-spin text-primary" />
+                <span>טוען פרטי מכבסה...</span>
+              </div>
+            ) : assignedLaundryName ? (
+              <div className="flex items-center gap-3">
+                <div className="size-10 rounded-2xl bg-cyan-50 text-cyan-600 flex items-center justify-center text-lg font-bold shadow-sm">
+                  🧺
+                </div>
+                <div>
+                  <p className="font-extrabold text-sm text-foreground">{assignedLaundryName}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">כל ההזמנות העתידיות יישלחו למכבסה זו</p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground font-semibold">לא שויכה מכבסה לחשבון זה. פנה למנהל המערכת לשיוך.</p>
+            )}
+          </div>
+        )}
 
         {/* Logout Button */}
         <button

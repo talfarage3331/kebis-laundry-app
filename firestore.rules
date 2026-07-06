@@ -111,7 +111,7 @@ service cloud.firestore {
       // List with pagination: admin-only, laundry vendor searching their own customers, or public list of laundry vendors.
       allow list:   if (isAdmin() && paginatedRead())
                     || (paginatedRead() && resource.data.get('role', '') == 'laundry')
-                    || (isSignedIn() && isLaundry() && paginatedRead() && resource.data.get('associatedLaundryId', '') == request.auth.uid);
+                    || (isSignedIn() && isLaundry() && paginatedRead() && resource.data.get('assignedLaundryId', '') == request.auth.uid);
 
       // A user can only create their own document, and the payload's uid must
       // match so they can't spoof another user's document.
@@ -123,7 +123,7 @@ service cloud.firestore {
                     && (isAdmin() || (
                          !('role' in request.resource.data)
                          && !('roles' in request.resource.data)
-                         && !('associatedLaundryId' in request.resource.data)
+                         && !('assignedLaundryId' in request.resource.data)
                        ));
 
       // A user can update their own document, BUT they may not touch the
@@ -141,7 +141,7 @@ service cloud.firestore {
           // returns the set of top-level fields that differ between the current
           // doc and the incoming payload — if any of them are privileged, deny.
           && !request.resource.data.diff(resource.data).affectedKeys()
-               .hasAny(['role', 'roles', 'associatedLaundryId'])
+               .hasAny(['role', 'roles', 'assignedLaundryId'])
         )
       );
 

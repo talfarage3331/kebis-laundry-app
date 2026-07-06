@@ -76,7 +76,7 @@ function Chat() {
             customer_email: user.email,
             updated_at: new Date().toISOString(),
             // Stamp with vendor ID so laundry sidebar can filter by tenant
-            ...(user.associatedLaundryId ? { laundryId: user.associatedLaundryId } : {}),
+            ...(user.assignedLaundryId ? { laundryId: user.assignedLaundryId } : {}),
           });
         }
 

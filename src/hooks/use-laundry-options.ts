@@ -39,8 +39,8 @@ export function useLaundryOptions(laundryId?: string | null) {
     if (!effectiveLaundryId && user) {
       if (role === "laundry") {
         effectiveLaundryId = user.uid;
-      } else if (role === "customer" && user.associatedLaundryId) {
-        effectiveLaundryId = user.associatedLaundryId;
+      } else if (role === "customer" && user.assignedLaundryId) {
+        effectiveLaundryId = user.assignedLaundryId;
       }
     }
 

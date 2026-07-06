@@ -134,9 +134,9 @@ async function discoverAndSetTenant(
     console.warn("[login] Error querying customer tenant memberships:", err);
   }
 
-  // 3. Fallback to legacy associatedLaundryId
-  if (!resolvedLaundryId && userData?.associatedLaundryId) {
-    resolvedLaundryId = userData.associatedLaundryId;
+  // 3. Fallback to legacy assignedLaundryId
+  if (!resolvedLaundryId && userData?.assignedLaundryId) {
+    resolvedLaundryId = userData.assignedLaundryId;
   }
 
   if (resolvedLaundryId) {
@@ -276,7 +276,7 @@ function Login() {
           fullName:            displayName,
           email:               fbUser.email || "",
           role:                "customer",
-          associatedLaundryId: vendor.vendorId, // legacy compat
+          assignedLaundryId:   vendor.vendorId, // legacy compat
           createdAt:           serverTimestamp(),
         });
         await ensureCustomerProfile(fbUser.uid, vendor.vendorId, {
