@@ -74,7 +74,7 @@ interface Profile {
   status?: "pending_setup" | "pending_approval" | "approved" | "suspended";
   businessName?: string;
   shopSlug?: string;
-  associatedLaundryId?: string;
+  assignedLaundryId?: string;
 }
 
 interface LaundryOrder {
@@ -259,7 +259,7 @@ function AdminDashboard() {
         status: docSnap.data().status,
         businessName: docSnap.data().businessName || "",
         shopSlug: docSnap.data().shopSlug || docSnap.data().slug || "",
-        associatedLaundryId: docSnap.data().associatedLaundryId || "",
+        assignedLaundryId: docSnap.data().assignedLaundryId || docSnap.data().associatedLaundryId || "",
       }));
 
       if (reset) {
@@ -481,13 +481,13 @@ function AdminDashboard() {
     setEditEmail(profile.email || "");
     setEditRole(profile.role || "customer");
     setEditStatus(profile.status || "approved");
-    setEditAssignedLaundryId(profile.associatedLaundryId || "");
+    setEditAssignedLaundryId(profile.assignedLaundryId || "");
   };
 
   // Admin: reassign a customer to a different laundry vendor.
   // All work happens server-side (admin API) — the endpoint deletes any
   // pre-existing per-tenant customer profile, upserts the new one, and
-  // patches `users/{uid}.associatedLaundryId` so downstream queries reflect
+  // patches `users/{uid}.assignedLaundryId` so downstream queries reflect
   // the change immediately.
   const handleReassignLaundry = async () => {
     if (!editingProfile) return;
@@ -496,7 +496,7 @@ function AdminDashboard() {
       toast.error("נא לבחור מכבסה");
       return;
     }
-    if (targetLaundryId === (editingProfile.associatedLaundryId || "")) {
+    if (targetLaundryId === (editingProfile.assignedLaundryId || "")) {
       toast.info("המכבסה שנבחרה זהה למכבסה הנוכחית");
       return;
     }
@@ -517,13 +517,13 @@ function AdminDashboard() {
       setProfiles((prev) =>
         prev.map((p) =>
           p.id === editingProfile.id
-            ? { ...p, associatedLaundryId: targetLaundryId }
+            ? { ...p, assignedLaundryId: targetLaundryId }
             : p,
         ),
       );
       setEditingProfile({
         ...editingProfile,
-        associatedLaundryId: targetLaundryId,
+        assignedLaundryId: targetLaundryId,
       });
       toast.success("שיוך המכבסה עודכן בהצלחה");
     } catch (err: any) {
@@ -1388,6 +1388,15 @@ function AdminDashboard() {
                               <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[9px] font-bold ${getRoleBadge(profile.role)}`}>
                                 {getRoleLabel(profile.role)}
                               </span>
+                              {profile.role === "customer" && profile.assignedLaundryId && (() => {
+                                const laundryObj = profiles.find(p => p.id === profile.assignedLaundryId);
+                                const laundryName = laundryObj?.businessName || laundryObj?.fullName || "מכבסה";
+                                return (
+                                  <span className="inline-block mr-1.5 mt-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-cyan-50 text-cyan-700 border border-cyan-200">
+                                    🏠 {laundryName}
+                                  </span>
+                                );
+                              })()}
                             </div>
                           </div>
                           <div className="flex items-center gap-1.5 shrink-0">
@@ -1850,12 +1859,12 @@ function AdminDashboard() {
             {editRole === "customer" && editingProfile && (() => {
               const laundryOptions = profiles.filter(p => p.role === "laundry");
               const currentAssignedName =
-                laundryOptions.find(l => l.id === (editingProfile.associatedLaundryId || ""))?.businessName
-                || laundryOptions.find(l => l.id === (editingProfile.associatedLaundryId || ""))?.fullName
+                laundryOptions.find(l => l.id === (editingProfile.assignedLaundryId || ""))?.businessName
+                || laundryOptions.find(l => l.id === (editingProfile.assignedLaundryId || ""))?.fullName
                 || "לא משויך";
               const canSave =
                 !!editAssignedLaundryId
-                && editAssignedLaundryId !== (editingProfile.associatedLaundryId || "");
+                && editAssignedLaundryId !== (editingProfile.assignedLaundryId || "");
               return (
                 <div className="space-y-1.5 animate-in slide-in-from-top-2 duration-200 border-t border-muted-foreground/10 pt-3">
                   <label className="text-xs font-bold text-foreground block flex items-center gap-1.5">
@@ -1890,7 +1899,7 @@ function AdminDashboard() {
                       : <><Check className="size-3.5" /> שמור שיוך מכבסה</>}
                   </button>
                   <p className="text-[10px] text-muted-foreground leading-relaxed">
-                    השינוי מוחל מיידית — הפרופיל בסאב-קולקציה של המכבסה הקודמת יוסר והחדש ייווצר, וכן שדה associatedLaundryId על משתמש זה יעודכן.
+                    השינוי מוחל מיידית — הפרופיל בסאב-קולקציה של המכבסה הקודמת יוסר והחדש ייווצר, וכן שדה assignedLaundryId על משתמש זה יעודכן.
                   </p>
                 </div>
               );

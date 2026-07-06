@@ -435,10 +435,10 @@ export async function deleteCustomerProfile(
 }
 
 /**
- * Update ONLY `users/{uid}.associatedLaundryId` via an updateMask so no
+ * Update ONLY `users/{uid}.assignedLaundryId` via an updateMask so no
  * other profile fields are affected.
  */
-export async function updateUserAssociatedLaundry(
+export async function updateUserAssignedLaundry(
   uid: string,
   laundryId: string,
 ): Promise<void> {
@@ -448,9 +448,9 @@ export async function updateUserAssociatedLaundry(
       {
         update: {
           name,
-          fields: { associatedLaundryId: { stringValue: laundryId } },
+          fields: { assignedLaundryId: { stringValue: laundryId } },
         },
-        updateMask: { fieldPaths: ["associatedLaundryId"] },
+        updateMask: { fieldPaths: ["assignedLaundryId"] },
       },
     ],
   });

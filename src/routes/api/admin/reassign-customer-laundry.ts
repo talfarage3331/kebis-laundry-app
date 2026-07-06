@@ -59,7 +59,7 @@ export const Route = createFileRoute("/api/admin/reassign-customer-laundry")({
             findCustomerLaundryIds,
             setCustomerProfile,
             deleteCustomerProfile,
-            updateUserAssociatedLaundry,
+            updateUserAssignedLaundry,
           } = await import("@/lib/firestore-admin.server");
 
           // 4. Load both users; verify the target is a laundry and the customer is not admin
@@ -122,7 +122,7 @@ export const Route = createFileRoute("/api/admin/reassign-customer-laundry")({
             fullName,
             activeTenantSlug: shopSlug,
           });
-          await updateUserAssociatedLaundry(customerUid, newLaundryId);
+          await updateUserAssignedLaundry(customerUid, newLaundryId);
 
           return Response.json({ success: true, laundryId: newLaundryId });
         } catch (err: any) {
