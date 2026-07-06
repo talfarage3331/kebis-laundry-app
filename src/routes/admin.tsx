@@ -74,6 +74,7 @@ interface Profile {
   status?: "pending_setup" | "pending_approval" | "approved" | "suspended";
   businessName?: string;
   shopSlug?: string;
+  associatedLaundryId?: string;
 }
 
 interface LaundryOrder {
