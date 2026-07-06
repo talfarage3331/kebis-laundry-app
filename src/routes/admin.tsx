@@ -1846,7 +1846,57 @@ function AdminDashboard() {
                 </select>
               </div>
             )}
+
+            {editRole === "customer" && editingProfile && (() => {
+              const laundryOptions = profiles.filter(p => p.role === "laundry");
+              const currentAssignedName =
+                laundryOptions.find(l => l.id === (editingProfile.associatedLaundryId || ""))?.businessName
+                || laundryOptions.find(l => l.id === (editingProfile.associatedLaundryId || ""))?.fullName
+                || "לא משויך";
+              const canSave =
+                !!editAssignedLaundryId
+                && editAssignedLaundryId !== (editingProfile.associatedLaundryId || "");
+              return (
+                <div className="space-y-1.5 animate-in slide-in-from-top-2 duration-200 border-t border-muted-foreground/10 pt-3">
+                  <label className="text-xs font-bold text-foreground block flex items-center gap-1.5">
+                    <Building2 className="size-3.5 text-primary" />
+                    מכבסה משויכת
+                  </label>
+                  <p className="text-[10px] text-muted-foreground">
+                    מכבסה נוכחית: <span className="font-bold text-foreground">{currentAssignedName}</span>
+                  </p>
+                  <select
+                    value={editAssignedLaundryId}
+                    onChange={e => setEditAssignedLaundryId(e.target.value)}
+                    className="w-full h-11 px-3 rounded-xl border border-muted-foreground/20 bg-background text-foreground text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary text-right appearance-none"
+                    dir="rtl"
+                    disabled={isReassigningLaundry}
+                  >
+                    <option value="">— בחר מכבסה —</option>
+                    {laundryOptions.map(l => (
+                      <option key={l.id} value={l.id}>
+                        {l.businessName || l.fullName || l.email}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleReassignLaundry}
+                    disabled={!canSave || isReassigningLaundry}
+                    className="w-full h-10 rounded-xl bg-primary/10 text-primary font-bold text-xs active:scale-95 transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/15"
+                  >
+                    {isReassigningLaundry
+                      ? <><Loader2 className="size-3.5 animate-spin" /> מעדכן שיוך...</>
+                      : <><Check className="size-3.5" /> שמור שיוך מכבסה</>}
+                  </button>
+                  <p className="text-[10px] text-muted-foreground leading-relaxed">
+                    השינוי מוחל מיידית — הפרופיל בסאב-קולקציה של המכבסה הקודמת יוסר והחדש ייווצר, וכן שדה associatedLaundryId על משתמש זה יעודכן.
+                  </p>
+                </div>
+              );
+            })()}
           </div>
+
 
           <div className="flex gap-2 mt-2">
             <button onClick={handleUpdateProfile} disabled={isUpdating}
