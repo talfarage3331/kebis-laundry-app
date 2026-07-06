@@ -532,7 +532,7 @@ function Login() {
       setLoading(false);
       toast.success("נרשמת בהצלחה — ממתין לאישור המנהל");
 
-      if (assignedRole === "admin") {
+      if ((assignedRole as string) === "admin") {
         navigate({ to: "/admin" });
       } else {
         navigate({ to: "/laundry-dashboard" });
