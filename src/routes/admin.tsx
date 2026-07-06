@@ -257,6 +257,7 @@ function AdminDashboard() {
         status: docSnap.data().status,
         businessName: docSnap.data().businessName || "",
         shopSlug: docSnap.data().shopSlug || docSnap.data().slug || "",
+        associatedLaundryId: docSnap.data().associatedLaundryId || "",
       }));
 
       if (reset) {
