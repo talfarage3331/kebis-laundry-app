@@ -483,6 +483,7 @@ function AdminDashboard() {
     setEditRole(profile.role || "customer");
     setEditStatus(profile.status || "approved");
     setEditAssignedLaundryId(profile.assignedLaundryId || "");
+    setReassignFeedback(null);
   };
 
   // Admin: reassign a customer to a different laundry vendor.
