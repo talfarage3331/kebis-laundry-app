@@ -1926,6 +1926,22 @@ function AdminDashboard() {
                       ? <><Loader2 className="size-3.5 animate-spin" /> מעדכן שיוך...</>
                       : <><Check className="size-3.5" /> שמור שיוך מכבסה</>}
                   </button>
+                  {reassignFeedback && (
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      className={`flex items-start gap-1.5 px-2.5 py-2 rounded-lg text-[11px] font-bold border ${
+                        reassignFeedback.type === "success"
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : "bg-red-50 text-red-700 border-red-200"
+                      }`}
+                    >
+                      {reassignFeedback.type === "success"
+                        ? <Check className="size-3.5 mt-0.5 shrink-0" />
+                        : <XCircle className="size-3.5 mt-0.5 shrink-0" />}
+                      <span className="leading-snug">{reassignFeedback.message}</span>
+                    </div>
+                  )}
                   <p className="text-[10px] text-muted-foreground leading-relaxed">
                     השינוי מוחל מיידית — הפרופיל בסאב-קולקציה של המכבסה הקודמת יוסר והחדש ייווצר, וכן שדה assignedLaundryId על משתמש זה יעודכן.
                   </p>
