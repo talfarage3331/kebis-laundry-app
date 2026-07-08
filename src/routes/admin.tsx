@@ -495,14 +495,17 @@ function AdminDashboard() {
     if (!editingProfile) return;
     const targetLaundryId = editAssignedLaundryId.trim();
     if (!targetLaundryId) {
+      setReassignFeedback({ type: "error", message: "נא לבחור מכבסה" });
       toast.error("נא לבחור מכבסה");
       return;
     }
     if (targetLaundryId === (editingProfile.assignedLaundryId || "")) {
+      setReassignFeedback({ type: "error", message: "המכבסה שנבחרה זהה למכבסה הנוכחית" });
       toast.info("המכבסה שנבחרה זהה למכבסה הנוכחית");
       return;
     }
     setIsReassigningLaundry(true);
+    setReassignFeedback(null);
     try {
       const res = await authFetch("/api/admin/reassign-customer-laundry", {
         method: "POST",
@@ -516,6 +519,7 @@ function AdminDashboard() {
       if (!res.ok || !json?.success) {
         throw new Error(json?.error || `שגיאה (${res.status})`);
       }
+      // Optimistic local update — customer list & derived vendor counts refresh immediately
       setProfiles((prev) =>
         prev.map((p) =>
           p.id === editingProfile.id
@@ -527,10 +531,21 @@ function AdminDashboard() {
         ...editingProfile,
         assignedLaundryId: targetLaundryId,
       });
+      const newLaundry = profiles.find((p) => p.id === targetLaundryId);
+      const newLaundryName =
+        newLaundry?.businessName || newLaundry?.fullName || "מכבסה";
+      setReassignFeedback({
+        type: "success",
+        message: `שיוך המכבסה עודכן בהצלחה: ${newLaundryName}`,
+      });
       toast.success("שיוך המכבסה עודכן בהצלחה");
+      // Background reconcile with server (non-blocking)
+      fetchProfiles(true);
     } catch (err: any) {
+      const message = err?.message || "unknown";
       console.error("[admin] reassign laundry failed:", err);
-      toast.error("שגיאה בעדכון שיוך המכבסה: " + (err?.message || "unknown"));
+      setReassignFeedback({ type: "error", message: `שגיאה בעדכון שיוך: ${message}` });
+      toast.error("שגיאה בעדכון שיוך המכבסה: " + message);
     } finally {
       setIsReassigningLaundry(false);
     }
