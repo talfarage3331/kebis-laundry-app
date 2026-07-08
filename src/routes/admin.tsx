@@ -159,6 +159,7 @@ function AdminDashboard() {
   const [editStatus, setEditStatus] = useState<"pending_setup" | "pending_approval" | "approved" | "suspended">("approved");
   const [editAssignedLaundryId, setEditAssignedLaundryId] = useState<string>("");
   const [isReassigningLaundry, setIsReassigningLaundry] = useState(false);
+  const [reassignFeedback, setReassignFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
 
