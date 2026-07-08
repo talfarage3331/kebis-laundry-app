@@ -584,7 +584,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       //   2. user.assignedLaundryId — sourced from Firestore via onSnapshot,
       //      always up-to-date after an admin reassignment
       //   3. activeTenantId — localStorage-backed fallback (may be stale)
-      const resolvedLaundryId = laundryId || user.assignedLaundryId || activeTenantId || "";
+      const resolvedLaundryId = laundryId || user?.assignedLaundryId || activeTenantId || "";
       if (!user) return null;
       const newState: OrderState = "pending";
       const amount = 0;
