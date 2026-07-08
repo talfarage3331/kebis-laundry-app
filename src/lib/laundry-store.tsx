@@ -250,11 +250,12 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
   // Synchronise activeTenantId, activeTenantName, and activeTenantSlug with Firestore user.assignedLaundryId
   useEffect(() => {
     if (user && user.role === "customer" && user.assignedLaundryId) {
+      const assignedLaundryId = user.assignedLaundryId;
       const fetchAndSyncAssignedLaundry = async () => {
         try {
           const { doc, getDoc } = await import("firebase/firestore");
           // 1. Fetch laundry details from canonical laundries collection
-          const laundryDoc = await getDoc(doc(db, "laundries", user.assignedLaundryId));
+          const laundryDoc = await getDoc(doc(db, "laundries", assignedLaundryId));
           let businessName = "";
           let shopSlug = "";
           if (laundryDoc.exists()) {
@@ -264,7 +265,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
 
           // 2. Fallback to users collection if not found in laundries
           if (!businessName) {
-            const userDoc = await getDoc(doc(db, "users", user.assignedLaundryId));
+            const userDoc = await getDoc(doc(db, "users", assignedLaundryId));
             if (userDoc.exists()) {
               businessName = userDoc.data().businessName || userDoc.data().fullName || "";
               shopSlug = userDoc.data().shopSlug || userDoc.data().slug || "";
@@ -273,13 +274,13 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
 
           if (businessName) {
             // Update localStorage
-            localStorage.setItem("activeLaundryId", user.assignedLaundryId);
+            localStorage.setItem("activeLaundryId", assignedLaundryId);
             localStorage.setItem("activeLaundryName", businessName);
             localStorage.setItem("activeLaundrySlug", shopSlug);
             localStorage.setItem("last_visited_laundry_slug", shopSlug);
 
             // Update state
-            setActiveTenantId(user.assignedLaundryId);
+            setActiveTenantId(assignedLaundryId);
             setActiveTenantName(businessName);
             setActiveTenantSlug(shopSlug);
           }
@@ -583,7 +584,7 @@ export function LaundryProvider({ children }: { children: ReactNode }) {
       //   2. user.assignedLaundryId — sourced from Firestore via onSnapshot,
       //      always up-to-date after an admin reassignment
       //   3. activeTenantId — localStorage-backed fallback (may be stale)
-      const resolvedLaundryId = laundryId || user.assignedLaundryId || activeTenantId || "";
+      const resolvedLaundryId = laundryId || user?.assignedLaundryId || activeTenantId || "";
       if (!user) return null;
       const newState: OrderState = "pending";
       const amount = 0;

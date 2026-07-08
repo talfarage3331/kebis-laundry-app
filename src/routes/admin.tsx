@@ -159,6 +159,7 @@ function AdminDashboard() {
   const [editStatus, setEditStatus] = useState<"pending_setup" | "pending_approval" | "approved" | "suspended">("approved");
   const [editAssignedLaundryId, setEditAssignedLaundryId] = useState<string>("");
   const [isReassigningLaundry, setIsReassigningLaundry] = useState(false);
+  const [reassignFeedback, setReassignFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
 
@@ -482,6 +483,7 @@ function AdminDashboard() {
     setEditRole(profile.role || "customer");
     setEditStatus(profile.status || "approved");
     setEditAssignedLaundryId(profile.assignedLaundryId || "");
+    setReassignFeedback(null);
   };
 
   // Admin: reassign a customer to a different laundry vendor.
@@ -493,14 +495,17 @@ function AdminDashboard() {
     if (!editingProfile) return;
     const targetLaundryId = editAssignedLaundryId.trim();
     if (!targetLaundryId) {
+      setReassignFeedback({ type: "error", message: "נא לבחור מכבסה" });
       toast.error("נא לבחור מכבסה");
       return;
     }
     if (targetLaundryId === (editingProfile.assignedLaundryId || "")) {
+      setReassignFeedback({ type: "error", message: "המכבסה שנבחרה זהה למכבסה הנוכחית" });
       toast.info("המכבסה שנבחרה זהה למכבסה הנוכחית");
       return;
     }
     setIsReassigningLaundry(true);
+    setReassignFeedback(null);
     try {
       const res = await authFetch("/api/admin/reassign-customer-laundry", {
         method: "POST",
@@ -514,6 +519,7 @@ function AdminDashboard() {
       if (!res.ok || !json?.success) {
         throw new Error(json?.error || `שגיאה (${res.status})`);
       }
+      // Optimistic local update — customer list & derived vendor counts refresh immediately
       setProfiles((prev) =>
         prev.map((p) =>
           p.id === editingProfile.id
@@ -525,10 +531,21 @@ function AdminDashboard() {
         ...editingProfile,
         assignedLaundryId: targetLaundryId,
       });
+      const newLaundry = profiles.find((p) => p.id === targetLaundryId);
+      const newLaundryName =
+        newLaundry?.businessName || newLaundry?.fullName || "מכבסה";
+      setReassignFeedback({
+        type: "success",
+        message: `שיוך המכבסה עודכן בהצלחה: ${newLaundryName}`,
+      });
       toast.success("שיוך המכבסה עודכן בהצלחה");
+      // Background reconcile with server (non-blocking)
+      fetchProfiles(true);
     } catch (err: any) {
+      const message = err?.message || "unknown";
       console.error("[admin] reassign laundry failed:", err);
-      toast.error("שגיאה בעדכון שיוך המכבסה: " + (err?.message || "unknown"));
+      setReassignFeedback({ type: "error", message: `שגיאה בעדכון שיוך: ${message}` });
+      toast.error("שגיאה בעדכון שיוך המכבסה: " + message);
     } finally {
       setIsReassigningLaundry(false);
     }
@@ -1486,7 +1503,11 @@ function AdminDashboard() {
                     <div className="p-12 text-center text-xs text-muted-foreground">לא נמצאו מכבסות התואמות את החיפוש.</div>
                   ) : (
                     <div className="divide-y divide-purple-50/60">
-                      {filteredLaundries.map(profile => (
+                      {filteredLaundries.map(profile => {
+                        const customerCount = profiles.filter(
+                          (p) => p.role === "customer" && p.assignedLaundryId === profile.id,
+                        ).length;
+                        return (
                         <div key={profile.id} className="px-5 py-4 flex items-center justify-between gap-3 hover:bg-purple-50/20 transition-colors">
                           <div className="flex items-center gap-3 min-w-0 flex-1">
                             <div className="size-11 shrink-0 rounded-xl bg-cyan-100 text-cyan-700 font-black text-lg flex items-center justify-center">
@@ -1511,6 +1532,12 @@ function AdminDashboard() {
                                 {profile.status === "suspended" && (
                                   <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-red-100 text-red-700 border border-red-200">❌ מושעה</span>
                                 )}
+                                <span
+                                  className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-cyan-50 text-cyan-700 border border-cyan-200"
+                                  title="לקוחות משויכים"
+                                >
+                                  👥 {customerCount} לקוחות
+                                </span>
                               </div>
                             </div>
                           </div>
@@ -1537,7 +1564,8 @@ function AdminDashboard() {
                             </button>
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -1898,6 +1926,22 @@ function AdminDashboard() {
                       ? <><Loader2 className="size-3.5 animate-spin" /> מעדכן שיוך...</>
                       : <><Check className="size-3.5" /> שמור שיוך מכבסה</>}
                   </button>
+                  {reassignFeedback && (
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      className={`flex items-start gap-1.5 px-2.5 py-2 rounded-lg text-[11px] font-bold border ${
+                        reassignFeedback.type === "success"
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : "bg-red-50 text-red-700 border-red-200"
+                      }`}
+                    >
+                      {reassignFeedback.type === "success"
+                        ? <Check className="size-3.5 mt-0.5 shrink-0" />
+                        : <XCircle className="size-3.5 mt-0.5 shrink-0" />}
+                      <span className="leading-snug">{reassignFeedback.message}</span>
+                    </div>
+                  )}
                   <p className="text-[10px] text-muted-foreground leading-relaxed">
                     השינוי מוחל מיידית — הפרופיל בסאב-קולקציה של המכבסה הקודמת יוסר והחדש ייווצר, וכן שדה assignedLaundryId על משתמש זה יעודכן.
                   </p>

@@ -212,17 +212,18 @@ function Profile() {
 
   useEffect(() => {
     if (user?.assignedLaundryId) {
+      const assignedLaundryId = user.assignedLaundryId;
       setLoadingLaundry(true);
       const getLaundryName = async () => {
         try {
           const { doc, getDoc } = await import("firebase/firestore");
           // Fetch from the canonical laundries collection
-          const laundryDoc = await getDoc(doc(db, "laundries", user.assignedLaundryId));
+          const laundryDoc = await getDoc(doc(db, "laundries", assignedLaundryId));
           if (laundryDoc.exists()) {
             setAssignedLaundryName(laundryDoc.data().businessName || laundryDoc.data().name || null);
           } else {
             // Fallback to users collection
-            const userDoc = await getDoc(doc(db, "users", user.assignedLaundryId));
+            const userDoc = await getDoc(doc(db, "users", assignedLaundryId));
             if (userDoc.exists()) {
               setAssignedLaundryName(userDoc.data().businessName || userDoc.data().fullName || null);
             } else {
