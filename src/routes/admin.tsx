@@ -1532,6 +1532,12 @@ function AdminDashboard() {
                                 {profile.status === "suspended" && (
                                   <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-red-100 text-red-700 border border-red-200">❌ מושעה</span>
                                 )}
+                                <span
+                                  className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-cyan-50 text-cyan-700 border border-cyan-200"
+                                  title="לקוחות משויכים"
+                                >
+                                  👥 {customerCount} לקוחות
+                                </span>
                               </div>
                             </div>
                           </div>
