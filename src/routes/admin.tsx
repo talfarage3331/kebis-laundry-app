@@ -1503,7 +1503,11 @@ function AdminDashboard() {
                     <div className="p-12 text-center text-xs text-muted-foreground">לא נמצאו מכבסות התואמות את החיפוש.</div>
                   ) : (
                     <div className="divide-y divide-purple-50/60">
-                      {filteredLaundries.map(profile => (
+                      {filteredLaundries.map(profile => {
+                        const customerCount = profiles.filter(
+                          (p) => p.role === "customer" && p.assignedLaundryId === profile.id,
+                        ).length;
+                        return (
                         <div key={profile.id} className="px-5 py-4 flex items-center justify-between gap-3 hover:bg-purple-50/20 transition-colors">
                           <div className="flex items-center gap-3 min-w-0 flex-1">
                             <div className="size-11 shrink-0 rounded-xl bg-cyan-100 text-cyan-700 font-black text-lg flex items-center justify-center">
